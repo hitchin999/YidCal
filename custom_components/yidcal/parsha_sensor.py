@@ -11,10 +11,13 @@ class ParshaSensor(SensorEntity):
 
     _attr_name = "Parsha"
     _attr_icon = "mdi:book-open-page-variant"
-    _attr_unique_id = "yidcal_parsha"
 
     def __init__(self, hass) -> None:
         super().__init__()
+        slug = "parsha"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
+    
         self.hass = hass
         self._state: str | None = None
 
