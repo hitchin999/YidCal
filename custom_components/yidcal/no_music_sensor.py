@@ -14,12 +14,15 @@ from homeassistant.helpers.event import async_track_time_interval
 from pyluach.hebrewcal import HebrewDate
 
 class NoMusicSensor(BinarySensorEntity):
-    _attr_name = "YidCal No Music"
-    _attr_unique_id = "yidcal_no_music"
+    _attr_name = "No Music"
     _attr_icon = "mdi:music-off"
 
     def __init__(self, hass: HomeAssistant, candle: int, havdalah: int) -> None:
         super().__init__()
+        slug = "no_music"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
+    
         self.hass = hass
         self._attr_is_on = False
         self._added = False
@@ -50,7 +53,7 @@ class NoMusicSensor(BinarySensorEntity):
         elif hd.month == 3 and hd.day <= 5:
             omer = 45 + hd.day
 
-        in_omer = omer and omer != 33
+        in_omer = omer and omer not in (33, 47, 48, 49)
 
         # Three Weeks: 17 Tammuz (4) – 9 Av (5)
         in_three_weeks = (
