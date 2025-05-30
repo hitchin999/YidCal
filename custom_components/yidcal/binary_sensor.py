@@ -91,16 +91,15 @@ class HolidayAttributeBinarySensor(RestoreEntity, BinarySensorEntity):
         self.hass = hass
         self.attr_name = attr_name
         # display info
-        self._attr_name = f"Holiday {attr_name}"
-        slug = (
-            attr_name.lower()
-                     .replace(" ", "_")
-                     .replace("׳", "")
-                     .replace('"', "")
+        self._attr_name = f"{attr_name}"
+        slug = SLUG_OVERRIDES.get(attr_name) or (
+            attr_name.lower().replace(" ", "_")
+                      .replace("׳", "").replace('"', "")
         )
-        self._attr_unique_id = f"yidcal_holiday_{slug}"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id = f"binary_sensor.yidcal_{slug}"
         self._attr_icon = "mdi:checkbox-marked-circle-outline"
-        self._attr_extra_state_attributes: dict[str, any] = {}
+        self._attr_extra_state_attributes = {}
 
     def _schedule_update(self, *_args) -> None:
         """Thread-safe scheduling of async_update on the event loop."""
