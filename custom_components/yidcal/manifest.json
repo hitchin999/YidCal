@@ -1,0 +1,17 @@
+{
+  "domain": "yidcal",
+  "name": "YidCal",
+  "version": "0.0.1",
+  "documentation": "https://github.com/hitchin999/YidCal",
+  "issue_tracker": "https://github.com/hitchin999/YidCal/issues",
+  "translation": ["strings.json"],
+  "translations": ["en","he"],
+  "requirements": [
+    "hdate[astral]==1.1.0",
+    "pyluach==2.2.0"
+  ],
+  "codeowners": ["@hitchin999"],
+  "iot_class": "local_polling",
+  "config_flow": true,
+  "platforms": ["sensor", "binary_sensor"]
+}
