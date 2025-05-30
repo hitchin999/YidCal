@@ -10,7 +10,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 class FullDisplaySensor(SensorEntity):
     """
-    Combines day label, parsha, holiday (from YOUR list via yidcal_holiday attrs),
+    Combines day label Yiddish, parsha, holiday (from YOUR list via yidcal_holiday attrs),
     R"Chodesh, and special Shabbos into one filtered string matching the original card formatting.
     """
     _attr_name = "Full Display"
