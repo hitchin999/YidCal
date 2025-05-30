@@ -1,6 +1,6 @@
-# /config/custom_components/yiddish_cal/config_flow.py
+# /config/custom_components/yidcal/config_flow.py
 
-"""Config flow for Yiddish Cal."""
+"""Config flow for YidCal."""
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -12,8 +12,8 @@ DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 
 
-class YiddishCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Yiddish Cal."""
+class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for YidCal."""
 
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
@@ -25,7 +25,7 @@ class YiddishCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="user", data_schema=vol.Schema({})
             )
 
-        return self.async_create_entry(title="Yiddish Cal", data={})
+        return self.async_create_entry(title="YidCal", data={})
 
     @staticmethod
     @callback
@@ -35,7 +35,7 @@ class YiddishCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle Yiddish Cal options."""
+    """Handle YidCal options."""
 
     def __init__(self, config_entry):
         self._config_entry = config_entry
