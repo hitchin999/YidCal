@@ -1,0 +1,14 @@
+{
+  "title": "YidCal",
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "strip_nikud": "נעם אראפ די נְקֻודּוֹת",
+          "candlelighting_offset": "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
+          "havdalah_offset": "וויפיל מינוט נאכן שקיעה איז מוצאי"
+        }
+      }
+    }
+  }
+}
