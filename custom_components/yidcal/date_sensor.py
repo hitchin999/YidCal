@@ -37,12 +37,15 @@ class DateSensor(RestoreEntity, SensorEntity):
     """Today’s Hebrew date. flips at sunset+havdalah only."""
 
     _attr_name = "Date"
-    _attr_unique_id = "yidcal_date"
     _attr_icon = "mdi:calendar-range"
     _attr_should_poll = False
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int) -> None:
         super().__init__()
+        slug = "date"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"sensor.yidcal_{slug}"
+    
         self.hass = hass
         self._havdalah_offset = timedelta(minutes=havdalah_offset)
 
