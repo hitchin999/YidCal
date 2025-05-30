@@ -33,7 +33,7 @@ class HolidaySensor(RestoreEntity, SensorEntity):
     - Exposes ALL holiday flags as attributes
     - Uses ALLOWED_HOLIDAYS to pick exactly one for its state
     """
-    _attr_name = "YidCal Holiday"
+    _attr_name = "Holiday"
     _attr_unique_id = "yidcal_holiday"
     _attr_icon = "mdi:calendar-star"
 
