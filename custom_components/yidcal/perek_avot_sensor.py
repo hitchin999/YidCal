@@ -9,7 +9,7 @@ from homeassistant.helpers.event import (
 )
 
 import pyluach.dates as pdates
-from .molad_lib.helper import int_to_hebrew
+from .yidcal_lib.helper import int_to_hebrew
 
 
 class PerekAvotSensor(SensorEntity):
