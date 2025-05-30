@@ -1,4 +1,4 @@
-# /config/custom_components/yiddish_cal/__init__.py
+# /config/custom_components/yidcal/__init__.py
 """Yiddish Calendar integration."""
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -10,7 +10,7 @@ PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Yiddish Cal from a config entry."""
+    """Set up YidCal from a config entry."""
     # Listen for option updates
     entry.add_update_listener(_async_update_options)
 
