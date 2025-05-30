@@ -6,12 +6,12 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_change
 from pyluach import dates, parshios
 
-class YidCalParshaSensor(SensorEntity):
+class ParshaSensor(SensorEntity):
     """Offline Parsha sensor using pyluach for weekly readings."""
 
-    _attr_name = "YidCal Parsha"
+    _attr_name = "Parsha"
     _attr_icon = "mdi:book-open-page-variant"
-    _attr_unique_id = "yidcal_parsha"
+    _attr_unique_id = "parsha"
 
     def __init__(self, hass) -> None:
         super().__init__()
