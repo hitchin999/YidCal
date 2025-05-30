@@ -91,7 +91,7 @@ async def async_setup_entry(
         SpecialShabbosSensor(),
         SefirahCounter(hass, sfirah_helper, strip_nikud, havdalah_offset),
         SefirahCounterMiddos(hass, sfirah_helper, strip_nikud, havdalah_offset),
-        RoshChodeshTodaySensor(hass, yidcal_helper, havdalah_offset),
+        RoshChodeshToday(hass, yidcal_helper, havdalah_offset),
         ParshaSensor(hass),
         DateSensor(hass, havdalah_offset),
         PerekAvotSensor(hass),
@@ -359,7 +359,7 @@ class UpcomingShabbosMevorchimSensor(BinarySensorEntity):
 
 
 
-class RoshChodeshTodaySensor(SensorEntity):
+class RoshChodeshToday(SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
 
     _attr_name = "Rosh Chodesh Today"
