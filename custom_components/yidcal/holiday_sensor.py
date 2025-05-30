@@ -34,7 +34,6 @@ class HolidaySensor(RestoreEntity, SensorEntity):
     - Uses ALLOWED_HOLIDAYS to pick exactly one for its state
     """
     _attr_name = "Holiday"
-    _attr_unique_id = "yidcal_holiday"
     _attr_icon = "mdi:calendar-star"
 
     # ─── THE FULL SET of every holiday you detect (for attributes) ───
@@ -138,6 +137,10 @@ class HolidaySensor(RestoreEntity, SensorEntity):
         havdalah_offset: int,
     ) -> None:
         super().__init__()
+        slug = "holiday"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
+    
         self.hass = hass
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
