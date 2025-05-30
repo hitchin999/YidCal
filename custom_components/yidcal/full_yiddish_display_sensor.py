@@ -13,7 +13,7 @@ class FullDisplaySensor(SensorEntity):
     Combines day label, parsha, holiday (from YOUR list via yidcal_holiday attrs),
     R"Chodesh, and special Shabbos into one filtered string matching the original card formatting.
     """
-    _attr_name = "YidCal Full Display"
+    _attr_name = "Full Display"
     _attr_unique_id = "yidcal_full_display"
 
     # ONLY show these holidays
