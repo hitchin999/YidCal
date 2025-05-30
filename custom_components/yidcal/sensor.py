@@ -84,14 +84,14 @@ async def async_setup_entry(
     strip_nikud = entry.options.get("strip_nikud", False)
 
     async_add_entities([
-        MoladSensor(hass, molad_helper, candle_offset, havdalah_offset),
+        MoladSensor(hass, yidcal_helper, candle_offset, havdalah_offset),
         DayLabelSensor(hass, candle_offset, havdalah_offset),
-        ShabbosMevorchimSensor(hass, molad_helper, candle_offset, havdalah_offset),
-        UpcomingShabbosMevorchimSensor(hass, molad_helper),
+        ShabbosMevorchimSensor(hass, yidcal_helper, candle_offset, havdalah_offset),
+        UpcomingShabbosMevorchimSensor(hass, yidcal_helper),
         SpecialShabbosSensor(),
         SefirahCounter(hass, sfirah_helper, strip_nikud, havdalah_offset),
         SefirahCounterMiddos(hass, sfirah_helper, strip_nikud, havdalah_offset),
-        RoshChodeshTodaySensor(hass, molad_helper, havdalah_offset),
+        RoshChodeshTodaySensor(hass, yidcal_helper, havdalah_offset),
         ParshaSensor(hass),
         DateSensor(hass, havdalah_offset),
         PerekAvotSensor(hass),
