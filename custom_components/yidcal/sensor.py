@@ -103,7 +103,6 @@ async def async_setup_entry(
 
 class MoladSensor(SensorEntity):
     _attr_name = "Molad"
-    _attr_entity_id = "sensor.molad"
 
     def __init__(
         self,
@@ -394,7 +393,7 @@ class RoshChodeshToday(SensorEntity):
         # Anytime the main molad sensor changes — use the thread-safe scheduler
         async_track_state_change_event(
             self.hass,
-            "sensor.molad",
+            "sensor.yidcal_molad",
             lambda _event: self.schedule_update_ha_state(),
         )
 
@@ -413,7 +412,7 @@ class RoshChodeshToday(SensorEntity):
         tz = ZoneInfo(self.hass.config.time_zone)
         now = _now or datetime.now(tz)
 
-        main = self.hass.states.get("sensor.molad")
+        main = self.hass.states.get("sensor.yidcal_molad")
         attr = main.attributes if main else {}
         nf_list = attr.get("rosh_chodesh_nightfall") or []
         month = attr.get("month_name", "")
@@ -453,5 +452,5 @@ class RoshChodeshToday(SensorEntity):
     # ──────────────────────────────
     @property
     def available(self) -> bool:
-        main = self.hass.states.get("sensor.molad")
+        main = self.hass.states.get("sensor.yidcal_molad")
         return bool(main and main.attributes.get("rosh_chodesh_nightfall"))
