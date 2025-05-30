@@ -6,7 +6,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_change
 from pyluach import dates, parshios
 
-class ParshaYiddishSensor(SensorEntity):
+class YidCalParshaSensor(SensorEntity):
     """Offline Parsha sensor using pyluach for weekly readings."""
 
     _attr_name = "YidCal Parsha"
