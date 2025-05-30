@@ -31,13 +31,13 @@ _LOGGER = logging.getLogger(__name__)
 
 # ─── Your override map ────────────────────────────────────────────────────────
 SLUG_OVERRIDES: dict[str, str] = {
-    "א׳ סליחות":             "alef_selichot",
+    "א׳ סליחות":             "alef_selichos",
     "ערב ראש השנה":          "erev_rosh_hashana",
     "ראש השנה א׳":           "rosh_hashana_1",
     "ראש השנה ב׳":           "rosh_hashana_2",
     "ראש השנה א׳ וב׳":       "rosh_hashana_1_2",
     "צום גדליה":             "tzom_gedalia",
-    "שלוש עשרה מדות":        "shlosha_asar_midot",
+    "שלוש עשרה מדות":        "shlosh_asrei_midos",
     "ערב יום כיפור":          "erev_yom_kippur",
     "יום הכיפורים":          "yom_kippur",
     "ערב סוכות":             "erev_sukkot",
@@ -48,35 +48,35 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ב׳ דחול המועד סוכות":     "chol_hamoed_sukkot_2",
     "ג׳ דחול המועד סוכות":      "chol_hamoed_sukkot_3",
     "ד׳ דחול המועד סוכות":      "chol_hamoed_sukkot_4",    
-    "חול המועד סוכות":       "chol_hamoed_sukkot",
+    "חול המועד סוכות":       "chol_hamoed_sukos",
     "הושענא רבה":            "hoshanah_rabbah",
-    "שמיני עצרת":            "shemini_atzeret",
-    "שמחת תורה":             "simchat_torah",
+    "שמיני עצרת":            "shemini_atzeres",
+    "שמחת תורה":             "simchas_torah",
     "ערב חנוכה":             "erev_chanukah",
     "חנוכה":                 "chanukah",
     "שובבים":               "shovavim",
-    "שובבים ת\"ת":          "shovavim_tet",
-    "צום עשרה בטבת":         "tzom_asara_betevet",
+    "שובבים ת\"ת":          "shovavim_tat",
+    "צום עשרה בטבת":         "tzom_asara_beteves",
     "ט\"ו בשבט":             "tu_bishvat",
     "תענית אסתר":            "taanit_esther",
     "פורים":                "purim",
     "שושן פורים":           "shushan_purim",
-    "ליל בדיקת חמץ":        "leil_bedikat_chametz",
+    "ליל בדיקת חמץ":        "leil_bedikas_chumetz",
     "ערב פסח":              "erev_pesach",
     "פסח א׳":               "pesach_1",
     "פסח ב׳":               "pesach_2",
     "פסח א׳ וב׳":           "pesach_1_2",
     "חול המועד פסח":        "chol_hamoed_pesach",
-    "שביעי של פסח":         "pesach_seventh",
-    "אחרון של פסח":         "pesach_last",
+    "שביעי של פסח":         "shviei_shel_pesach",
+    "אחרון של פסח":         "achron_shel_pesach",
     "ל\"ג בעומר":            "lag_baomer",
-    "ערב שבועות":           "erev_shavuot",
-    "שבועות א׳":            "shavuot_1",
-    "שבועות ב׳":            "shavuot_2",
-    "שבועות א׳ וב׳":        "shavuot_1_2",
-    "צום שבעה עשר בתמוז":   "tzom_17_tammuz",
-    "תשעה באב":             "tzom_9_av",
-    "תשעה באב נדחה":        "tzom_9_av_deferred",
+    "ערב שבועות":           "erev_shavuos",
+    "שבועות א׳":            "shavuos_1",
+    "שבועות ב׳":            "shavuos_2",
+    "שבועות א׳ וב׳":        "shavuos_1_2",
+    "צום שבעה עשר בתמוז":   "shiva_usor_btammuz",
+    "תשעה באב":             "tisha_bav",
+    "תשעה באב נדחה":        "tisha_bav_nidche",
     "ראש חודש":             "rosh_chodesh",
 }
 
@@ -141,7 +141,6 @@ class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
     """True on specific Erev‐days from alos ha-shachar until candle-lighting, with restore-on-reboot."""
 
     _attr_name = "Erev"
-    _attr_unique_id = "sensor.yidcal_erev"
     _attr_icon = "mdi:weather-sunset-up"
 
     # (Hebrew month, day) of Erev‐Yom‐Tov dates
@@ -157,6 +156,9 @@ class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
 
     def __init__(self, hass: HomeAssistant, candle_offset: int) -> None:
         super().__init__()
+        slug = "erev"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self._candle = candle_offset
         self._tz = ZoneInfo(hass.config.time_zone)
@@ -221,11 +223,13 @@ class MeluchaProhibitionSensor(BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
 
     _attr_name = "Melucha Prohibition"
-    _attr_unique_id = "yidcal_melucha"
     _attr_icon = "mdi:briefcase-variant-off"
 
-    def __init__(self, hass, candle_offset: int, havdalah_offset: int) -> None:
+    def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
+        slug = "melucha"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"   
         self.hass = hass
         self._diaspora = True
         self._candle = candle_offset
