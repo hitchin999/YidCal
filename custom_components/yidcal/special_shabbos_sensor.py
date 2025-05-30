@@ -8,13 +8,14 @@ async def async_setup_platform(hass, config, add_entities, discovery_info=None):
 
 class SpecialShabbosSensor(SensorEntity):
     """Sensor that provides the upcoming special Shabbatot."""
-
+    _attr_name = "Special Shabbos"
     _attr_icon = "mdi:calendar-star"  # icon for a special event
-    _attr_has_entity_name = True
 
     def __init__(self):
-        self._attr_name = "Special Shabbos"
-        self._attr_unique_id = "yidcal_special_shabbos"
+        super().__init__()
+        slug = "special_shabbos"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"sensor.yidcal_{slug}"
         self._state = None
 
     @property
