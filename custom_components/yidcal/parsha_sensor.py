@@ -11,7 +11,7 @@ class ParshaSensor(SensorEntity):
 
     _attr_name = "Parsha"
     _attr_icon = "mdi:book-open-page-variant"
-    _attr_unique_id = "parsha"
+    _attr_unique_id = "yidcal_parsha"
 
     def __init__(self, hass) -> None:
         super().__init__()
