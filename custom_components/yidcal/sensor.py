@@ -24,7 +24,7 @@ from hdate.hebrew_date import HebrewDate as HHebrewDate
 import pyluach.dates as pdates
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
-from .yidcal_lib.helper import MoladHelper, MoladDetails
+from .yidcal_lib.helper import YidCalHelper, MoladDetails
 from .yidcal_lib.sfirah_helper import SfirahHelper
 from .sfirah_sensor import SefirahCounter, SefirahCounterMiddos
 from .special_shabbos_sensor import SpecialShabbosSensor
@@ -71,8 +71,8 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities,
 ) -> None:
-    """Set up Molad Yiddish and related sensors with user-configurable offsets."""
-    molad_helper = MoladHelper(hass.config)
+    """Set up YidCal and related sensors with user-configurable offsets."""
+    yidcal_helper = YidCalHelper(hass.config)
 
     # Pull user-configured offsets
     opts = hass.data[DOMAIN][entry.entry_id]
@@ -84,32 +84,32 @@ async def async_setup_entry(
     strip_nikud = entry.options.get("strip_nikud", False)
 
     async_add_entities([
-        MoladYiddishSensor(hass, molad_helper, candle_offset, havdalah_offset),
-        YiddishDayLabelSensor(hass, candle_offset, havdalah_offset),
+        MoladSensor(hass, molad_helper, candle_offset, havdalah_offset),
+        DayLabelSensor(hass, candle_offset, havdalah_offset),
         ShabbosMevorchimSensor(hass, molad_helper, candle_offset, havdalah_offset),
         UpcomingShabbosMevorchimSensor(hass, molad_helper),
         SpecialShabbosSensor(),
-        SefirahCounterYiddish(hass, sfirah_helper, strip_nikud, havdalah_offset),
-        SefirahCounterMiddosYiddish(hass, sfirah_helper, strip_nikud, havdalah_offset),
+        SefirahCounter(hass, sfirah_helper, strip_nikud, havdalah_offset),
+        SefirahCounterMiddos(hass, sfirah_helper, strip_nikud, havdalah_offset),
         RoshChodeshTodaySensor(hass, molad_helper, havdalah_offset),
-        ParshaYiddishSensor(hass),
-        YiddishDateSensor(hass, havdalah_offset),
+        ParshaSensor(hass),
+        DateSensor(hass, havdalah_offset),
         PerekAvotSensor(hass),
         HolidaySensor(hass, candle_offset, havdalah_offset),
         NoMusicSensor(hass, candle_offset, havdalah_offset),
-        FullYiddishDisplaySensor(hass),
+        FullDisplaySensor(hass),
     ], update_before_add=True)
 
 
-class MoladYiddishSensor(SensorEntity):
-    _attr_name = "Molad Yiddish"
-    _attr_unique_id = "molad_yiddish"
-    _attr_entity_id = "sensor.molad_yiddish"
+class MoladSensor(SensorEntity):
+    _attr_name = "Molad"
+    _attr_unique_id = "yidcal_molad"
+    _attr_entity_id = "sensor.yidcal_molad"
 
     def __init__(
         self,
         hass: HomeAssistant,
-        helper: MoladHelper,
+        helper: YidCalHelper,
         candle_offset: int,
         havdalah_offset: int,
     ) -> None:
@@ -203,11 +203,11 @@ class MoladYiddishSensor(SensorEntity):
         return "mdi:calendar-star"
 
 
-class YiddishDayLabelSensor(SensorEntity):
-    """Sensor for standalone Yiddish day label."""
+class DayLabelYiddishSensor(SensorEntity):
+    """Sensor for standalone day label in Yiddish."""
 
-    _attr_name = "Yiddish Day Label"
-    _attr_unique_id = "yiddish_day_label"
+    _attr_name = "Day Label Yiddish"
+    _attr_unique_id = "yidcal_day_label_yiddish"
 
     def __init__(
         self,
@@ -272,14 +272,14 @@ class YiddishDayLabelSensor(SensorEntity):
 
 
 class ShabbosMevorchimSensor(BinarySensorEntity):
-    _attr_name = "Shabbos Mevorchim Yiddish"
-    _attr_unique_id = "shabbos_mevorchim_yiddish"
-    _attr_entity_id = "binary_sensor.shabbos_mevorchim_yiddish"
+    _attr_name = "Shabbos Mevorchim"
+    _attr_unique_id = "yidcal_shabbos_mevorchim"
+    _attr_entity_id = "binary_sensor.yidcal_shabbos_mevorchim"
 
     def __init__(
         self,
         hass: HomeAssistant,
-        helper: MoladHelper,
+        helper: YidCalHelper,
         candle_offset: int,
         havdalah_offset: int,
     ) -> None:
@@ -324,11 +324,11 @@ class ShabbosMevorchimSensor(BinarySensorEntity):
 
 
 class UpcomingShabbosMevorchimSensor(BinarySensorEntity):
-    _attr_name = "Upcoming Shabbos Mevorchim Yiddish"
-    _attr_unique_id = "upcoming_shabbos_mevorchim_yiddish"
-    _attr_entity_id = "binary_sensor.upcoming_shabbos_mevorchim_yiddish"
+    _attr_name = "Upcoming Shabbos Mevorchim"
+    _attr_unique_id = "yidcal_upcoming_shabbos_mevorchim"
+    _attr_entity_id = "binary_sensor.yidcal_upcoming_shabbos_mevorchim"
 
-    def __init__(self, hass: HomeAssistant, helper: MoladHelper) -> None:
+    def __init__(self, hass: HomeAssistant, helper: YidCalHelper) -> None:
         super().__init__()
         self.hass = hass
         self.helper = helper
@@ -354,11 +354,11 @@ class UpcomingShabbosMevorchimSensor(BinarySensorEntity):
 class RoshChodeshTodaySensor(SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
 
-    _attr_name = "Rosh Chodesh Today Yiddish"
-    _attr_unique_id = "rosh_chodesh_today_yiddish"
+    _attr_name = "Rosh Chodesh Today"
+    _attr_unique_id = "yidcal_rosh_chodesh_today"
     _attr_icon = "mdi:calendar-star"
 
-    def __init__(self, hass: HomeAssistant, helper: MoladHelper, havdalah_offset: int) -> None:
+    def __init__(self, hass: HomeAssistant, helper: YidCalHelper, havdalah_offset: int) -> None:
         super().__init__()
         self.hass = hass
         self.helper = helper
@@ -384,7 +384,7 @@ class RoshChodeshTodaySensor(SensorEntity):
         # Anytime the main molad sensor changes — use the thread-safe scheduler
         async_track_state_change_event(
             self.hass,
-            "sensor.molad_yiddish",
+            "sensor.yidcal_molad",
             lambda _event: self.schedule_update_ha_state(),
         )
 
@@ -403,7 +403,7 @@ class RoshChodeshTodaySensor(SensorEntity):
         tz = ZoneInfo(self.hass.config.time_zone)
         now = _now or datetime.now(tz)
 
-        main = self.hass.states.get("sensor.molad_yiddish")
+        main = self.hass.states.get("sensor.yidcal_molad")
         attr = main.attributes if main else {}
         nf_list = attr.get("rosh_chodesh_nightfall") or []
         month = attr.get("month_name", "")
@@ -443,5 +443,5 @@ class RoshChodeshTodaySensor(SensorEntity):
     # ──────────────────────────────
     @property
     def available(self) -> bool:
-        main = self.hass.states.get("sensor.molad_yiddish")
+        main = self.hass.states.get("sensor.yidcal_molad")
         return bool(main and main.attributes.get("rosh_chodesh_nightfall"))
