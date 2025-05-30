@@ -85,7 +85,7 @@ async def async_setup_entry(
 
     async_add_entities([
         MoladSensor(hass, yidcal_helper, candle_offset, havdalah_offset),
-        DaySensor(hass, candle_offset, havdalah_offset),
+        DayLabelYiddishSensor(hass, candle_offset, havdalah_offset),
         ShabbosMevorchimSensor(hass, yidcal_helper, candle_offset, havdalah_offset),
         UpcomingShabbosMevorchimSensor(hass, yidcal_helper),
         SpecialShabbosSensor(),
