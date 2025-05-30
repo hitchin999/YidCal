@@ -1,4 +1,4 @@
-# /config/custom_components/yiddish_cal/binary_sensor.py
+# /config/custom_components/yidcal/binary_sensor.py
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
@@ -84,21 +84,21 @@ SLUG_OVERRIDES: dict[str, str] = {
 
 
 class HolidayAttributeBinarySensor(RestoreEntity, BinarySensorEntity):
-    """Mirrors one attribute from sensor.yiddish_cal_holiday, with restore-on-reboot."""
+    """Mirrors one attribute from sensor.yidcal_holiday, with restore-on-reboot."""
 
     def __init__(self, hass: HomeAssistant, attr_name: str) -> None:
         super().__init__()
         self.hass = hass
         self.attr_name = attr_name
         # display info
-        self._attr_name = f"Yiddish Holiday {attr_name}"
+        self._attr_name = f"YidCal Holiday {attr_name}"
         slug = (
             attr_name.lower()
                      .replace(" ", "_")
                      .replace("׳", "")
                      .replace('"', "")
         )
-        self._attr_unique_id = f"yiddish_holiday_{slug}"
+        self._attr_unique_id = f"yidcal_holiday_{slug}"
         self._attr_icon = "mdi:checkbox-marked-circle-outline"
         self._attr_extra_state_attributes: dict[str, any] = {}
 
@@ -116,13 +116,13 @@ class HolidayAttributeBinarySensor(RestoreEntity, BinarySensorEntity):
             self._attr_is_on = (last.state == STATE_ON)
 
         # 2) one immediate sync if source exists
-        if self.hass.states.get("sensor.yiddish_cal_holiday"):
+        if self.hass.states.get("sensor.yidcal_holiday"):
             await self.async_update()
 
         # 3a) update on attribute change events
         async_track_state_change_event(
             self.hass,
-            "sensor.yiddish_cal_holiday",
+            "sensor.yidcal_holiday",
             self._schedule_update,
         )
 
@@ -134,15 +134,15 @@ class HolidayAttributeBinarySensor(RestoreEntity, BinarySensorEntity):
         )
 
     async def async_update(self, now=None) -> None:
-        src = self.hass.states.get("sensor.yiddish_cal_holiday")
+        src = self.hass.states.get("sensor.yidcal_holiday")
         self._attr_is_on = bool(src and src.attributes.get(self.attr_name, False))
 
 
 class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
     """True on specific Erev‐days from alos ha-shachar until candle-lighting, with restore-on-reboot."""
 
-    _attr_name = "Yiddish Cal Erev"
-    _attr_unique_id = "sensor.yiddish_cal_erev"
+    _attr_name = "yidcal Erev"
+    _attr_unique_id = "sensor.yidcal_erev"
     _attr_icon = "mdi:weather-sunset-up"
 
     # (Hebrew month, day) of Erev‐Yom‐Tov dates
@@ -221,8 +221,8 @@ class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
 class MeluchaProhibitionSensor(BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
 
-    _attr_name = "Yiddish Cal Melucha Prohibition"
-    _attr_unique_id = "yiddish_cal_melucha"
+    _attr_name = "YidCal Melucha Prohibition"
+    _attr_unique_id = "yidcal_melucha"
     _attr_icon = "mdi:briefcase-variant-off"
 
     def __init__(self, hass, candle_offset: int, havdalah_offset: int) -> None:
