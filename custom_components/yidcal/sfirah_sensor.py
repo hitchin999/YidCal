@@ -123,6 +123,9 @@ class SefirahCounter(BaseSefirahSensor):
             strip_nikud,
             havdalah_offset,
         )
+        slug = "sefirah_counter"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
 
     def _get_text(self) -> str:
         return self._helper.get_sefirah_text()
@@ -146,6 +149,8 @@ class SefirahCounterMiddos(BaseSefirahSensor):
             strip_nikud,
             havdalah_offset,
         )
-
+        slug = "sefirah_counter_middos"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
     def _get_text(self) -> str:
         return self._helper.get_middos_text()
