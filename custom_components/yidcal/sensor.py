@@ -103,7 +103,6 @@ async def async_setup_entry(
 
 class MoladSensor(SensorEntity):
     _attr_name = "Molad"
-    _attr_unique_id = "molad"
     _attr_entity_id = "sensor.molad"
 
     def __init__(
@@ -114,6 +113,9 @@ class MoladSensor(SensorEntity):
         havdalah_offset: int,
     ) -> None:
         super().__init__()
+        slug = "molad"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
         self._candle_offset = candle_offset
@@ -207,7 +209,6 @@ class DayLabelYiddishSensor(SensorEntity):
     """Sensor for standalone day label in Yiddish."""
 
     _attr_name = "Day Label Yiddish"
-    _attr_unique_id = "yidcal_day_label_yiddish"
 
     def __init__(
         self,
@@ -216,6 +217,9 @@ class DayLabelYiddishSensor(SensorEntity):
         havdalah_offset: int,
     ) -> None:
         super().__init__()
+        slug = "day_label_yiddish"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"sensor.yidcal_{slug}"
         self.hass = hass
         self._candle = candle_offset
         self._havdalah = havdalah_offset
@@ -273,8 +277,6 @@ class DayLabelYiddishSensor(SensorEntity):
 
 class ShabbosMevorchimSensor(BinarySensorEntity):
     _attr_name = "Shabbos Mevorchim"
-    _attr_unique_id = "yidcal_shabbos_mevorchim"
-    _attr_entity_id = "binary_sensor.yidcal_shabbos_mevorchim"
 
     def __init__(
         self,
@@ -284,6 +286,9 @@ class ShabbosMevorchimSensor(BinarySensorEntity):
         havdalah_offset: int,
     ) -> None:
         super().__init__()
+        slug = "shabbos_mevorchim"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
         self._candle_offset = candle_offset
@@ -330,6 +335,9 @@ class UpcomingShabbosMevorchimSensor(BinarySensorEntity):
 
     def __init__(self, hass: HomeAssistant, helper: YidCalHelper) -> None:
         super().__init__()
+        slug = "upcoming_shabbos_mevorchim"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
         self._attr_is_on = False
@@ -355,11 +363,13 @@ class RoshChodeshTodaySensor(SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
 
     _attr_name = "Rosh Chodesh Today"
-    _attr_unique_id = "rosh_chodesh_today"
     _attr_icon = "mdi:calendar-star"
 
     def __init__(self, hass: HomeAssistant, helper: YidCalHelper, havdalah_offset: int) -> None:
         super().__init__()
+        slug = "rosh_chodesh_today"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
         self._havdalah_offset = havdalah_offset
