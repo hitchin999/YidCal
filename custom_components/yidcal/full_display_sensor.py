@@ -14,7 +14,6 @@ class FullDisplaySensor(SensorEntity):
     R"Chodesh, and special Shabbos into one filtered string matching the original card formatting.
     """
     _attr_name = "Full Display"
-    _attr_unique_id = "yidcal_full_display"
 
     # ONLY show these holidays
     ALLOWED_HOLIDAYS: set[str] = {
@@ -61,6 +60,10 @@ class FullDisplaySensor(SensorEntity):
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
+        slug = "full_display"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
+    
         self.hass = hass
         self._state = ""
         async_track_time_interval(hass, self.async_update, timedelta(minutes=1))
@@ -74,7 +77,7 @@ class FullDisplaySensor(SensorEntity):
         now = now or datetime.datetime.now(tz)
 
         # 1) Day label
-        day = self.hass.states.get("sensor.yidcal_day_label")
+        day = self.hass.states.get("sensor.yidcal_day_label_yiddish")
         text = day.state if day and day.state else ""
 
         # 2) Parsha (skip if “none”/empty)
@@ -96,12 +99,12 @@ class FullDisplaySensor(SensorEntity):
             text += f" - {picked}"
 
         # 4) Rosh Chodesh
-        rosh = self.hass.states.get("sensor.rosh_chodesh_today_yidcal")
+        rosh = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
         if rosh and rosh.state != "Not Rosh Chodesh Today":
             text += f" ~ {rosh.state}"
 
         # 5) Special Shabbos after Fri-13:00 or any Sat
-        special = self.hass.states.get("sensor.special_shabbos_yidcal")
+        special = self.hass.states.get("sensor.yidcal_special_shabbos")
         if special and special.state not in ("No data", ""):
             wd, hr = now.weekday(), now.hour
             if (wd == 4 and hr >= 13) or wd == 5:
