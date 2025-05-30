@@ -1,4 +1,4 @@
-# Yiddish Cal Integration for Home Assistant
+# YidCal is a Yiddish Calendar Integration for Home Assistant
 
 A custom Home Assistant integration that provides:
 
@@ -21,7 +21,7 @@ All date calculations are standalone (no external Jewish-calendar integration) a
 
 ### 🌙 Molad Sensor
 
-* **Entity**: `sensor.yiddish_cal_molad`
+* **Entity**: `sensor.yidcal_molad`
 * **State Example**: `מולד זונטאג צופרי, 14 מינוט און 3 חלקים נאך 9`
 * **Attributes**:
 
@@ -40,27 +40,27 @@ All date calculations are standalone (no external Jewish-calendar integration) a
 
 ### 📖 Parsha Sensor
 
-* **Entity**: `sensor.yiddish_cal_parsha`
+* **Entity**: `sensor.yidcal_parsha`
 * **State Example**: `שמות` or corresponding Yiddish reading
 * **Behavior**: Updates weekly just after midnight to reflect the current Torah portion in Yiddish
 
 ### 🗓️ Rosh Chodesh Today
 
-* **Entity**: `binary_sensor.yiddish_cal_rosh_chodesh_today`
+* **Entity**: `binary_sensor.yidcal_rosh_chodesh_today`
 * **State**: `on` if today (after nightfall) is Rosh Chodesh, otherwise `off`
 
 ### 🌟 Shabbos Mevorchim Indicators
 
-* **Entity**: `binary_sensor.yiddish_cal_shabbos_mevorchim`
+* **Entity**: `binary_sensor.yidcal_shabbos_mevorchim`
 
   * `on` if today is Shabbos Mevorchim, otherwise `off`
-* **Entity**: `binary_sensor.yiddish_cal_upcoming_shabbos_mevorchim`
+* **Entity**: `binary_sensor.yidcal_upcoming_shabbos_mevorchim`
 
   * `on` if the upcoming Shabbos is Mevorchim, otherwise `off`
 
 ### 🌟 Special Shabbos Sensor
 
-* **Entity**: `sensor.yiddish_cal_special_shabbos`
+* **Entity**: `sensor.yidcal_special_shabbos`
 * **State Example**: `שבת זכור`, `שבת נחמו`, `No Data`
 * **Includes**: שבת שקלים, שבת זכור, שבת פרה, שבת החודש, שבת הגדול, שבת שובה, שבת חזון, שבת נחמו, שבת חזק, פורים משולש, מברכים חודש
 
@@ -68,18 +68,18 @@ All date calculations are standalone (no external Jewish-calendar integration) a
 
 * **Counter** (day‐count):
 
-  * **Entity**: `sensor.yiddish_cal_sefirah_counter`
+  * **Entity**: `sensor.yidcal_sefirah_counter`
   * **Updates**: daily at Havdalah offset (default 72 min after sunset)
 * **Middos** (qualities):
 
-  * **Entity**: `sensor.yiddish_cal_sefirah_counter_middos`
+  * **Entity**: `sensor.yidcal_sefirah_counter_middos`
   * **Updates**: same schedule
 
 Both counters optionally strip Nikud via `strip_nikud` option.
 
 ### 🗓️ Yiddish Day Label
 
-* **Entity**: `sensor.yiddish_cal_day_label`
+* **Entity**: `sensor.yidcal_day_label`
 * **Behavior**:
 
   * `שבת קודש` during Shabbos (from candlelighting to Havdalah)
@@ -90,7 +90,7 @@ Both counters optionally strip Nikud via `strip_nikud` option.
 
 ### 📆 Yiddish Date
 
-* **Entity**: `sensor.yiddish_cal_date`
+* **Entity**: `sensor.yidcal_date`
 * **State Example**: `ט"ו באייר תשפ"ה`
 * **Attributes**:
 
@@ -99,14 +99,14 @@ Both counters optionally strip Nikud via `strip_nikud` option.
 
 ### 📚 Perek Avos
 
-* **Entity**: `sensor.yiddish_cal_perek_avos`
+* **Entity**: `sensor.yidcal_perek_avos`
 * **State Example**: `אבות פרק ה'`
 
 ---
 
 ## Configuration Options
 
-After adding the integration via UI, go to **Settings → Devices & Services → Yiddish Cal → Options** to set:
+After adding the integration via UI, go to **Settings → Devices & Services → YidCal → Options** to set:
 
 | Option                                    | Default | Description                               |
 | ----------------------------------------- | ------- | ----------------------------------------- |
@@ -133,14 +133,14 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 ### HACS (Recommended)
 
 1. Go to **HACS → Integrations → ⋮ → Custom repositories**
-2. Add: `https://github.com/hitchin999/yiddish_cal` (type: Integration)
-3. Install **Yiddish Cal**
+2. Add: `https://github.com/hitchin999/yidcal` (type: Integration)
+3. Install **YidCal**
 4. Restart Home Assistant
-5. **Settings → Devices & Services → Add Integration → Yiddish Cal**
+5. **Settings → Devices & Services → Add Integration → YidCal**
 
 ### Manual
 
-1. Copy `custom_components/yiddish_cal/` to `config/custom_components/`
+1. Copy `custom_components/yidcal/` to `config/custom_components/`
 2. Restart Home Assistant
 3. Add integration via UI as above
 
@@ -152,25 +152,25 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 # Molad + Rosh Chodesh + Parsha
 type: markdown
 content: |
-  🌙 {{ states('sensor.yiddish_cal_molad') }}
-  📖 {{ states('sensor.yiddish_cal_parsha') }}
-  📆 ראש חודש: {{ state_attr('sensor.yiddish_cal_molad','rosh_chodesh') }}
+  🌙 {{ states('sensor.yidcal_molad') }}
+  📖 {{ states('sensor.yidcal_parsha') }}
+  📆 ראש חודש: {{ state_attr('sensor.yidcal_molad','rosh_chodesh') }}
 
 # Rosh Chodesh Today Indicator
-- R"Ch Today: {{ states('binary_sensor.yiddish_cal_rosh_chodesh_today') }}
+- R"Ch Today: {{ states('binary_sensor.yidcal_rosh_chodesh_today') }}
 
 # Shabbos Mevorchim
-- ש״מ: {{ states('binary_sensor.yiddish_cal_shabbos_mevorchim') }}
-- Upcoming ש״מ: {{ states('binary_sensor.yiddish_cal_upcoming_shabbos_mevorchim') }}
+- ש״מ: {{ states('binary_sensor.yidcal_shabbos_mevorchim') }}
+- Upcoming ש״מ: {{ states('binary_sensor.yidcal_upcoming_shabbos_mevorchim') }}
 
 # Special Shabbos
-- {{ states('sensor.yiddish_cal_special_shabbos') }}
+- {{ states('sensor.yidcal_special_shabbos') }}
 
 # Omer Counters
-- ספירה: {{ states('sensor.yiddish_cal_sefirah_counter') }}
-- מידות: {{ states('sensor.yiddish_cal_sefirah_counter_middos') }}
+- ספירה: {{ states('sensor.yidcal_sefirah_counter') }}
+- מידות: {{ states('sensor.yidcal_sefirah_counter_middos') }}
 
 # Yiddish Day & Date
-- היום: {{ states('sensor.yiddish_cal_day_label') }}
-- תאריך: {{ states('sensor.yiddish_cal_date') }}
+- היום: {{ states('sensor.yidcal_day_label') }}
+- תאריך: {{ states('sensor.yidcal_date') }}
 ```
