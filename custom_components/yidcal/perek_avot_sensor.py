@@ -16,10 +16,13 @@ class PerekAvotSensor(SensorEntity):
     """Which פרק of Pirkei Avot is read each week (from Pesach until Sukkot)."""
 
     _attr_name = "Perek Avos"
-    _attr_unique_id = "yidcal_perek_avot"
     _attr_icon = "mdi:book-open-page-variant"
 
     def __init__(self, hass: HomeAssistant) -> None:
+        super().__init__()
+        slug = "perek_avot"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id       = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self._attr_native_value = "נישט אין די צייט פון פרקי אבות"
 
