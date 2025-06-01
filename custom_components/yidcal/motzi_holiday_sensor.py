@@ -24,7 +24,7 @@ They will be ON starting at (yesterday’s sunset + havdalah_offset) until today
 """
 
 class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
-    _attr_icon = "mdi:calendar-star"
+    _attr_icon = "mdi:checkbox-marked-circle-outline"
 
     def __init__(
         self,
