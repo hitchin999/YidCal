@@ -173,7 +173,7 @@ class MotzeiShavuosSensor(MotzeiHolidaySensor):
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
-            holiday_name="שבועות ב׳",
+            holiday_name="ב׳ שבועות",
             friendly_name="מוצאי שבועות",
             unique_id="yidcal_motzei_shavuos",
             candle_offset=candle_offset,
