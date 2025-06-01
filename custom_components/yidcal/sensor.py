@@ -220,15 +220,27 @@ class MoladSensor(SensorEntity):
         # ───────────────────────────────────────────────────────
         # 3) Compute the molad’s Hebrew‐month number via pyluach
         # ───────────────────────────────────────────────────────
-        hd_now = PHebrewDate.from_pydate(today)
-        if hd_now.day < 3:
-            molad_month_num = hd_now.month
+        # 1) Derive the English name of the target molad month
+        hd = PHebrewDate.from_pydate(today)
+        if hd.day < 3:
+            target_year, target_month = hd.year, hd.month
         else:
-            molad_month_num = hd_now.month + 1
-            if molad_month_num > 12:
-                molad_month_num = 1
+            # compute (year, month+1) with rollback if needed
+            try:
+                # try next month in same year
+                PHebrewDate(hd.year, hd.month + 1, 1)
+                target_year, target_month = hd.year, hd.month + 1
+            except ValueError:
+                # beyond last month → month=1 of next year
+                target_year, target_month = hd.year + 1, 1
 
-        molad_month_name = NUM2HEB.get(molad_month_num, molad_month_num)
+        # 2) Grab pyluach’s English‐string:
+        english_month = PHebrewDate(target_year, target_month, 1).month_name
+        #    e.g. "Av", "Adar", "Adar I", or "Adar II"
+
+        # 3) Translate to Hebrew
+        molad_month_name = ENG2HEB.get(english_month, english_month)
+
 
         self._attr_extra_state_attributes = {
             "day": day_yd,
