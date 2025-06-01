@@ -107,10 +107,11 @@ class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
             prev_sunset = z_prev["sunset"]
             motzei_start = prev_sunset + timedelta(minutes=self._havdalah_offset)
 
-        # Keep the sensor ON until 02:00 local:
-        today_two_am = datetime.datetime.combine(today_date, time(hour=2, minute=0), tzinfo=tz)
-
-        self._state = bool(motzei_start and (motzei_start <= now < today_two_am))
+        # Keep the sensor ON until tomorrow 02:00:
+        tomorrow_date = today_date + timedelta(days=1)
+        tomorrow_two_am = datetime.datetime.combine(tomorrow_date, time(hour=2, minute=0), tzinfo=tz)
+        self._state = bool(motzei_start and (motzei_start <= now < tomorrow_two_am))
+        
 
 
 #
@@ -203,7 +204,7 @@ class MotzeiRoshHashanaSensor(MotzeiHolidaySensor):
 class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
     """
     “מוצאי צום שבעה עשר בתמוז”:
-    ON from sunset on 17 Tammuz + havdalah_offset until 2 AM.
+    ON from sunset on 17 Tammuz + havdalah_offset until 02:00 the next day.
     """
 
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
@@ -217,7 +218,7 @@ class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
         )
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
-        """Override so that 17 Tammuz motzai = today's sunset + offset (fast days start at dawn)."""
+        """Override so that 17 Tammuz motzai runs from today’s sunset → tomorrow 02:00."""
         tz = ZoneInfo(self.hass.config.time_zone)
         now = now or datetime.datetime.now(tz)
         today_date = now.date()
@@ -230,33 +231,36 @@ class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
             longitude=self.hass.config.longitude,
         )
 
-        # 1) Compute sunset for today
+        motzei_start: datetime.datetime | None = None
+
+        # 1) Compute today’s sunset
         z_today = sun(loc.observer, date=today_date, tzinfo=tz)
         today_sunset = z_today["sunset"]
 
-        # 2) Check if today is 17 Tammuz exactly ("י״ז בתמוז")
+        # 2) See if today is 17 Tammuz (“י״ז בתמוז”); if so, motzai begins now at today_sunset+offset
         hd_today = PHebrewDate.from_pydate(today_date)
         today_name = hd_today.holiday(hebrew=True, prefix_day=True)
-
-        motzei_start: datetime.datetime | None = None
-
         if today_name == self.HOLIDAY_NAME:
-            # Fast ends at today’s sunset + havdalah_offset
             motzei_start = today_sunset + timedelta(minutes=self._havdalah_offset)
         else:
-            # Fallback to base‐class logic: was it yesterday’s Yom Tov?
-            # (for multi‐day Yom Tovim that start at candle‐lighting)
-            # Reuse the exact same code from MotzeiHolidaySensor.async_update:
+            # 3) Otherwise check if yesterday was the holiday (to catch the window if you start HA after midnight)
             yesterday_date = today_date - timedelta(days=1)
             hd_prev = PHebrewDate.from_pydate(yesterday_date)
             prev_name = hd_prev.holiday(hebrew=True, prefix_day=True)
             if prev_name == self.HOLIDAY_NAME:
                 z_prev = sun(loc.observer, date=yesterday_date, tzinfo=tz)
-                motzei_start = z_prev["sunset"] + timedelta(minutes=self._havdalah_offset)
+                prev_sunset = z_prev["sunset"]
+                motzei_start = prev_sunset + timedelta(minutes=self._havdalah_offset)
 
-        # 3) Sensor stays ON until 02:00 local time the next morning
-        today_two_am = datetime.datetime.combine(today_date, time(hour=2, minute=0), tzinfo=tz)
-        self._state = bool(motzei_start and (motzei_start <= now < today_two_am))
+        # 4) Compute tomorrow at 02:00---that is our cutoff
+        tomorrow_date = today_date + timedelta(days=1)
+        tomorrow_two_am = datetime.datetime.combine(
+            tomorrow_date, time(hour=2, minute=0), tzinfo=tz
+        )
+
+        # 5) ON if now is between motzei_start and tomorrow 02:00
+        self._state = bool(motzei_start and (motzei_start <= now < tomorrow_two_am))
+      
       
 class MotzeiTishaBavSensor(MotzeiHolidaySensor):
     """
