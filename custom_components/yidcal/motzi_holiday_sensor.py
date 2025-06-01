@@ -24,7 +24,7 @@ They will be ON starting at (yesterday’s sunset + havdalah_offset) until today
 """
 
 class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
-    _attr_icon = "mdi:calendar-star"  # you can override per‐holiday if you like
+    _attr_icon = "mdi:calendar-star"
 
     def __init__(
         self,
@@ -38,19 +38,40 @@ class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
         super().__init__()
         self.hass = hass
         self.HOLIDAY_NAME = holiday_name
+
+        # Display name in UI
         self._attr_name = friendly_name
+        # Unique ID that HA will store in its registry
+        self._forced_unique_id = unique_id
         self._attr_unique_id = unique_id
+
+        # We store this internally; the property below will return it
+        self._forced_entity_id = f"binary_sensor.{unique_id}"
 
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
-
-        # internal boolean state
         self._state: bool = False
 
-        # schedule periodic updates (every minute)
+        # Update every minute
         async_track_time_interval(hass, self.async_update, timedelta(minutes=1))
 
+    @property
+    def entity_id(self) -> str:
+        """Always return exactly this, preventing HA from slugifying the Hebrew name."""
+        return self._forced_entity_id
+
+    @entity_id.setter
+    def entity_id(self, value: str) -> None:
+        """Ignore HA’s attempt to overwrite entity_id."""
+        return
+
+    @property
+    def unique_id(self) -> str:
+        """Expose the same unique_id so HA will allow UI editing."""
+        return self._forced_unique_id
+
     async def async_added_to_hass(self) -> None:
+        """Restore last on/off state after restart."""
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last and last.state in ("on", "off"):
@@ -61,11 +82,11 @@ class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
         return self._state
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
+        """Every minute, check if “motzei <holiday>” should be ON (sunset+offset → 02:00)."""
         tz = ZoneInfo(self.hass.config.time_zone)
         now = now or datetime.datetime.now(tz)
         today_date = now.date()
 
-        # Build LocationInfo from HA config
         loc = LocationInfo(
             name="home",
             region="",
@@ -74,28 +95,22 @@ class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
             longitude=self.hass.config.longitude,
         )
 
-        # Compute yesterday’s date and Hebrew date
+        # Look at yesterday’s Hebrew date:
         yesterday_date = today_date - timedelta(days=1)
         hd_prev = PHebrewDate.from_pydate(yesterday_date)
         prev_name = hd_prev.holiday(hebrew=True, prefix_day=True)
 
-        # 1) If yesterday’s holiday name exactly matches our HOLIDAY_NAME,
-        #    compute yesterday’s sunset + havdalah_offset => motzei_start.
+        # If yesterday was our holiday, compute its sunset + havdalah_offset:
         motzei_start: datetime.datetime | None = None
         if prev_name == self.HOLIDAY_NAME:
             z_prev = sun(loc.observer, date=yesterday_date, tzinfo=tz)
             prev_sunset = z_prev["sunset"]
             motzei_start = prev_sunset + timedelta(minutes=self._havdalah_offset)
 
-        # 2) Define today at 02:00 (local) as motzei_end
+        # Keep the sensor ON until 02:00 local:
         today_two_am = datetime.datetime.combine(today_date, time(hour=2, minute=0), tzinfo=tz)
 
-        # 3) Determine ON/OFF:
-        #    ON if motzei_start is not None AND motzei_start ≤ now < today_two_am
-        if motzei_start is not None and (motzei_start <= now < today_two_am):
-            self._state = True
-        else:
-            self._state = False
+        self._state = bool(motzei_start and (motzei_start <= now < today_two_am))
 
 
 #
