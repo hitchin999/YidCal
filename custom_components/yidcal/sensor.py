@@ -248,7 +248,7 @@ class DayLabelYiddishSensor(SensorEntity):
             hdate = PHebrewDate(hdate.year, hdate.month, hdate.day) + 1
 
         # Holiday
-        is_tov = bool(hdate.festival(israel=False, include_working_days=False))
+        #is_tov = bool(hdate.festival(israel=False, include_working_days=False))
 
         # Shabbos
         wd = current.weekday()
@@ -256,8 +256,8 @@ class DayLabelYiddishSensor(SensorEntity):
 
         if is_shab:
             lbl = "שבת קודש"
-        elif is_tov:
-            lbl = "יום טוב"
+        #elif is_tov:
+            #lbl = "יום טוב"
         elif wd == 4 and current.hour >= 12:
             lbl = 'ערש\"ק'
         elif wd == 5 and current >= havdalah:
