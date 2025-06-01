@@ -21,6 +21,15 @@ from astral import LocationInfo
 from astral.sun import sun
 from hdate import HDateInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from .motzi_holiday_sensor import (
+    MotzeiYomKippurSensor,
+    MotzeiPesachSensor,
+    MotzeiSukkosSensor,
+    MotzeiShavuosSensor,
+    MotzeiRoshHashanaSensor,
+    MotzeiShivaUsorBTammuzSensor,
+    MotzeiTishaBavSensor,
+)
 
 from .const import DOMAIN
 
@@ -340,5 +349,14 @@ async def async_setup_entry(
     ]
     for name in SLUG_OVERRIDES:
         entities.append(HolidayAttributeBinarySensor(hass, name))
+    entities.extend([
+        MotzeiYomKippurSensor(hass, candle, havdalah),
+        MotzeiPesachSensor(hass, candle, havdalah),
+        MotzeiSukkosSensor(hass, candle, havdalah),
+        MotzeiShavuosSensor(hass, candle, havdalah),
+        MotzeiRoshHashanaSensor(hass, candle, havdalah),
+        MotzeiShivaUsorBTammuzSensor(hass, candle, havdalah),
+        MotzeiTishaBavSensor(hass, candle, havdalah),
+    ])
 
     async_add_entities(entities, update_before_add=True)
