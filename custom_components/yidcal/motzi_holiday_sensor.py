@@ -134,7 +134,7 @@ class MotzeiPesachSensor(MotzeiHolidaySensor):
         )
 
 
-class MotzeiSukkotSensor(MotzeiHolidaySensor):
+class MotzeiSukkosSensor(MotzeiHolidaySensor):
     """
     “מוצאי סוכות”:
     ON from (yesterday’s sunset + havdalah_offset) until 2 AM.
@@ -150,7 +150,7 @@ class MotzeiSukkotSensor(MotzeiHolidaySensor):
         )
 
 
-class MotzeiShavuotSensor(MotzeiHolidaySensor):
+class MotzeiShavuosSensor(MotzeiHolidaySensor):
     """
     “מוצאי שבועות”:
     ON from (yesterday’s sunset + havdalah_offset) until 2 AM.
