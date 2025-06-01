@@ -52,20 +52,23 @@ DAY_MAPPING = {
     "Shabbos": "שבת",
 }
 
-NUM2HEB = {
-    1: "ניסן",
-    2: "אייר",
-    3: "סיון",
-    4: "תמוז",
-    5: "אב",
-    6: "אלול",
-    7: "תשרי",
-    8: "חשון",
-    9: "כסלו",
-    10: "טבת",
-    11: "שבט",
-    12: "אדר",
+ENG2HEB = {
+    "Nisan":   "ניסן",
+    "Iyar":    "אייר",
+    "Sivan":   "סיון",
+    "Tammuz":  "תמוז",
+    "Av":      "אב",
+    "Elul":    "אלול",
+    "Tishrei": "תשרי",
+    "Cheshvan":"חשון",
+    "Kislev":  "כסלו",
+    "Tevet":   "טבת",
+    "Shvat":   "שבט",
+    "Adar":    "אדר",     # when it’s a 12-month year
+    "Adar I":  "אדר א",   # leap year month 12
+    "Adar II": "אדר ב",   # leap year month 13
 }
+
 
 
 TIME_OF_DAY = {
