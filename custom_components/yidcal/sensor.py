@@ -110,6 +110,13 @@ async def async_setup_entry(
         HolidaySensor(hass, candle_offset, havdalah_offset),
         NoMusicSensor(hass, candle_offset, havdalah_offset),
         FullDisplaySensor(hass),
+        MotzeiYomKippurSensor(hass, candle_offset, havdalah_offset),
+        MotzeiPesachSensor(hass, candle_offset, havdalah_offset),
+        MotzeiSukkosSensor(hass, candle_offset, havdalah_offset),
+        MotzeiShavuosSensor(hass, candle_offset, havdalah_offset),
+        MotzeiRoshHashanaSensor(hass, candle_offset, havdalah_offset),
+        MotzeiShivaUsorBTammuzSensor(hass, candle_offset, havdalah_offset),
+        MotzeiTishaBavSensor(hass, candle_offset, havdalah_offset),        
     ], update_before_add=True)
 
 
