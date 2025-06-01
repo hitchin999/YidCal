@@ -1,6 +1,7 @@
 #/config/custom_components/yidcal/sensor.py
 from __future__ import annotations
 import logging
+import homeassistant.util.dt as dt_util
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -51,13 +52,21 @@ DAY_MAPPING = {
     "Shabbos": "שבת",
 }
 
-MONTH_MAPPING = {
-    "Tishri": "תשרי", "Cheshvan": "חשון", "Kislev": "כסלו",
-    "Tevet": "טבת", "Shvat": "שבט", "Adar": "אדר",
-    "Adar I": "אדר א", "Adar II": "אדר ב", "Nissan": "ניסן",
-    "Iyar": "אייר", "Sivan": "סיון", "Tammuz": "תמוז",
-    "Av": "אב", "Elul": "אלול",
+NUM2HEB = {
+    1: "ניסן",
+    2: "אייר",
+    3: "סיון",
+    4: "תמוז",
+    5: "אב",
+    6: "אלול",
+    7: "תשרי",
+    8: "חשון",
+    9: "כסלו",
+    10: "טבת",
+    11: "שבט",
+    12: "אדר",
 }
+
 
 TIME_OF_DAY = {
     "am": lambda h: "פארטאגס" if h < 6 else "צופרי",
@@ -101,6 +110,7 @@ async def async_setup_entry(
     ], update_before_add=True)
 
 
+
 class MoladSensor(SensorEntity):
     _attr_name = "Molad"
 
@@ -114,20 +124,38 @@ class MoladSensor(SensorEntity):
         super().__init__()
         slug = "molad"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"sensor.yidcal_{slug}"
+        self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
         self._attr_native_value = None
         self._attr_extra_state_attributes: dict[str, any] = {}
-        async_track_time_interval(hass, self.async_update, timedelta(hours=1))
+
+        # Schedule async_update() once per minute by calling _handle_minute_tick
+        async_track_time_interval(
+            hass,
+            self._handle_minute_tick,       # ← This must match the method name below
+            timedelta(minutes=1),
+        )
+
+    async def _handle_minute_tick(self, now):
+        """Called every minute by async_track_time_interval."""
+        await self.async_update()
 
     async def async_update(self, now=None) -> None:
-        today = date.today()
+        # ───────────────────────────────────────────────────────
+        # 1) Use Home Assistant’s clock for “today”
+        # ───────────────────────────────────────────────────────
+        today = dt_util.now().date()
         jdn = gdate_to_jdn(today)
         heb = HHebrewDate.from_jdn(jdn)
-        base_date = today - timedelta(days=15) if heb.day < 3 else today
+
+        # Choose base_date exactly as before
+        if heb.day < 3:
+            base_date = today - timedelta(days=15)
+        else:
+            base_date = today
 
         try:
             details: MoladDetails = self.helper.get_molad(base_date)
@@ -144,14 +172,17 @@ class MoladSensor(SensorEntity):
         hh12 = h % 12 or 12
 
         tz = ZoneInfo(self.hass.config.time_zone)
-        now_local = now.astimezone(tz) if now else datetime.now(tz)
+        if now:
+            now_local = now.astimezone(tz)
+        else:
+            now_local = dt_util.now().astimezone(tz)
+
         loc = LocationInfo(
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
             timezone=self.hass.config.time_zone,
         )
 
-        # Determine if it's Motzaei Shabbos
         motzei = False
         if m.day == "Shabbos":
             sd = sun(loc.observer, date=now_local.date(), tzinfo=tz)
@@ -168,9 +199,12 @@ class MoladSensor(SensorEntity):
 
         self._attr_native_value = state
 
-        # Rosh Chodesh attributes
+        # ───────────────────────────────────────────────────────
+        # 2) Rosh Chodesh attributes (unchanged)
+        # ───────────────────────────────────────────────────────
         rc = details.rosh_chodesh
         rc_mid = [f"{gd.isoformat()}T00:00:00Z" for gd in rc.gdays]
+
         rc_night = []
         for gd in rc.gdays:
             prev = gd - timedelta(days=1)
@@ -179,6 +213,19 @@ class MoladSensor(SensorEntity):
 
         rc_days = [DAY_MAPPING.get(d, d) for d in rc.days]
         rc_text = rc_days[0] if len(rc_days) == 1 else " & ".join(rc_days)
+
+        # ───────────────────────────────────────────────────────
+        # 3) Compute the molad’s Hebrew‐month number via pyluach
+        # ───────────────────────────────────────────────────────
+        hd_now = PHebrewDate.from_pydate(today)
+        if hd_now.day < 3:
+            molad_month_num = hd_now.month
+        else:
+            molad_month_num = hd_now.month + 1
+            if molad_month_num > 12:
+                molad_month_num = 1
+
+        molad_month_name = NUM2HEB.get(molad_month_num, molad_month_num)
 
         self._attr_extra_state_attributes = {
             "day": day_yd,
@@ -193,7 +240,7 @@ class MoladSensor(SensorEntity):
             "rosh_chodesh_days": rc_days,
             "is_shabbos_mevorchim": details.is_shabbos_mevorchim,
             "is_upcoming_shabbos_mevorchim": details.is_upcoming_shabbos_mevorchim,
-            "month_name": MONTH_MAPPING.get(rc.month, rc.month),
+            "month_name": molad_month_name,
         }
 
     def update(self) -> None:
