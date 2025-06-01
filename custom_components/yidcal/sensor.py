@@ -218,41 +218,41 @@ class MoladSensor(SensorEntity):
         rc_text = rc_days[0] if len(rc_days) == 1 else " & ".join(rc_days)
         
 
-    # ───────────────────────────────────────────────────────
-    # 3) Compute the molad’s Hebrew‐month via pyluach (fixed)
-    # ───────────────────────────────────────────────────────
-    hd = PHebrewDate.from_pydate(today)
-    if hd.day < 3:
-        target_year, target_month = hd.year, hd.month
-    else:
-        try:
-            PHebrewDate(hd.year, hd.month + 1, 1)
-            target_year, target_month = hd.year, hd.month + 1
-        except ValueError:
-            target_year, target_month = hd.year + 1, 1
+        # ───────────────────────────────────────────────────────
+        # 3) Compute the molad’s Hebrew‐month via pyluach (fixed)
+        # ───────────────────────────────────────────────────────
+        hd = PHebrewDate.from_pydate(today)
+        if hd.day < 3:
+            target_year, target_month = hd.year, hd.month
+        else:
+            try:
+                PHebrewDate(hd.year, hd.month + 1, 1)
+                target_year, target_month = hd.year, hd.month + 1
+            except ValueError:
+                target_year, target_month = hd.year + 1, 1
 
-    # 2) Grab pyluach’s English‐string (CALL month_name())
-    english_month = PHebrewDate(target_year, target_month, 1).month_name()
-    #     e.g. "Av", "Adar", "Adar I", or "Adar II"
+        # 2) Grab pyluach’s English‐string (CALL month_name())
+        english_month = PHebrewDate(target_year, target_month, 1).month_name()
+        #     e.g. "Av", "Adar", "Adar I", or "Adar II"
 
-    # 3) Translate to Hebrew
-    molad_month_name = ENG2HEB.get(english_month, english_month)
+        # 3) Translate to Hebrew
+        molad_month_name = ENG2HEB.get(english_month, english_month)
 
-    self._attr_extra_state_attributes = {
-        "day": day_yd,
-        "hours": h,
-        "minutes": mi,
-        "time_of_day": tod,
-        "chalakim": chal,
-        "friendly": state,
-        "rosh_chodesh_midnight": rc_mid,
-        "rosh_chodesh_nightfall": rc_night,
-        "rosh_chodesh": rc_text,
-        "rosh_chodesh_days": rc_days,
-        "is_shabbos_mevorchim": details.is_shabbos_mevorchim,
-        "is_upcoming_shabbos_mevorchim": details.is_upcoming_shabbos_mevorchim,
-        "month_name": molad_month_name,  # now a string, not a method
-    }
+        self._attr_extra_state_attributes = {
+            "day": day_yd,
+            "hours": h,
+            "minutes": mi,
+            "time_of_day": tod,
+            "chalakim": chal,
+            "friendly": state,
+            "rosh_chodesh_midnight": rc_mid,
+            "rosh_chodesh_nightfall": rc_night,
+            "rosh_chodesh": rc_text,
+            "rosh_chodesh_days": rc_days,
+            "is_shabbos_mevorchim": details.is_shabbos_mevorchim,
+            "is_upcoming_shabbos_mevorchim": details.is_upcoming_shabbos_mevorchim,
+            "month_name": molad_month_name,  # now a string, not a method
+        }
 
 
     def update(self) -> None:
