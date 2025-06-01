@@ -200,12 +200,12 @@ class MotzeiRoshHashanaSensor(MotzeiHolidaySensor):
 #
 # ─── New subclasses for “צום שבעה עשר בתמוז” and “תשעה באב” ────────────────────
 #
-
 class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
     """
     “מוצאי צום שבעה עשר בתמוז”:
-    ON from (yesterday’s sunset + havdalah_offset) until 2 AM.
+    ON from sunset on 17 Tammuz + havdalah_offset until 2 AM.
     """
+
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
@@ -216,7 +216,48 @@ class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
             havdalah_offset=havdalah_offset,
         )
 
+    async def async_update(self, now: datetime.datetime | None = None) -> None:
+        """Override so that 17 Tammuz motzai = today's sunset + offset (fast days start at dawn)."""
+        tz = ZoneInfo(self.hass.config.time_zone)
+        now = now or datetime.datetime.now(tz)
+        today_date = now.date()
 
+        loc = LocationInfo(
+            name="home",
+            region="",
+            timezone=self.hass.config.time_zone,
+            latitude=self.hass.config.latitude,
+            longitude=self.hass.config.longitude,
+        )
+
+        # 1) Compute sunset for today
+        z_today = sun(loc.observer, date=today_date, tzinfo=tz)
+        today_sunset = z_today["sunset"]
+
+        # 2) Check if today is 17 Tammuz exactly ("י״ז בתמוז")
+        hd_today = PHebrewDate.from_pydate(today_date)
+        today_name = hd_today.holiday(hebrew=True, prefix_day=True)
+
+        motzei_start: datetime.datetime | None = None
+
+        if today_name == self.HOLIDAY_NAME:
+            # Fast ends at today’s sunset + havdalah_offset
+            motzei_start = today_sunset + timedelta(minutes=self._havdalah_offset)
+        else:
+            # Fallback to base‐class logic: was it yesterday’s Yom Tov?
+            # (for multi‐day Yom Tovim that start at candle‐lighting)
+            # Reuse the exact same code from MotzeiHolidaySensor.async_update:
+            yesterday_date = today_date - timedelta(days=1)
+            hd_prev = PHebrewDate.from_pydate(yesterday_date)
+            prev_name = hd_prev.holiday(hebrew=True, prefix_day=True)
+            if prev_name == self.HOLIDAY_NAME:
+                z_prev = sun(loc.observer, date=yesterday_date, tzinfo=tz)
+                motzei_start = z_prev["sunset"] + timedelta(minutes=self._havdalah_offset)
+
+        # 3) Sensor stays ON until 02:00 local time the next morning
+        today_two_am = datetime.datetime.combine(today_date, time(hour=2, minute=0), tzinfo=tz)
+        self._state = bool(motzei_start and (motzei_start <= now < today_two_am))
+      
 class MotzeiTishaBavSensor(MotzeiHolidaySensor):
     """
     “מוצאי תשעה באב”:
