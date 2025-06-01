@@ -125,7 +125,7 @@ class MotzeiYomKippurSensor(MotzeiHolidaySensor):
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
-            holiday_name="יום הכיפורים",
+            holiday_name="יום כיפור",
             friendly_name="מוצאי יום הכיפורים",
             unique_id="yidcal_motzei_yom_kippur",
             candle_offset=candle_offset,
@@ -189,7 +189,7 @@ class MotzeiRoshHashanaSensor(MotzeiHolidaySensor):
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
-            holiday_name="ראש השנה ב׳",
+            holiday_name="ב׳ ראש השנה",
             friendly_name="מוצאי ראש השנה",
             unique_id="yidcal_motzei_rosh_hashana",
             candle_offset=candle_offset,
@@ -209,7 +209,7 @@ class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
-            holiday_name="צום שבעה עשר בתמוז",
+            holiday_name="י״ז בתמוז",
             friendly_name="מוצאי צום שבעה עשר בתמוז",
             unique_id="yidcal_motzei_shiva_usor_btammuz",
             candle_offset=candle_offset,
