@@ -35,6 +35,15 @@ from .perek_avot_sensor import PerekAvotSensor
 from .holiday_sensor import HolidaySensor
 from .no_music_sensor import NoMusicSensor
 from .full_display_sensor import FullDisplaySensor
+from .motzi_holiday_sensor import (
+    MotzeiYomKippurSensor,
+    MotzeiPesachSensor,
+    MotzeiSukkosSensor,
+    MotzeiShavuosSensor,
+    MotzeiRoshHashanaSensor,
+    MotzeiShivaUsorBTammuzSensor,
+    MotzeiTishaBavSensor,
+)
 
 
 from .const import DOMAIN
@@ -116,7 +125,7 @@ async def async_setup_entry(
         MotzeiShavuosSensor(hass, candle_offset, havdalah_offset),
         MotzeiRoshHashanaSensor(hass, candle_offset, havdalah_offset),
         MotzeiShivaUsorBTammuzSensor(hass, candle_offset, havdalah_offset),
-        MotzeiTishaBavSensor(hass, candle_offset, havdalah_offset),        
+        MotzeiTishaBavSensor(hass, candle_offset, havdalah_offset),           
     ], update_before_add=True)
 
 
