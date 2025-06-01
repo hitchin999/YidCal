@@ -159,7 +159,7 @@ class YidCalHelper:
         days.append(dayname_1)
         gdays.append(g1_next)
 
-        month_name = hd.month_name  # English, e.g. "Av"
+        month_name = hd.month_name()  # English, e.g. "Av"
         text = " & ".join(days) if len(days) == 2 else days[0]
         return RoshChodesh(month_name, text, days, gdays)
 
