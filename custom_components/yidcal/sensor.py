@@ -348,36 +348,78 @@ class ShabbosMevorchimSensor(BinarySensorEntity):
         slug = "shabbos_mevorchim"
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id       = f"binary_sensor.yidcal_{slug}"
+
         self.hass = hass
         self.helper = helper
         self._candle_offset = candle_offset
-        self._havdalah_offset = havdalah_offset        
-        self._attr_is_on = False
-        async_track_time_interval(hass, self.async_update, timedelta(hours=1))
+        self._havdalah_offset = havdalah_offset
 
-    async def async_update(self, now=None) -> None:
+        self._attr_is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        """Register all of our update triggers."""
+        await super().async_added_to_hass()
+
+        # 1) Immediate update on startup
+        await self.async_update()
+
+        # 2) Hourly refresh (you can change to minutes=10 if needed)
+        async_track_time_interval(
+            self.hass,
+            lambda now: self.hass.async_create_task(self.async_update()),
+            timedelta(hours=1),
+        )
+
+        # 3a) “Sunset – candle_offset” → start of Mevorchim window
+        async_track_sunset(
+            self.hass,
+            lambda now: self.hass.async_create_task(self.async_update()),
+            offset=timedelta(minutes=-self._candle_offset),
+        )
+
+        # 3b) “Sunset + havdalah_offset” → end of Mevorchim window
+        async_track_sunset(
+            self.hass,
+            lambda now: self.hass.async_create_task(self.async_update()),
+            offset=timedelta(minutes=self._havdalah_offset),
+        )
+
+    async def async_update(self, now: datetime | None = None) -> None:
+        """Recompute is_on.  Only turn on if:
+           1) Today is Friday, and tomorrow is Mevorchim, and
+           2) current time ∈ [sunset–candle_offset, sunset+havdalah_offset).
+        """
         try:
-            # build your location & timezone
             tz = ZoneInfo(self.hass.config.time_zone)
+            today_date = date.today()
+
+            # ─── Guard: Must be Friday *and* tomorrow must be Mevorchim‐Saturday ───
+            if (
+                today_date.weekday() != 4
+                or not self.helper.is_shabbos_mevorchim(today_date + timedelta(days=1))
+            ):
+                self._attr_is_on = False
+                return
+
             loc = LocationInfo(
                 latitude=self.hass.config.latitude,
                 longitude=self.hass.config.longitude,
                 timezone=self.hass.config.time_zone,
             )
-            s = sun(loc.observer, date=date.today(), tzinfo=tz)
+            s = sun(loc.observer, date=today_date, tzinfo=tz)
+            sunset = s["sunset"]
 
-            # compute on/off times
-            on_time = s["sunset"] + timedelta(minutes=self._candle_offset)
-            off_time = s["sunset"] + timedelta(minutes=self._havdalah_offset)
+            # Candle-lighting is BEFORE sunset
+            on_time = sunset - timedelta(minutes=self._candle_offset)
+            # Havdalah is AFTER sunset
+            off_time = sunset + timedelta(minutes=self._havdalah_offset)
 
-            # compare to now
             now_local = datetime.now(tz)
             self._attr_is_on = (on_time <= now_local < off_time)
 
         except Exception as e:
-            _LOGGER.error("Shabbos Mevorchim failed: %s", e)
+            _LOGGER.error("ShabbosMevorchim failed: %s", e)
             self._attr_is_on = False
-
 
     def update(self) -> None:
         self.hass.async_create_task(self.async_update())
