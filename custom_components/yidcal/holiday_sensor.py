@@ -195,13 +195,24 @@ class HolidaySensor(RestoreEntity, SensorEntity):
         # 3) Leap‐year flag for Shovavim
         year    = hd_py.year
         is_leap = ((year * 7 + 1) % 19) < 7
+        
+        # 4) Compute zmanim using a fixed 72 minutes before sunrise for alos hashachar
+        z_t = sun(
+            observer=loc.observer,
+            date=today,
+            tzinfo=tz,
+        )
+        sunrise         = z_t["sunrise"]
+        dawn            = sunrise - timedelta(minutes=72)  # 72 min before sunrise
+        today_sunset    = z_t["sunset"]
 
-        # 4) Compute zmanim for dawn/yesterday’s sunset
-        z_t = sun(loc.observer, date=today, tzinfo=tz)
-        z_y = sun(loc.observer, date=today - timedelta(days=1), tzinfo=tz)
-        dawn = z_t["dawn"]
+        z_y = sun(
+            observer=loc.observer,
+            date=today - timedelta(days=1),
+            tzinfo=tz,
+        )
         yesterday_sunset = z_y["sunset"]
-        today_sunset = z_t["sunset"]
+
 
         # 5) Holiday vs. fast logic (exactly as you had it)
         hol_name   = hd_py.holiday(hebrew=True, prefix_day=True)
