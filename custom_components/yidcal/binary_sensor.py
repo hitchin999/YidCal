@@ -206,7 +206,8 @@ class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
         today = now.date()
 
         s = sun(self._loc.observer, date=today, tzinfo=self._tz)
-        alos = s["dawn"]
+        sunrise = s["sunrise"]
+        alos = sunrise - timedelta(minutes=72)  # alos ha-shachar at 72 min before sunrise
         sunset = s["sunset"]
 
         # holiday vs Shabbos
@@ -227,6 +228,7 @@ class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
             "window_start": alos.isoformat(),
             "window_end": candle_time.isoformat(),
         }
+
         
 class MeluchaProhibitionSensor(BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
