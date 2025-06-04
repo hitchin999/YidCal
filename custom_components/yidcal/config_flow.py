@@ -1,6 +1,5 @@
 # /config/custom_components/yidcal/config_flow.py
 
-"""Config flow for YidCal."""
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -19,45 +18,61 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input=None):
-        """Initial configuration has no options."""
+        """First step: ask the user for all the options."""
         if user_input is None:
-            return self.async_show_form(
-                step_id="user", data_schema=vol.Schema({})
+            # Show the form with our three fields
+            schema = vol.Schema(
+                {
+                    vol.Optional(
+                        "strip_nikud",
+                        default=False,
+                    ): bool,
+                    vol.Optional(
+                        "candlelighting_offset",
+                        default=DEFAULT_CANDLELIGHT_OFFSET,
+                    ): int,
+                    vol.Optional(
+                        "havdalah_offset",
+                        default=DEFAULT_HAVDALAH_OFFSET,
+                    ): int,
+                }
             )
+            return self.async_show_form(step_id="user", data_schema=schema)
 
-        return self.async_create_entry(title="YidCal", data={})
+        # Once the user submits, store everything in config_entry.data
+        return self.async_create_entry(title="YidCal", data=user_input)
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        """Get the options flow for this integration."""
+        """Get the options flow for this integration (if user wants to change later)."""
         return OptionsFlowHandler(config_entry)
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle YidCal options."""
+    """Handle YidCal options (after install)."""
 
     def __init__(self, config_entry):
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
-        """Show the form for integration options."""
+        """Show the form to adjust options after setup."""
         if user_input is None:
             schema = vol.Schema(
                 {
                     vol.Optional(
-                        "strip_nikud", 
-                        default=self._config_entry.options.get("strip_nikud", False)
+                        "strip_nikud",
+                        default=self._config_entry.data.get("strip_nikud", False),
                     ): bool,
                     vol.Optional(
                         "candlelighting_offset",
-                        default=self._config_entry.options.get(
+                        default=self._config_entry.data.get(
                             "candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET
                         ),
                     ): int,
                     vol.Optional(
                         "havdalah_offset",
-                        default=self._config_entry.options.get(
+                        default=self._config_entry.data.get(
                             "havdalah_offset", DEFAULT_HAVDALAH_OFFSET
                         ),
                     ): int,
@@ -65,5 +80,5 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             )
             return self.async_show_form(step_id="init", data_schema=schema)
 
-        # User submitted the form: save options
+        # Save updated options back into config_entry.data
         return self.async_create_entry(title="", data=user_input)
