@@ -42,7 +42,7 @@ def async_setup_entry(
 
 class BaseSefirahSensor(SensorEntity):
     """Base class for Sefirah (Omer) sensors."""
-
+    _attr_should_poll = False
     def __init__(
         self,
         hass: HomeAssistant,
