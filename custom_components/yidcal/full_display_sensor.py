@@ -11,7 +11,8 @@ from homeassistant.helpers.event import async_track_time_interval
 class FullDisplaySensor(SensorEntity):
     """
     Combines day label Yiddish, parsha, holiday (from YOUR list via yidcal_holiday attrs),
-    R"Chodesh, and special Shabbos into one filtered string matching the original card formatting.
+    R"Chodesh, special Shabbos, and—if any other motzei sensor is ON—adds that as well.
+    It will *not* show motzei for 17 Tammuz (Shi’vah Usor b’Tammuz) or Tisha B’av.
     """
     _attr_name = "Full Display"
 
@@ -62,8 +63,8 @@ class FullDisplaySensor(SensorEntity):
         super().__init__()
         slug = "full_display"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"binary_sensor.yidcal_{slug}"
-    
+        self.entity_id = f"sensor.yidcal_{slug}"
+
         self.hass = hass
         self._state = ""
         async_track_time_interval(hass, self.async_update, timedelta(minutes=1))
@@ -110,4 +111,22 @@ class FullDisplaySensor(SensorEntity):
             if (wd == 4 and hr >= 13) or wd == 5:
                 text += f" ~ {special.state}"
 
+        # ─── 6) MOTZEI (show any motzei sensor that is ON, EXCLUDING 17 Tammuz and Tisha B'av) ───
+        # List all motzei entity_ids except the two you want to skip:
+        motzei_list = [
+            "binary_sensor.yidcal_motzei_yom_kippur",
+            "binary_sensor.yidcal_motzei_pesach",
+            "binary_sensor.yidcal_motzei_sukkos",
+            "binary_sensor.yidcal_motzei_shavuos",
+            "binary_sensor.yidcal_motzei_rosh_hashana",
+            # (skip: yidcal_motzei_shiva_usor_btammuz)
+            # (skip: yidcal_motzei_tisha_bav)
+        ]
+        for ent_id in motzei_list:
+            ent = self.hass.states.get(ent_id)
+            if ent and ent.state == "on":
+                # Use the friendly name of that binary_sensor
+                text += f" - {ent.name}"
+
         self._state = text
+        
