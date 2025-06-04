@@ -22,9 +22,13 @@ Subclasses must set:
   - _attr_unique_id: a unique_id such as "yidcal_motzei_yom_kippur"
 
 Logic for every “motzei” sensor:
-  1) If *today* is the holiday, motzei_start = today’s sunset + havdalah_offset.
-  2) Else if *yesterday* was the holiday, motzei_start = yesterday’s sunset + havdalah_offset.
-  3) The sensor remains ON from motzei_start until tomorrow at 02:00 local time.
+  1) If *today’s* Hebrew date == HOLIDAY_NAME, holiday_date = today.
+  2) Else if *yesterday’s* Hebrew date == HOLIDAY_NAME, holiday_date = yesterday.
+  3) Otherwise, no motzei (OFF).
+  4) If we have a holiday_date, then:
+       motzei_start = sunset(holiday_date) + havdalah_offset,
+       motzei_end   = (holiday_date + 1 day) at 02:00 local.
+       Sensor is ON if motzei_start ≤ now < motzei_end.
 """
 
 class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
@@ -89,11 +93,14 @@ class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
         """
         Every minute, decide if “motzei <holiday>” should be ON.
 
-        1) If today’s Hebrew date == self.HOLIDAY_NAME,
-           motzei_start = today’s sunset + havdalah_offset.
-        2) Else if yesterday’s Hebrew date == self.HOLIDAY_NAME,
-           motzei_start = yesterday’s sunset + havdalah_offset.
-        3) Sensor remains ON until *tomorrow* at 02:00 (local).
+        1) Determine holiday_date:
+             - If today's Hebrew date == HOLIDAY_NAME, holiday_date = today.
+             - Else if yesterday's Hebrew date == HOLIDAY_NAME, holiday_date = yesterday.
+             - Else no holiday_date → OFF.
+        2) If holiday_date is set:
+             motzei_start = sunset(holiday_date) + havdalah_offset
+             motzei_end   = (holiday_date + 1 day) at 02:00 local
+             ON if motzei_start ≤ now < motzei_end.
         """
         tz = ZoneInfo(self.hass.config.time_zone)
         now = now or datetime.datetime.now(tz)
@@ -107,35 +114,34 @@ class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
             longitude=self.hass.config.longitude,
         )
 
-        motzei_start: datetime.datetime | None = None
-
-        # 1) Compute today's Hebrew holiday name:
+        # 1) Check today's Hebrew date
+        holiday_date: datetime.date | None = None
         hd_today = PHebrewDate.from_pydate(today_date)
-        today_name = hd_today.holiday(hebrew=True, prefix_day=True)
-        if today_name == self.HOLIDAY_NAME:
-            # Today's sunset + havdalah_offset
-            z_today = sun(loc.observer, date=today_date, tzinfo=tz)
-            today_sunset = z_today["sunset"]
-            motzei_start = today_sunset + timedelta(minutes=self._havdalah_offset)
+        if hd_today.holiday(hebrew=True, prefix_day=True) == self.HOLIDAY_NAME:
+            holiday_date = today_date
         else:
-            # 2) Check yesterday’s Hebrew date
+            # 2) Check yesterday's Hebrew date
             yesterday_date = today_date - timedelta(days=1)
             hd_prev = PHebrewDate.from_pydate(yesterday_date)
-            prev_name = hd_prev.holiday(hebrew=True, prefix_day=True)
-            if prev_name == self.HOLIDAY_NAME:
-                z_prev = sun(loc.observer, date=yesterday_date, tzinfo=tz)
-                prev_sunset = z_prev["sunset"]
-                motzei_start = prev_sunset + timedelta(minutes=self._havdalah_offset)
+            if hd_prev.holiday(hebrew=True, prefix_day=True) == self.HOLIDAY_NAME:
+                holiday_date = yesterday_date
 
-        # 3) Compute cutoff at *tomorrow* 02:00 local time
-        tomorrow_date = today_date + timedelta(days=1)
-        tomorrow_two_am = datetime.datetime.combine(
-            tomorrow_date, time(hour=2, minute=0), tzinfo=tz
-        )
+        # 3) If we found a holiday_date, compute motzei window
+        if holiday_date:
+            # sunset on the holiday_date
+            z_hol = sun(loc.observer, date=holiday_date, tzinfo=tz)
+            sunset_hol = z_hol["sunset"]
+            motzei_start = sunset_hol + timedelta(minutes=self._havdalah_offset)
 
-        # ON if now ∈ [motzei_start, tomorrow_two_am)
-        self._state = bool(motzei_start and (motzei_start <= now < tomorrow_two_am))
+            # cutoff is holiday_date + 1 day at 02:00
+            next_day = holiday_date + timedelta(days=1)
+            motzei_end = datetime.datetime.combine(
+                next_day, time(hour=2, minute=0), tzinfo=tz
+            )
 
+            self._state = (motzei_start <= now < motzei_end)
+        else:
+            self._state = False
 
 #
 # ─── Subclasses: each “מוצאי <holiday>”──────────────────────────────────────────
