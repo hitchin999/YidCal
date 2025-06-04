@@ -10,6 +10,8 @@ from homeassistant.util import dt as dt_util
 
 from hdate.converters import gdate_to_jdn
 from hdate.hebrew_date import HebrewDate
+from zoneinfo import ZoneInfo
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -164,17 +166,25 @@ class SfirahHelper:
             return 44 + day
         return 0
 
+
     def get_effective_omer_day(self) -> int:
         """
-        Compute the final Omer day, bumping by one after sunset + user-defined Havdalah.
-        Returns an integer 0–49 (0 means before Omer).
+        Return the current Omer day (0‑49) based on the halachic day
+        (sunset + user‑defined Havdalah offset).
         """
-        today = dt_util.now().date()
-        raw = self._get_raw_omer_day(today)
-        # Use the new, configurable threshold
-        if dt_util.now() >= self._get_threshold(today):
-            raw += 1
-        return max(0, min(raw, len(SEFIRA_TEXTS) - 1))
+        now = dt_util.now().astimezone(ZoneInfo(self.time_zone))
+
+        # Before today's sunset + offset?  We're still in yesterday's halachic day.
+        if now < self._get_threshold(now.date()):
+            ref_date = now.date() - timedelta(days=1)
+        else:
+            ref_date = now.date()
+
+        # Map that halachic day to the Omer count (bounded 0‑49)
+        return max(0, min(self._get_raw_omer_day(ref_date), 49))
+
+
+
 
     def get_sefirah_text(self) -> str:
         """Return the Hebrew Omer text for the current day."""
