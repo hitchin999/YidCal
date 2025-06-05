@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime
 from datetime import timedelta, time
 from zoneinfo import ZoneInfo
+from .device import YidCalDevice
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -31,7 +32,7 @@ Logic for every “motzei” sensor:
        Sensor is ON if motzei_start ≤ now < motzei_end.
 """
 
-class MotzeiHolidaySensor(BinarySensorEntity, RestoreEntity):
+class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
     _attr_icon = "mdi:checkbox-marked-circle-outline"
 
     def __init__(
