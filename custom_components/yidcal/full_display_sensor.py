@@ -2,13 +2,14 @@ from __future__ import annotations
 import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
+from .device import YidCalDevice
 
 from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_interval
 
 
-class FullDisplaySensor(SensorEntity):
+class FullDisplaySensor(YidCalDevice, SensorEntity):
     """
     Combines day label Yiddish, parsha, holiday (from YOUR list via yidcal_holiday attrs),
     R"Chodesh, special Shabbos, and—if any other motzei sensor is ON—adds that as well.
