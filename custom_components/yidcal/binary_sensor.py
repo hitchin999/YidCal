@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.util import dt as dt_util
 from zoneinfo import ZoneInfo
+from .device import YidCalDevice
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -92,7 +93,7 @@ SLUG_OVERRIDES: dict[str, str] = {
 # ─── The fixed dynamic‐attribute binary sensor ────────────────────────────────
 
 
-class HolidayAttributeBinarySensor(RestoreEntity, BinarySensorEntity):
+class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """Mirrors one attribute from sensor.yidcalholiday, with restore-on-reboot."""
 
     def __init__(self, hass: HomeAssistant, attr_name: str) -> None:
@@ -146,7 +147,7 @@ class HolidayAttributeBinarySensor(RestoreEntity, BinarySensorEntity):
         self._attr_is_on = bool(src and src.attributes.get(self.attr_name, False))
 
 
-class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
+class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True on specific Erev‐days from alos ha-shachar until candle-lighting, with restore-on-reboot."""
 
     _attr_name = "Erev"
@@ -230,7 +231,7 @@ class ErevHolidaySensor(RestoreEntity, BinarySensorEntity):
         }
 
         
-class MeluchaProhibitionSensor(BinarySensorEntity):
+class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
 
     _attr_name = "Melucha Prohibition"
