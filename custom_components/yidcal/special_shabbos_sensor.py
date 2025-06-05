@@ -1,12 +1,13 @@
 #custom_components/yidcal/special_shabbos_sensor.py
 from homeassistant.components.sensor import SensorEntity
 from .yidcal_lib import specials
+from .device import YidCalDevice
 
 async def async_setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Special Shabbos sensor."""
     add_entities([SpecialShabbosSensor()], update_before_add=True)
 
-class SpecialShabbosSensor(SensorEntity):
+class SpecialShabbosSensor(YidCalDevice, SensorEntity):
     """Sensor that provides the upcoming special Shabbatot."""
     _attr_name = "Special Shabbos"
     _attr_icon = "mdi:calendar-star"  # icon for a special event
