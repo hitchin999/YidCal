@@ -2,6 +2,7 @@
 import logging
 import unicodedata
 from datetime import timedelta
+from .device import YidCalDevice
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.sensor import SensorEntity
@@ -40,7 +41,7 @@ def async_setup_entry(
     )
 
 
-class BaseSefirahSensor(SensorEntity):
+class BaseSefirahSensor(YidCalDevice, SensorEntity):
     """Base class for Sefirah (Omer) sensors."""
     _attr_should_poll = False
     def __init__(
