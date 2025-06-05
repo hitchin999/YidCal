@@ -75,7 +75,7 @@ ENG2HEB = {
 
 TIME_OF_DAY = {
     "am": lambda h: "פארטאגס" if h < 6 else "צופרי",
-    "pm": lambda h: "נאכמיטאג" if h < 18 else "ביינאכט",
+    "pm": lambda h: "נאכמיטאג" if h < 6 else "ביינאכט",
 }
 
 
