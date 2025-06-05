@@ -4,6 +4,7 @@ import logging
 import homeassistant.util.dt as dt_util
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+from .device import YidCalDevice
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -115,7 +116,7 @@ async def async_setup_entry(
 
 
 
-class MoladSensor(SensorEntity):
+class MoladSensor(YidCalDevice, SensorEntity):
     _attr_name = "Molad"
 
     def __init__(
@@ -264,7 +265,7 @@ class MoladSensor(SensorEntity):
         return "mdi:calendar-star"
 
 
-class DayLabelYiddishSensor(SensorEntity):
+class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
     """Sensor for standalone day label in Yiddish."""
 
     _attr_name = "Day Label Yiddish"
@@ -334,7 +335,7 @@ class DayLabelYiddishSensor(SensorEntity):
 
 
 
-class ShabbosMevorchimSensor(BinarySensorEntity):
+class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Shabbos Mevorchim"
 
     def __init__(
@@ -429,7 +430,7 @@ class ShabbosMevorchimSensor(BinarySensorEntity):
         return "mdi:star-outline"
 
 
-class UpcomingShabbosMevorchimSensor(BinarySensorEntity):
+class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Upcoming Shabbos Mevorchim"
     _attr_unique_id = "yidcal_upcoming_shabbos_mevorchim"
     _attr_entity_id = "binary_sensor.yidcal_upcoming_shabbos_mevorchim"
@@ -460,7 +461,7 @@ class UpcomingShabbosMevorchimSensor(BinarySensorEntity):
 
 
 
-class RoshChodeshToday(SensorEntity):
+class RoshChodeshToday(YidCalDevice, SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
 
     _attr_name = "Rosh Chodesh Today"
