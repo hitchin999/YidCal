@@ -14,6 +14,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from pyluach.hebrewcal import Year, HebrewDate as PHebrewDate
 from .yidcal_lib.helper import int_to_hebrew
+from .device import YidCalDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def get_hebrew_month_name(month: int, year: int) -> str:
     }.get(month, "")
 
 
-class DateSensor(RestoreEntity, SensorEntity):
+class DateSensor(YidCalDevice, RestoreEntity, SensorEntity):
     """Today’s Hebrew date. flips at sunset+havdalah only."""
 
     _attr_name = "Date"
