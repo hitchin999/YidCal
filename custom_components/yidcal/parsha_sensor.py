@@ -1,6 +1,7 @@
 # custom_components/yidcal/parsha_sensor.py
 from __future__ import annotations
 from datetime import date, timedelta
+from .device import YidCalDevice
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_interval
@@ -9,7 +10,7 @@ from pyluach import dates, parshios
 from datetime import timedelta as _timedelta  # to distinguish from pyluach.timedelta
 
 
-class ParshaSensor(SensorEntity):
+class ParshaSensor(YidCalDevice, SensorEntity):
     """Offline Parsha sensor using pyluach for weekly readings."""
 
     _attr_name = "Parsha"
