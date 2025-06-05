@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import date, timedelta
+from .device import YidCalDevice
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
@@ -12,7 +13,7 @@ import pyluach.dates as pdates
 from .yidcal_lib.helper import int_to_hebrew
 
 
-class PerekAvotSensor(SensorEntity):
+class PerekAvotSensor(YidCalDevice, SensorEntity):
     """Which פרק of Pirkei Avot is read each week (from Pesach until Sukkot)."""
 
     _attr_name = "Perek Avos"
