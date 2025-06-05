@@ -9,6 +9,7 @@ Binary sensor for "נישט הערן מוזיק":
 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from .device import YidCalDevice
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
@@ -16,7 +17,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from pyluach.hebrewcal import HebrewDate
 
 
-class NoMusicSensor(BinarySensorEntity):
+class NoMusicSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "No Music"
     _attr_icon = "mdi:music-off"
 
