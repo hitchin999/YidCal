@@ -10,6 +10,7 @@ import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 import logging
+from .device import YidCalDevice
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -26,7 +27,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 _LOGGER = logging.getLogger(__name__)
 
 
-class HolidaySensor(RestoreEntity, SensorEntity):
+class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     """
     Tracks Jewish holidays, fasts, and custom periods with time-aware logic.
     - Restores its last visible state on reboot
