@@ -28,11 +28,12 @@ class ParshaSensor(YidCalDevice, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Called when Home Assistant has fully started this entity."""
+        await super().async_added_to_hass()
         # Do an initial state calculation immediately:
         await self._update_state()
 
         # Then schedule a callback every minute so that any manual time jump is detected
-        async_track_time_interval(
+        self._register_interval(
             self.hass,
             self._handle_minute_tick,
             _timedelta(minutes=1),
