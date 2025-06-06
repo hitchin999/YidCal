@@ -137,16 +137,24 @@ class MoladSensor(YidCalDevice, SensorEntity):
         self._attr_native_value = None
         self._attr_extra_state_attributes: dict[str, any] = {}
 
-        # Schedule async_update() once per minute by calling _handle_minute_tick
-        async_track_time_interval(
-            hass,
-            self._handle_minute_tick,       # ← This must match the method name below
-            timedelta(minutes=1),
-        )
 
     async def _handle_minute_tick(self, now):
         """Called every minute by async_track_time_interval."""
         await self.async_update()
+        
+    async def async_added_to_hass(self) -> None:
+        """Register immediate update and once-per-minute polling."""
+        await super().async_added_to_hass()
+
+        # Immediate first update
+        await self.async_update()
+
+        # Schedule async_update() once per minute via base-class wrapper
+        self._register_interval(
+            self.hass,
+            self._handle_minute_tick,
+            timedelta(minutes=1),
+        )
 
     async def async_update(self, now=None) -> None:
         # ───────────────────────────────────────────────────────
@@ -284,7 +292,6 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         self._candle = candle_offset
         self._havdalah = havdalah_offset
         self._state: str | None = None
-        async_track_time_interval(hass, self.async_update, timedelta(hours=1))
 
     @property
     def native_value(self) -> str | None:
@@ -332,7 +339,20 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
 
     def update(self) -> None:
         self.hass.async_create_task(self.async_update())
+        
+    async def async_added_to_hass(self) -> None:
+        """Register immediate update and hourly polling."""
+        await super().async_added_to_hass()
 
+        # Initial state calculation
+        await self.async_update()
+
+        # Poll once every hour, with listener tracking
+        self._register_interval(
+            self.hass,
+            lambda now: self.hass.async_create_task(self.async_update()),
+            timedelta(hours=1),
+        )
 
 
 class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
@@ -364,26 +384,27 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         # 1) Immediate update on startup
         await self.async_update()
 
-        # 2) Hourly refresh (you can change to minutes=10 if needed)
-        async_track_time_interval(
+        # 2) Hourly refresh (register via base class)
+        self._register_interval(
             self.hass,
             lambda now: self.hass.async_create_task(self.async_update()),
             timedelta(hours=1),
         )
 
         # 3a) “Sunset – candle_offset” → start of Mevorchim window
-        async_track_sunset(
+        self._register_sunset(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            lambda: self.hass.async_create_task(self.async_update()),
             offset=timedelta(minutes=-self._candle_offset),
         )
 
         # 3b) “Sunset + havdalah_offset” → end of Mevorchim window
-        async_track_sunset(
+        self._register_sunset(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            lambda: self.hass.async_create_task(self.async_update()),
             offset=timedelta(minutes=self._havdalah_offset),
         )
+
 
     async def async_update(self, now: datetime | None = None) -> None:
         """Recompute is_on.  Only turn on if:
@@ -443,7 +464,6 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self.hass = hass
         self.helper = helper
         self._attr_is_on = False
-        async_track_time_interval(hass, self.async_update, timedelta(hours=1))
 
     async def async_update(self, now=None) -> None:
         try:
@@ -459,7 +479,19 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     def icon(self) -> str:
         return "mdi:star-outline"
 
+    async def async_added_to_hass(self) -> None:
+        """Register initial update and once-per-hour polling."""
+        await super().async_added_to_hass()
 
+        # Initial state calculation
+        await self.async_update()
+
+        # Poll every hour by scheduling the coroutine (wrap in lambda)
+        self._register_interval(
+            self.hass,
+            lambda now: self.hass.async_create_task(self.async_update()),
+            timedelta(hours=1),
+        )
 
 class RoshChodeshToday(YidCalDevice, SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
@@ -487,21 +519,24 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
         await self.async_update()
 
         # Hourly refresh (runs on the event loop, so safe)
-        async_track_time_interval(
+        self._register_interval(
             self.hass,
             lambda now: self.hass.async_create_task(self.async_update()),
             timedelta(hours=1),
         )
 
         # Anytime the main molad sensor changes — use the thread-safe scheduler
-        async_track_state_change_event(
+        unsub_state = async_track_state_change_event(
             self.hass,
             "sensor.yidcal_molad",
-            lambda _event: self.schedule_update_ha_state(),
+            lambda _event: self.hass.loop.call_soon_threadsafe(
+                self.async_schedule_update_ha_state
+            ),
         )
+        self._register_listener(unsub_state)
 
         # Sunset + havdalah offset (also safe via create_task)
-        async_track_sunset(
+        self._register_sunset(
             self.hass,
             lambda now: self.hass.async_create_task(self.async_update()),
             offset=timedelta(minutes=self._havdalah_offset),
