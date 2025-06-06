@@ -23,7 +23,7 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         super().__init__()
         slug = "perek_avot"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"binary_sensor.yidcal_{slug}"
+        self.entity_id       = f"sensor.yidcal_{slug}"
         self.hass = hass
         self._attr_native_value = "נישט אין די צייט פון פרקי אבות"
 
@@ -47,12 +47,13 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         )
         self._register_listener(unsub_midnight)
 
-        # 3) Schedule the periodic update every hour via base-class wrapper
-        self._register_interval(
+        # 3) Schedule a periodic update every hour, ON THE EVENT LOOP
+        unsub_hourly = async_track_time_interval(
             self.hass,
-            lambda now: self._update_state(),
+            self._update_state,            # pass the coroutine directly
             timedelta(hours=1),
         )
+        self._register_listener(unsub_hourly)
 
     async def _update_state(self) -> None:
         """Compute which Pirkei Avot chapter should be the sensor state today."""
