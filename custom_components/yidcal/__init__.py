@@ -8,18 +8,35 @@ from .const import DOMAIN
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
+# Default offsets (minutes)
+DEFAULT_CANDLELIGHT_OFFSET = 15
+DEFAULT_HAVDALAH_OFFSET = 72
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up YidCal from a config entry."""
     # Listen for option updates
     entry.add_update_listener(_async_update_options)
 
-    # Store user options in hass.data for sensor use
+    # Merge entry.data (initial install) with entry.options (subsequent edits)
+    initial = entry.data or {}
+    opts = entry.options or {}
+
+    strip = opts.get("strip_nikud", initial.get("strip_nikud", False))
+    candle = opts.get(
+        "candlelighting_offset",
+        initial.get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET),
+    )
+    havd = opts.get(
+        "havdalah_offset", initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)
+    )
+
+    # Store the merged values for sensor use
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
-        "strip_nikud": entry.options.get("strip_nikud", False),
-        "candlelighting_offset": entry.options.get("candlelighting_offset", 15),
-        "havdalah_offset": entry.options.get("havdalah_offset", 72),
+        "strip_nikud": strip,
+        "candlelighting_offset": candle,
+        "havdalah_offset": havd,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -28,18 +45,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Called when config entry options are updated."""
-    # Update stored options
+    initial = entry.data or {}
+    opts = entry.options or {}
+
+    strip = opts.get("strip_nikud", initial.get("strip_nikud", False))
+    candle = opts.get(
+        "candlelighting_offset",
+        initial.get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET),
+    )
+    havd = opts.get(
+        "havdalah_offset", initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
-        "strip_nikud": entry.options.get("strip_nikud", False),
-        "candlelighting_offset": entry.options.get("candlelighting_offset", 15),
-        "havdalah_offset": entry.options.get("havdalah_offset", 72),
+        "strip_nikud": strip,
+        "candlelighting_offset": candle,
+        "havdalah_offset": havd,
     }
-    # Reload the integration to apply new options
-    await hass.config_entries.async_reload(entry.entry_id)
+
+    # We no longer reload the entire integration here.
+    # Each sensor will automatically pick up the new offsets on its next update.
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    # Remove stored data
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
