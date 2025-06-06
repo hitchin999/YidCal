@@ -33,12 +33,18 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
         self._candle = candle
         self._havdalah = havdalah
 
-        # Hourly updates keep the state fresh without spamming
-        async_track_time_interval(hass, self.async_update, timedelta(hours=1))
-
     async def async_added_to_hass(self) -> None:
         self._added = True
         await self.async_update()
+        self._added = True
+        await self.async_update()
+
+        # Hourly updates keep the state fresh without spamming (register via base class)
+        self._register_interval(
+            self.hass,
+            self.async_update,
+            timedelta(hours=1),
+        )
 
     async def async_update(self, now=None) -> None:
         tz = ZoneInfo(self.hass.config.time_zone)
