@@ -66,17 +66,19 @@ class DateSensor(YidCalDevice, RestoreEntity, SensorEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        # 1) restore previous state
+        """Restore previous state, compute initial value, and schedule daily update."""
         await super().async_added_to_hass()
+
+        # 1) Restore previous state
         last = await self.async_get_last_state()
         if last:
             self._state = last.state
 
-        # 2) immediate first calculation
+        # 2) Immediate first calculation
         await self._update_state()
 
-        # 3) schedule daily sunset+offset update
-        async_track_sunset(
+        # 3) Schedule daily sunset+offset update using base-class wrapper
+        self._register_sunset(
             self.hass,
             self._schedule_update,
             offset=self._havdalah_offset,
