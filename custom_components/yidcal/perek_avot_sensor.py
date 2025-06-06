@@ -28,6 +28,8 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         self._attr_native_value = "נישט אין די צייט פון פרקי אבות"
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
         # 1) Do an immediate population
         await self._update_state()
 
@@ -35,23 +37,20 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         async def _midnight_update(now):
             await self._update_state()
 
-        # 3) Define a coroutine listener for periodic backups
-        async def _periodic_update(now):
-            await self._update_state()
-
-        # 4) Schedule the midnight update at 00:00:05 every day
-        async_track_time_change(
+        # Schedule the midnight update at 00:00:05 every day, store unsubscribe
+        unsub_midnight = async_track_time_change(
             self.hass,
             _midnight_update,
             hour=0,
             minute=0,
             second=5,
         )
+        self._register_listener(unsub_midnight)
 
-        # 5) Schedule the periodic update every hour
-        async_track_time_interval(
+        # 3) Schedule the periodic update every hour via base-class wrapper
+        self._register_interval(
             self.hass,
-            _periodic_update,
+            lambda now: self._update_state(),
             timedelta(hours=1),
         )
 
