@@ -1,24 +1,23 @@
 # /config/custom_components/yidcal/__init__.py
-"""Yiddish Calendar integration."""
+from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_call_later
+import logging
 
 from .const import DOMAIN
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+_LOGGER = logging.getLogger(__name__)
 
-# Default offsets (minutes)
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up YidCal from a config entry."""
-    # Listen for option updates
     entry.add_update_listener(_async_update_options)
 
-    # Merge entry.data (initial install) with entry.options (subsequent edits)
     initial = entry.data or {}
     opts = entry.options or {}
 
@@ -31,7 +30,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "havdalah_offset", initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)
     )
 
-    # Store the merged values for sensor use
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "strip_nikud": strip,
@@ -44,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Called when config entry options are updated."""
+    """Called when the user hits Submit on the Options page."""
     initial = entry.data or {}
     opts = entry.options or {}
 
@@ -57,14 +55,29 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         "havdalah_offset", initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)
     )
 
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "strip_nikud": strip,
         "candlelighting_offset": candle,
         "havdalah_offset": havd,
     }
 
-    # We no longer reload the entire integration here.
-    # Each sensor will automatically pick up the new offsets on its next update.
+    # Schedule the reload one second later, but ensure the reload itself
+    # is called on the event loop via hass.loop.call_soon_threadsafe(...)
+    async_call_later(
+        hass,
+        1,
+        lambda now: _delayed_reload(hass, entry.entry_id),
+    )
+
+
+def _delayed_reload(hass: HomeAssistant, entry_id: str) -> None:
+    """Helper for async_call_later: switch back to the event loop and reload."""
+    _LOGGER.debug("YidCal: scheduling reload of entry %s", entry_id)
+    # Use call_soon_threadsafe so we’re back on HA’s main loop before creating the task
+    hass.loop.call_soon_threadsafe(
+        lambda: hass.async_create_task(hass.config_entries.async_reload(entry_id))
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
