@@ -94,13 +94,14 @@ SLUG_OVERRIDES: dict[str, str] = {
 
 
 class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
-    """Mirrors one attribute from sensor.yidcalholiday, with restore-on-reboot."""
+    """Mirrors one attribute from sensor.yidcal_holiday, with restore-on-reboot."""
 
     def __init__(self, hass: HomeAssistant, attr_name: str) -> None:
         super().__init__()
         self.hass = hass
         self.attr_name = attr_name
-        # display info
+
+        # Display info
         self._attr_name = f"{attr_name}"
         slug = SLUG_OVERRIDES.get(attr_name) or (
             attr_name.lower().replace(" ", "_")
@@ -118,31 +119,35 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
         )
 
     async def async_added_to_hass(self) -> None:
-        # 1) restore last known state
+        """Restore, do an initial update, and register listeners."""
         await super().async_added_to_hass()
+
+        # 1) Restore last known state
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
 
-        # 2) one immediate sync if source exists
+        # 2) One immediate update if source exists
         if self.hass.states.get("sensor.yidcal_holiday"):
             await self.async_update()
 
-        # 3a) update on attribute change events
-        async_track_state_change_event(
+        # 3a) Update on attribute-change events (store unsubscribe)
+        unsub_state = async_track_state_change_event(
             self.hass,
             "sensor.yidcal_holiday",
             self._schedule_update,
         )
+        self._register_listener(unsub_state)
 
-        # 3b) poll once a minute
-        async_track_time_interval(
+        # 3b) Poll once a minute (use base-class wrapper so unsubscribe is saved)
+        self._register_interval(
             self.hass,
             self._schedule_update,
             timedelta(minutes=1),
         )
 
     async def async_update(self, now=None) -> None:
+        """Fetch the latest binary state from sensor.yidcal_holiday's attributes."""
         src = self.hass.states.get("sensor.yidcal_holiday")
         self._attr_is_on = bool(src and src.attributes.get(self.attr_name, False))
 
@@ -168,7 +173,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         super().__init__()
         slug = "erev"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"binary_sensor.yidcal_{slug}"
+        self.entity_id = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self._candle = candle_offset
         self._tz = ZoneInfo(hass.config.time_zone)
@@ -177,7 +182,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             longitude=hass.config.longitude,
             timezone=hass.config.time_zone,
         )
-        self._attr_extra_state_attributes: dict[str, any] = {}
+        self._attr_extra_state_attributes: dict[str, str] = {}
 
     def _schedule_update(self, *_args) -> None:
         """Thread-safe scheduling of async_update on the event loop."""
@@ -186,23 +191,26 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        # 1) restore last known state
+        """Restore previous state, do an initial update, and register a once-per-minute poll."""
         await super().async_added_to_hass()
+
+        # 1) Restore last known state
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
 
-        # 2) immediate first update
+        # 2) Immediate first update
         await self.async_update()
 
-        # 3) poll every minute safely
-        async_track_time_interval(
+        # 3) Poll every minute (use base-class wrapper so unsubscribe is saved)
+        self._register_interval(
             self.hass,
             self._schedule_update,
             timedelta(minutes=1),
         )
 
     async def async_update(self, now: datetime | None = None) -> None:
+        """Compute whether we are currently in an Erev window."""
         now = (now or datetime.now(self._tz)).astimezone(self._tz)
         today = now.date()
 
@@ -241,7 +249,7 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
         super().__init__()
         slug = "melucha"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"binary_sensor.yidcal_{slug}"   
+        self.entity_id = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self._diaspora = True
         self._candle = candle_offset
@@ -252,14 +260,24 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
             longitude=hass.config.longitude,
             timezone=hass.config.time_zone,
         )
-        self._attr_extra_state_attributes = {}
+        self._attr_extra_state_attributes: dict[str, str] = {}
 
     async def async_added_to_hass(self) -> None:
-        # immediate update + poll every minute
-        await self.async_update()
-        async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
+        """Register immediate update and once-per-minute polling."""
+        await super().async_added_to_hass()
 
-    async def async_update(self, now=None) -> None:
+        # Immediate update
+        await self.async_update()
+
+        # Poll every minute (use base-class wrapper to store unsubscribe)
+        self._register_interval(
+            self.hass,
+            self.async_update,
+            timedelta(minutes=1),
+        )
+
+    async def async_update(self, now: datetime | None = None) -> None:
+        """Compute whether melucha is prohibited (Shabbos/Yom Tov window)."""
         # 1) get correct current time in local tz
         now = dt_util.now().astimezone(self._tz)
         today = now.date()
@@ -305,36 +323,35 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
         else:
             eve_date = start_date
 
-        # sunset on that eve/friday and on the final day
-        s_eve   = sun(self._loc.observer, date=eve_date,   tzinfo=self._tz)["sunset"]
-        s_final = sun(self._loc.observer, date=end_date,   tzinfo=self._tz)["sunset"]
+        # sunrise/sunset for eve and final day
+        s_eve = sun(self._loc.observer, date=eve_date, tzinfo=self._tz)["sunset"]
+        s_final = sun(self._loc.observer, date=end_date, tzinfo=self._tz)["sunset"]
 
-        window_start = s_eve   - timedelta(minutes=self._candle)
-        window_end   = s_final + timedelta(minutes=self._havdalah)
-        in_window    = window_start <= now < window_end
-        
+        window_start = s_eve - timedelta(minutes=self._candle)
+        window_end = s_final + timedelta(minutes=self._havdalah)
+        in_window = window_start <= now < window_end
+
         # only show “Shabbos” when we’re actually in that Fri→Sat window
         if festival_name == "Shabbos" and not in_window:
             festival_name = None
 
-
-
         # 6) set state & attributes
         self._attr_is_on = in_window
         self._attr_extra_state_attributes = {
-            "now":            now.isoformat(),
-            "today":          str(today),
-            "check_date":     str(check_date),
-            "festival_name":  festival_name,
-            "is_yomtov":      is_yomtov,
+            "now": now.isoformat(),
+            "today": str(today),
+            "check_date": str(check_date),
+            "festival_name": festival_name,
+            "is_yomtov": is_yomtov,
             "is_shabbos": (festival_name == "Shabbos" and in_window),
-            "candle_eve":     eve_date.isoformat(),
-            "sunset_eve":     s_eve.isoformat(),
-            "sunset_final":   s_final.isoformat(),
-            "window_start":   window_start.isoformat(),
-            "window_end":     window_end.isoformat(),
-            "in_window":      in_window,
+            "candle_eve": eve_date.isoformat(),
+            "sunset_eve": s_eve.isoformat(),
+            "sunset_final": s_final.isoformat(),
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "in_window": in_window,
         }
+
 
 
 async def async_setup_entry(
