@@ -92,19 +92,24 @@ class BaseSefirahSensor(YidCalDevice, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register for sunset event when added to Home Assistant."""
+        await super().async_added_to_hass()
+
         # Trigger initial load
         self.async_schedule_update_ha_state()
 
         def _on_sunset(event):
             self._schedule_after_sunset()
 
-        self._unsub_sunset = self.hass.bus.async_listen("sunset", _on_sunset)
+        unsub = self.hass.bus.async_listen("sunset", _on_sunset)
+        self._register_listener(unsub)
 
     async def async_will_remove_from_hass(self) -> None:
         """Cleanup the listener when removed from Home Assistant."""
         if self._unsub_sunset:
             self._unsub_sunset()
 
+        # Let base class cancel any other listeners
+        await super().async_will_remove_from_hass()
 
 class SefirahCounter(BaseSefirahSensor):
     """Sensor for the Sefirah count in text."""
