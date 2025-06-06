@@ -61,9 +61,6 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
         self._havdalah_offset = havdalah_offset
         self._state: bool = False
 
-        # Update every minute
-        async_track_time_interval(hass, self.async_update, timedelta(minutes=1))
-
     @property
     def entity_id(self) -> str:
         """Return the exact entity_id, ignoring any slugification attempts."""
@@ -85,6 +82,13 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
         last = await self.async_get_last_state()
         if last and last.state in ("on", "off"):
             self._state = (last.state == "on")
+            
+        # Poll every minute (register via base class so unsubscribe is stored)
+        self._register_interval(
+            self.hass,
+            self.async_update,
+            timedelta(minutes=1),
+        )
 
     @property
     def is_on(self) -> bool:
