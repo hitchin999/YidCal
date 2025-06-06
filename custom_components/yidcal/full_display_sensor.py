@@ -68,7 +68,20 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
 
         self.hass = hass
         self._state = ""
-        async_track_time_interval(hass, self.async_update, timedelta(minutes=1))
+
+    async def async_added_to_hass(self) -> None:
+        """Register initial update and start once-per-minute polling."""
+        await super().async_added_to_hass()
+
+        # Initial state calculation
+        await self.async_update()
+
+        # Poll every minute (use base-class wrapper to store unsubscribe)
+        self._register_interval(
+            self.hass,
+            self.async_update,
+            timedelta(minutes=1),
+        )
 
     @property
     def native_value(self) -> str:
