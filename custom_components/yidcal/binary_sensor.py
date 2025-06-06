@@ -346,7 +346,7 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
             "is_shabbos": (festival_name == "Shabbos" and in_window),
             "candle_eve": eve_date.isoformat(),
             "sunset_eve": s_eve.isoformat(),
-            "sunset_final": s_final.isoformat(),
+            #"sunset_final": s_final.isoformat(),
             "window_start": window_start.isoformat(),
             "window_end": window_end.isoformat(),
             "in_window": in_window,
