@@ -153,9 +153,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Hebrew names
         set_language("he")
 
-        # schedule minute‐interval updates
-        async_track_time_interval(hass, self.async_update, timedelta(minutes=1))
-
     async def async_added_to_hass(self) -> None:
         # Restore last state/attributes on startup
         await super().async_added_to_hass()
@@ -164,6 +161,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             self._attr_native_value = last.state or ""
             self._attr_extra_state_attributes = dict(last.attributes)
 
+        # schedule minute‐interval updates via base‐class wrapper
+        self._register_interval(
+            self.hass,
+            self.async_update,
+            timedelta(minutes=1),
+        )
+        
     @property
     def native_value(self) -> str:
         return self._attr_native_value
