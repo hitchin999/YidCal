@@ -337,20 +337,17 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
 
         self._state = lbl
 
-    def update(self) -> None:
-        self.hass.async_create_task(self.async_update())
-        
     async def async_added_to_hass(self) -> None:
-        """Register immediate update and hourly polling."""
+        """Register initial update and hourly polling via async_track_time_interval."""
         await super().async_added_to_hass()
 
-        # Initial state calculation
+        # 1) Initial state calculation
         await self.async_update()
 
-        # Poll once every hour, with listener tracking
-        self._register_interval(
+        # 2) Poll once every hour on the event loop
+        async_track_time_interval(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             timedelta(hours=1),
         )
 
@@ -378,44 +375,40 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self._attr_is_on = False
 
     async def async_added_to_hass(self) -> None:
-        """Register all of our update triggers."""
+        """Register update triggers (hourly + sunset offsets)."""
         await super().async_added_to_hass()
 
         # 1) Immediate update on startup
         await self.async_update()
 
-        # 2) Hourly refresh (register via base class)
-        self._register_interval(
+        # 2) Hourly refresh (on event loop)
+        async_track_time_interval(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             timedelta(hours=1),
         )
 
-        # 3a) “Sunset – candle_offset” → start of Mevorchim window
-        self._register_sunset(
+        # 3a) Sunset – candle_offset (on event loop)
+        async_track_sunset(
             self.hass,
-            lambda: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             offset=timedelta(minutes=-self._candle_offset),
         )
 
-        # 3b) “Sunset + havdalah_offset” → end of Mevorchim window
-        self._register_sunset(
+        # 3b) Sunset + havdalah_offset (on event loop)
+        async_track_sunset(
             self.hass,
-            lambda: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
         )
 
-
     async def async_update(self, now: datetime | None = None) -> None:
-        """Recompute is_on.  Only turn on if:
-           1) Today is Friday, and tomorrow is Mevorchim, and
-           2) current time ∈ [sunset–candle_offset, sunset+havdalah_offset).
-        """
+        """Recompute is_on. Only true if Friday→tomorrow is Mevorchim and now ∈ […]"""
         try:
             tz = ZoneInfo(self.hass.config.time_zone)
             today_date = date.today()
 
-            # ─── Guard: Must be Friday *and* tomorrow must be Mevorchim‐Saturday ───
+            # ─── Guard: Must be Friday and tomorrow must be Mevorchim‐Saturday ───
             if (
                 today_date.weekday() != 4
                 or not self.helper.is_shabbos_mevorchim(today_date + timedelta(days=1))
@@ -431,9 +424,7 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             s = sun(loc.observer, date=today_date, tzinfo=tz)
             sunset = s["sunset"]
 
-            # Candle-lighting is BEFORE sunset
             on_time = sunset - timedelta(minutes=self._candle_offset)
-            # Havdalah is AFTER sunset
             off_time = sunset + timedelta(minutes=self._havdalah_offset)
 
             now_local = datetime.now(tz)
@@ -442,9 +433,6 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         except Exception as e:
             _LOGGER.error("ShabbosMevorchim failed: %s", e)
             self._attr_is_on = False
-
-    def update(self) -> None:
-        self.hass.async_create_task(self.async_update())
 
     @property
     def icon(self) -> str:
@@ -472,24 +460,20 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             _LOGGER.error("Upcoming Shabbos Mevorchim failed: %s", e)
             self._attr_is_on = False
 
-    def update(self) -> None:
-        self.hass.async_create_task(self.async_update())
-
     @property
     def icon(self) -> str:
         return "mdi:star-outline"
 
     async def async_added_to_hass(self) -> None:
-        """Register initial update and once-per-hour polling."""
         await super().async_added_to_hass()
 
-        # Initial state calculation
+        # 1) Initial state
         await self.async_update()
 
-        # Poll every hour by scheduling the coroutine (wrap in lambda)
-        self._register_interval(
+        # 2) Poll every hour on the event loop
+        async_track_time_interval(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             timedelta(hours=1),
         )
 
@@ -515,32 +499,33 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
-        # Immediate update
+        # 1) Immediate update
         await self.async_update()
 
-        # Hourly refresh (runs on the event loop, so safe)
-        self._register_interval(
+        # 2) Hourly refresh on event loop
+        async_track_time_interval(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             timedelta(hours=1),
         )
 
-        # Anytime the main molad sensor changes — use the thread-safe scheduler
-        unsub_state = async_track_state_change_event(
+        # 3) Anytime "sensor.yidcal_molad" changes, run async_update() on the event loop
+        async_track_state_change_event(
             self.hass,
-            "sensor.yidcal_molad",
-            lambda _event: self.hass.loop.call_soon_threadsafe(
-                self.async_schedule_update_ha_state
-            ),
+            ["sensor.yidcal_molad"],
+            self._handle_molad_change,  # see below
         )
-        self._register_listener(unsub_state)
 
-        # Sunset + havdalah offset (also safe via create_task)
-        self._register_sunset(
+        # 4) Sunset + havdalah offset (on event loop)
+        async_track_sunset(
             self.hass,
-            lambda now: self.hass.async_create_task(self.async_update()),
+            self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
         )
+        
+    async def _handle_molad_change(self, event) -> None:
+        """Called when the Molad sensor’s state changes—just re‐run async_update."""
+        await self.async_update()
 
     # ──────────────────────────────
     # Core calculation
