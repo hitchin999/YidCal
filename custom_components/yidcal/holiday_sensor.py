@@ -396,8 +396,14 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_py.month == 6 and 21 <= hd_py.day <= 26 and weekday == 6:
             attrs["א׳ סליחות"] = True
         # תשעה באב נדחה: 10 Av on Sunday (month 5)
-        if hd_py.month == 5 and hd_py.day == 10 and weekday == 6:
-            attrs["תשעה באב נדחה"] = True
+        if hd_py.month == 5 and hd_py.day == 10:
+            # build a HebrewDate for 9 Av of this Hebrew year
+            nine_av = PHebrewDate(hd_py.year, 5, 9)
+            # convert to a Python date and check its weekday
+            nine_av_greg = nine_av.to_pydate()  
+            # Python: Monday=0 … Saturday=5, Sunday=6
+            if nine_av_greg.weekday() == 5:
+                attrs["תשעה באב נדחה"] = True
             
         # Base six-parsha Shovavim
         shov_base = ["SHEMOT","VAERA","BO","BESHALACH","YITRO","MISHPATIM"]
