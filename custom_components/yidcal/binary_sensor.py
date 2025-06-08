@@ -21,6 +21,8 @@ from .device import YidCalDevice
 from astral import LocationInfo
 from astral.sun import sun
 from hdate import HDateInfo
+from hdate.translator import set_language
+set_language("he")
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
@@ -239,7 +241,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         }
 
         
-class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
+class MeluchaProhibitionSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
 
     _attr_name = "Melucha Prohibition"
@@ -301,7 +303,9 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
             end_date = check_date
             while HDateInfo(end_date + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
                 end_date += timedelta(days=1)
-            festival_name = HDateInfo(start_date, diaspora=self._diaspora).holidays[0].name
+            info = HDateInfo(start_date, diaspora=self._diaspora)
+            holiday = info.holidays[0]
+            festival_name = str(holiday)
         else:
             # Shabbos as two-day festival (Fri→Sat)
             wd = today.weekday()  # Mon=0…Fri=4,Sat=5
@@ -313,7 +317,7 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
                 days_to_friday = (4 - wd) % 7
                 start_date = today + timedelta(days=days_to_friday)
             end_date = start_date + timedelta(days=1)
-            festival_name = "Shabbos"
+            festival_name = "שבת"
 
         # 5) compute the candle window:
         #    - for multi-day Yom Tov, use the eve *before* the first day
@@ -332,20 +336,24 @@ class MeluchaProhibitionSensor(YidCalDevice, BinarySensorEntity):
         in_window = window_start <= now < window_end
 
         # only show “Shabbos” when we’re actually in that Fri→Sat window
-        if festival_name == "Shabbos" and not in_window:
+        if festival_name == "שבת" and not in_window:
             festival_name = None
 
         # 6) set state & attributes
         self._attr_is_on = in_window
+        erev = self.hass.states.get("binary_sensor.yidcal_erev")
+        erev_attrs = erev.attributes if erev else {}
         self._attr_extra_state_attributes = {
             "now": now.isoformat(),
-            "today": str(today),
-            "check_date": str(check_date),
+            #"today": str(today),
+            #"check_date": str(check_date),
             "festival_name": festival_name,
+            "is_erev_holiday": erev_attrs.get("is_erev_holiday", False),
+            "is_erev_shabbos": erev_attrs.get("is_erev_shabbos", False),
             "is_yomtov": is_yomtov,
-            "is_shabbos": (festival_name == "Shabbos" and in_window),
-            "candle_eve": eve_date.isoformat(),
-            "sunset_eve": s_eve.isoformat(),
+            "is_shabbos": (festival_name == "שבת" and in_window),
+            #"candle_eve": eve_date.isoformat(),
+            #"sunset_eve": s_eve.isoformat(),
             #"sunset_final": s_final.isoformat(),
             "window_start": window_start.isoformat(),
             "window_end": window_end.isoformat(),
