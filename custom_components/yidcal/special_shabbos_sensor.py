@@ -15,22 +15,46 @@ class SpecialShabbosSensor(YidCalDevice, SensorEntity):
 
     _attr_name = "Special Shabbos"
     _attr_icon = "mdi:calendar-star"
+    # fixed list of all possible special-Shabbos events
+    POSSIBLE_EVENTS = [
+        "שבת שקלים",
+        "שבת זכור",
+        "שבת החודש",
+        "שבת פרה",
+        "שבת הגדול",
+        "שבת שובה",
+        "שבת חזון",
+        "שבת נחמו",
+        "שבת חזק",
+        "פורים משולש",
+    ]
 
     def __init__(self):
         super().__init__()
         slug = "special_shabbos"
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"sensor.yidcal_{slug}"
-        self._state = None
+        # internal state string
+        self._state: str = ""
+        # expose one boolean attribute per possible event
+        self._attr_extra_state_attributes: dict[str, bool] = {}
 
     @property
-    def state(self):
-        """Return the state of the sensor (Hebrew string of special Shabbatot)."""
+    def state(self) -> str:
         return self._state
 
     async def async_update(self, now: datetime | None = None) -> None:
-        """Recompute the sensor state once per update call."""
+        """Recompute the sensor state and attributes."""
         try:
-            self._state = specials.get_special_shabbos_name()
+            raw = specials.get_special_shabbos_name()
         except Exception:
-            self._state = ""
+            raw = ""
+
+        # split the raw hyphen-joined string into individual events
+        events = raw.split("־") if raw else []
+        # update the sensor state
+        self._state = raw
+        # build attributes: True if the event is in the upcoming list
+        self._attr_extra_state_attributes = {
+            ev: (ev in events) for ev in self.POSSIBLE_EVENTS
+        }
