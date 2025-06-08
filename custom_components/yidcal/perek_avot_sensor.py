@@ -4,10 +4,7 @@ from .device import YidCalDevice
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import (
-    async_track_time_interval,
-    async_track_time_change,
-)
+from homeassistant.helpers.event import async_track_time_change
 
 import pyluach.dates as pdates
 from .yidcal_lib.helper import int_to_hebrew
@@ -23,41 +20,48 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         super().__init__()
         slug = "perek_avot"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"sensor.yidcal_{slug}"
+        self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         self._attr_native_value = "נישט אין די צייט פון פרקי אבות"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
-        # 1) Do an immediate population
+        # 1) Immediate population
         await self._update_state()
 
-        # 2) Define a coroutine listener for midnight updates
-        async def _midnight_update(now):
-            await self._update_state()
+        # 2) DAILY at 00:00:05 → guard inside callback so it only updates on Sunday
+        async def _midnight_cb(now):
+            # Python: Monday=0 … Sunday=6
+            if now.weekday() == 6:
+                await self._update_state(now)
 
-        # Schedule the midnight update at 00:00:05 every day, store unsubscribe
         unsub_midnight = async_track_time_change(
             self.hass,
-            _midnight_update,
-            hour=0,
-            minute=0,
-            second=5,
+            _midnight_cb,
+            hour=0, minute=0, second=5,
         )
         self._register_listener(unsub_midnight)
 
-        # 3) Schedule a periodic update every hour, ON THE EVENT LOOP
-        unsub_hourly = async_track_time_interval(
-            self.hass,
-            self._update_state,            # pass the coroutine directly
-            timedelta(hours=1),
-        )
-        self._register_listener(unsub_hourly)
+        # 3) DEBUG: every minute at HH:MM:00 so you can observe the flip in your simulator
+        async def _minute_cb(now):
+            await self._update_state(now)
 
-    async def _update_state(self) -> None:
+        unsub_minute = async_track_time_change(
+            self.hass,
+            _minute_cb,
+            second=0,
+        )
+        self._register_listener(unsub_minute)
+
+    async def _update_state(self, now=None) -> None:
         """Compute which Pirkei Avot chapter should be the sensor state today."""
         today_py = date.today()
+
+        # Anchor to the most recent Sunday (Mon=0 … Sun=6)
+        days_since_sunday = (today_py.weekday() - 6) % 7
+        week_start = today_py - timedelta(days=days_since_sunday)
+
         today_hd = pdates.HebrewDate.from_pydate(today_py)
 
         # 1) Pesach – 15 ניסן of this Hebrew year
@@ -72,14 +76,13 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         sukkot_hd = pdates.HebrewDate(today_hd.year + 1, 7, 15)
         sukkot_py = sukkot_hd.to_pydate()
 
-        # 4) If today is between those two, cycle chapters 1–6
-        if first_shabbat <= today_py <= sukkot_py:
-            weeks_since = ((today_py - first_shabbat).days // 7) + 1
+        # 4) If this week’s Sunday is in the Pesach–Sukkot window, compute chapter
+        if first_shabbat <= week_start <= sukkot_py:
+            weeks_since = ((week_start - first_shabbat).days // 7) + 1
             chap = ((weeks_since - 1) % 6) + 1
             state = f"פרק {int_to_hebrew(chap)}"
         else:
             state = "נישט אין די צייט פון פרקי אבות"
 
         self._attr_native_value = state
-        # Write the updated state back to HA
         self.async_write_ha_state()
