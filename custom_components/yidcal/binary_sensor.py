@@ -1,4 +1,4 @@
-# /config/custom_components/yidcal/binary_sensor.py
+#/config/custom_components/yidcal/binary_sensor.py
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
