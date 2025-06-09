@@ -78,6 +78,10 @@ SLUG_OVERRIDES: dict[str, str] = {
     "פסח א׳":               "pesach_1",
     "פסח ב׳":               "pesach_2",
     "פסח א׳ וב׳":           "pesach_1_2",
+    "א׳ דחול המועד פסח":      "chol_hamoed_pesach_1",
+    "ב׳ דחול המועד פסח":      "chol_hamoed_pesach_2",
+    "ג׳ דחול המועד פסח":      "chol_hamoed_pesach_3",
+    "ד׳ דחול המועד פסח":      "chol_hamoed_pesach_4",
     "חול המועד פסח":        "chol_hamoed_pesach",
     "שביעי של פסח":         "shviei_shel_pesach",
     "אחרון של פסח":         "achron_shel_pesach",
@@ -155,21 +159,10 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
 
 
 class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
-    """True on specific Erev‐days from alos ha-shachar until candle-lighting, with restore-on-reboot."""
+    """True from alos ha-shachar until candle-lighting on Erev-Shabbos or any Erev-Yom-Tov."""
 
     _attr_name = "Erev"
     _attr_icon = "mdi:weather-sunset-up"
-
-    # (Hebrew month, day) of Erev‐Yom‐Tov dates
-    _EREV_DATES = {
-        (6, 29),  # ערב ראש השנה
-        (7, 9),   # ערב יום כיפור
-        (7, 14),  # ערב סוכות
-        (7, 21),  # הושענא רבה
-        (9, 24),  # ערב חנוכה
-        (1, 14),  # ערב פסח
-        (3, 5),   # ערב שבועות
-    }
 
     def __init__(self, hass: HomeAssistant, candle_offset: int) -> None:
         super().__init__()
@@ -178,6 +171,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self.entity_id = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self._candle = candle_offset
+        self._diaspora = True  # use diaspora-style Yom-Tov lengths
         self._tz = ZoneInfo(hass.config.time_zone)
         self._loc = LocationInfo(
             latitude=hass.config.latitude,
@@ -187,24 +181,22 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._attr_extra_state_attributes: dict[str, str] = {}
 
     def _schedule_update(self, *_args) -> None:
-        """Thread-safe scheduling of async_update on the event loop."""
         self.hass.loop.call_soon_threadsafe(
             lambda: self.hass.async_create_task(self.async_update())
         )
 
     async def async_added_to_hass(self) -> None:
-        """Restore previous state, do an initial update, and register a once-per-minute poll."""
         await super().async_added_to_hass()
 
-        # 1) Restore last known state
+        # restore last state
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
 
-        # 2) Immediate first update
+        # immediate initial update
         await self.async_update()
 
-        # 3) Poll every minute (use base-class wrapper so unsubscribe is saved)
+        # poll every minute
         self._register_interval(
             self.hass,
             self._schedule_update,
@@ -212,33 +204,50 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
 
     async def async_update(self, now: datetime | None = None) -> None:
-        """Compute whether we are currently in an Erev window."""
+        """Compute whether we’re in an Erev window for Shabbos or any Yom-Tov."""
         now = (now or datetime.now(self._tz)).astimezone(self._tz)
         today = now.date()
 
+        # compute dawn and candle-time
         s = sun(self._loc.observer, date=today, tzinfo=self._tz)
         sunrise = s["sunrise"]
-        alos = sunrise - timedelta(minutes=72)  # alos ha-shachar at 72 min before sunrise
+        alos = sunrise - timedelta(minutes=72)
         sunset = s["sunset"]
-
-        # holiday vs Shabbos
-        hd = PHebrewDate.from_pydate(today)
-        is_erev_holiday = (hd.month, hd.day) in self._EREV_DATES
         candle_time = sunset - timedelta(minutes=self._candle)
-        is_erev_shabbos = (today.weekday() == 4) and (now < candle_time)
-        is_erev = is_erev_holiday or is_erev_shabbos
 
-        self._attr_is_on = is_erev and (alos <= now < candle_time)
+        # detect Yom-Tov today & tomorrow
+        hd_today = HDateInfo(today, diaspora=self._diaspora)
+        hd_tomorrow = HDateInfo(today + timedelta(days=1), diaspora=self._diaspora)
+        is_yomtov_today = hd_today.is_yom_tov
+        is_yomtov_tomorrow = hd_tomorrow.is_yom_tov
 
+        # Erev-Yom-Tov = tomorrow starts a festival (and today isn’t already one)
+        is_erev_holiday = is_yomtov_tomorrow and not is_yomtov_today
+
+        # Erev-Shabbos = Friday before candle-lighting (but not on a Yom-Tov)
+        is_erev_shabbos = (
+            today.weekday() == 4     # Friday
+            and now < candle_time
+            and not is_yomtov_today
+        )
+
+        # only in window from dawn until candle-time
+        in_window = (alos <= now < candle_time)
+
+        self._attr_is_on = in_window and (is_erev_holiday or is_erev_shabbos)
+
+        # expose flags for debugging
         self._attr_extra_state_attributes = {
             "now": now.isoformat(),
-            "is_erev_holiday": is_erev_holiday,
-            "is_erev_shabbos": is_erev_shabbos,
             "alos": alos.isoformat(),
             "candle_time": candle_time.isoformat(),
+            "is_erev_holiday": is_erev_holiday,
+            "is_erev_shabbos": is_erev_shabbos,
+            "is_yomtov_today": is_yomtov_today,
             "window_start": alos.isoformat(),
             "window_end": candle_time.isoformat(),
         }
+
 
         
 class MeluchaProhibitionSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
