@@ -74,6 +74,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "פסח א׳",
         "פסח ב׳",
         "פסח א׳ וב׳",
+        "א׳ דחול המועד פסח ",
+        "ב׳ דחול המועד פסח",
+        "ג׳ דחול המועד פסח",
+        "ד׳ דחול המועד פסח",
         "חול המועד פסח",
         "שביעי של פסח",
         "אחרון של פסח",
@@ -89,7 +93,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     ]
 
     # ─── Only these may become the sensor.state ───
-    ALLOWED_HOLIDAYS: set[str] = {
+    ALLOWED_HOLIDAYS: list[str] = {
         "א׳ סליחות",
         "ערב ראש השנה",
         "ראש השנה א׳",
@@ -119,7 +123,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ערב פסח",
         "פסח א׳",
         "פסח ב׳",
-        "חול המועד פסח",
+        "א׳ דחול המועד פסח ",
+        "ב׳ דחול המועד פסח",
+        "ג׳ דחול המועד פסח",
+        "ד׳ דחול המועד פסח",
         "שביעי של פסח",
         "אחרון של פסח",
         "ל\"ג בעומר",
@@ -331,7 +338,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_py.day == 16:
                 attrs["פסח ב׳"] = True
                 attrs["פסח א׳ וב׳"] = True
-            if 17 <= hd_py.day <= 20:
+            if hd_py.day == 17:
+                attrs["א׳ דחול המועד פסח"] = True
+                attrs["חול המועד פסח"] = True
+            if hd_py.day == 18:
+                attrs["ב׳ דחול המועד פסח"] = True
+                attrs["חול המועד פסח"] = True
+            if hd_py.day == 19:
+                attrs["ג׳ דחול המועד פסח"] = True
+                attrs["חול המועד פסח"] = True
+            if hd_py.day == 20:
+                attrs["ד׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
             if hd_py.day == 21:
                 attrs["שביעי של פסח"] = True
@@ -444,5 +461,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 break
 
         # 11) EXPOSE full attrs, but state is only the picked one
+        attrs["possible_states"] = self.ALL_HOLIDAYS
         self._attr_native_value = picked or ""
         self._attr_extra_state_attributes = attrs
