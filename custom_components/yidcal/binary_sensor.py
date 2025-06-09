@@ -160,7 +160,7 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
 
 class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from alos ha-shachar until candle-lighting on Erev-Shabbos or any Erev-Yom-Tov,
-    with debug flags showing when a raw Erev condition was blocked."""
+    showing debug flags and next Erev window start/end."""
 
     _attr_name = "Erev"
     _attr_icon = "mdi:weather-sunset-up"
@@ -199,65 +199,91 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
 
     async def async_update(self, now: datetime | None = None) -> None:
+        # current time and today's date
         now = (now or datetime.now(self._tz)).astimezone(self._tz)
         today = now.date()
 
-        # compute dawn and candle-lighting
-        s = sun(self._loc.observer, date=today, tzinfo=self._tz)
-        sunrise = s["sunrise"]
-        alos = sunrise - timedelta(minutes=72)
-        sunset = s["sunset"]
-        candle_time = sunset - timedelta(minutes=self._candle)
+        # compute today's dawn and candle-lighting
+        sun_today = sun(self._loc.observer, date=today, tzinfo=self._tz)
+        alos_today = sun_today["sunrise"] - timedelta(minutes=72)
+        candle_today = sun_today["sunset"] - timedelta(minutes=self._candle)
 
-        # detect festival status
-        hd_today    = HDateInfo(today, diaspora=self._diaspora)
+        # festival flags
+        hd_today = HDateInfo(today, diaspora=self._diaspora)
+        is_yomtov_today = hd_today.is_yom_tov
         hd_tomorrow = HDateInfo(today + timedelta(days=1), diaspora=self._diaspora)
-        is_yomtov_today    = hd_today.is_yom_tov
         is_yomtov_tomorrow = hd_tomorrow.is_yom_tov
-        is_shabbos_today   = (today.weekday() == 5)
+        is_shabbos_today = (today.weekday() == 5)
 
-        # raw Erev conditions before any suppression
-        raw_erev_shabbos = (today.weekday() == 4) and (now < candle_time)
+        # raw conditions
+        raw_erev_shabbos = (today.weekday() == 4)
         raw_erev_holiday = is_yomtov_tomorrow and not is_yomtov_today
 
-        # suppressed Erev flags
-        is_erev_shabbos = raw_erev_shabbos and not is_yomtov_today
-        is_erev_holiday = raw_erev_holiday and not is_shabbos_today
+        # suppressed conditions
+        is_erev_shabbos = raw_erev_shabbos and not is_yomtov_today and now < candle_today
+        is_erev_holiday = raw_erev_holiday and not is_shabbos_today and now >= alos_today
 
-        # debug: which raw Erevs were blocked by festival/Shabbos?
-        is_erev_shabbos_blocked = raw_erev_shabbos and is_yomtov_today
-        is_erev_holiday_blocked = raw_erev_holiday and is_shabbos_today
+        # compute on/off state (unchanged logic)
+        in_current = (alos_today <= now < candle_today)
+        self._attr_is_on = in_current and (is_erev_shabbos or is_erev_holiday)
 
-        # only on between dawn and candle-lighting
-        in_window = (alos <= now < candle_time)
-        self._attr_is_on = in_window and (is_erev_shabbos or is_erev_holiday)
+        # blocked debug flags
+        blocked_shabbos = raw_erev_shabbos and is_yomtov_today
+        blocked_holiday = raw_erev_holiday and is_shabbos_today
 
-        self._attr_extra_state_attributes = {
+        # find next Erev window start/end using suppressed logic
+        next_start = None
+        next_end = None
+        for i in range(0, 32):
+            d = today + timedelta(days=i)
+            hd_d = HDateInfo(d, diaspora=self._diaspora)
+            hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+            yomd = hd_d.is_yom_tov
+            yomd1 = hd_d1.is_yom_tov
+            shd = (d.weekday() == 5)
+            ev_sh = (d.weekday() == 4 and not yomd)
+            ev_hol = (yomd1 and not shd)
+            if not (ev_sh or ev_hol):
+                continue
+            sun_d = sun(self._loc.observer, date=d, tzinfo=self._tz)
+            start_d = sun_d["sunrise"] - timedelta(minutes=72)
+            end_d = sun_d["sunset"] - timedelta(minutes=self._candle)
+            if d == today and now >= end_d:
+                continue
+            next_start = start_d
+            next_end = end_d
+            break
+
+        # build attributes
+        attrs: dict[str, str | bool] = {
             "now": now.isoformat(),
-            "alos": alos.isoformat(),
-            "candle_time": candle_time.isoformat(),
-            "raw_erev_shabbos": raw_erev_shabbos,
-            "raw_erev_holiday": raw_erev_holiday,
             "is_erev_shabbos": is_erev_shabbos,
             "is_erev_holiday": is_erev_holiday,
+            "blocked_erev_shabbos": blocked_shabbos,
+            "blocked_erev_holiday": blocked_holiday,
             "is_yomtov_today": is_yomtov_today,
             "is_shabbos_today": is_shabbos_today,
-            "is_erev_shabbos_blocked": is_erev_shabbos_blocked,
-            "is_erev_holiday_blocked": is_erev_holiday_blocked,
-            "window_start": alos.isoformat(),
-            "window_end": candle_time.isoformat(),
         }
+        if next_start and next_end:
+            attrs.update({
+                "next_erev_window_start": next_start.isoformat(),
+                "next_erev_window_end": next_end.isoformat(),
+            })
+        self._attr_extra_state_attributes = attrs
 
-        
-class MeluchaProhibitionSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
+
+
+
+
+class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
 
-    _attr_name = "Melucha Prohibition"
+    _attr_name = "No Melucha"
     _attr_icon = "mdi:briefcase-variant-off"
 
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
-        slug = "melucha"
+        slug = "no_melucha"
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
@@ -380,7 +406,7 @@ async def async_setup_entry(
     havdalah = opts["havdalah_offset"]
 
     entities: list[BinarySensorEntity] = [
-        MeluchaProhibitionSensor(hass, candle, havdalah),
+        NoMeluchaSensor(hass, candle, havdalah),
         ErevHolidaySensor(hass, candle),
     ]
     for name in SLUG_OVERRIDES:
