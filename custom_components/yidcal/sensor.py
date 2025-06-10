@@ -255,7 +255,7 @@ class MoladSensor(YidCalDevice, SensorEntity):
             "time_of_day": tod,
             "chalakim": chal,
             "friendly": state,
-            "rosh_chodesh_midnight": rc_mid,
+            #"rosh_chodesh_midnight": rc_mid,
             "rosh_chodesh_nightfall": rc_night,
             "rosh_chodesh": rc_text,
             "rosh_chodesh_days": rc_days,
