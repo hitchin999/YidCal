@@ -285,6 +285,13 @@ def int_to_hebrew(num: int) -> str:
     Convert an integer (1–400+) into Hebrew letters with geresh/gershayim.
     E.g. 5 → 'ה׳', 15 → 'טו״', 100 → 'ק׳'
     """
+
+    # 15 and 16 are written ט״ו / ט״ז, never י״ה / י״ו
+    if num == 15:
+        return "ט\u05F4ו"
+    if num == 16:
+        return "ט\u05F4ז"
+        
     mapping = [
         (400, "ת"), (300, "ש"), (200, "ר"), (100, "ק"),
         (90,  "צ"),  (80,  "פ"),  (70,  "ע"),  (60,  "ס"),  (50,  "נ"),
