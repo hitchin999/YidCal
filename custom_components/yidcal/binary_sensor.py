@@ -91,6 +91,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "שבועות ב׳":            "shavuos_2",
     "שבועות א׳ וב׳":        "shavuos_1_2",
     "צום שבעה עשר בתמוז":   "shiva_usor_btammuz",
+    "ערב תשעה באב":        "erev_tisha_bav",
     "תשעה באב":             "tisha_bav",
     "תשעה באב נדחה":        "tisha_bav_nidche",
     "ראש חודש":             "rosh_chodesh",
