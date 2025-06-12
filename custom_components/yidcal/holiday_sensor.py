@@ -87,6 +87,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שבועות ב׳",
         "שבועות א׳ וב׳",
         "צום שבעה עשר בתמוז",
+        "ערב תשעה באב",
         "תשעה באב",
         "תשעה באב נדחה",
         "ראש חודש",
@@ -399,6 +400,22 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["צום שבעה עשר בתמוז"] = True
         if hd_py.month == 5 and hd_py.day == 9:
             attrs["תשעה באב"] = True
+            
+            
+        # ─── Erev Tisha B’Av (8 Av) ───
+        # Monday=0 … Saturday=5 … Sunday=6
+        weekday = now.weekday()
+        if (
+            hd_py.month == 5
+            and hd_py.day == 8
+            and weekday != 5               # skip if Shabbos
+            and now >= dawn                # only after alos (72 min before sunrise)
+        ):
+            attrs["ערב תשעה באב"] = True
+            # override the on/off window:
+            start_time = dawn
+            end_time   = today_sunset + timedelta(minutes=self._havdalah_offset)
+
 
         # Rosh Chodesh
         if hd_py.day in (1, 30):
