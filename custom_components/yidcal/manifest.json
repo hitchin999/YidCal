@@ -1,7 +1,7 @@
 {
   "domain": "yidcal",
   "name": "YidCal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "documentation": "https://github.com/hitchin999/YidCal",
   "issue_tracker": "https://github.com/hitchin999/YidCal/issues",
   "requirements": [
