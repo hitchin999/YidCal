@@ -36,6 +36,8 @@ from .perek_avot_sensor import PerekAvotSensor
 from .holiday_sensor import HolidaySensor
 from .no_music_sensor import NoMusicSensor
 from .full_display_sensor import FullDisplaySensor
+from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
+from .special_prayer_sensor import SpecialPrayerSensor
 
 
 
@@ -112,6 +114,9 @@ async def async_setup_entry(
         HolidaySensor(hass, candle_offset, havdalah_offset),
         NoMusicSensor(hass, candle_offset, havdalah_offset),
         FullDisplaySensor(hass),
+        MoridGeshemSensor(hass, yidcal_helper),
+        TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
+        SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
     ], update_before_add=True)
 
 
@@ -452,13 +457,14 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self.hass = hass
         self.helper = helper
         self._attr_is_on = False
-
+        
     async def async_update(self, now=None) -> None:
         try:
             self._attr_is_on = self.helper.get_molad(date.today()).is_upcoming_shabbos_mevorchim
         except Exception as e:
             _LOGGER.error("Upcoming Shabbos Mevorchim failed: %s", e)
             self._attr_is_on = False
+
 
     @property
     def icon(self) -> str:
