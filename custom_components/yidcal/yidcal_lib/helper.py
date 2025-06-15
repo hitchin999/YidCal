@@ -152,12 +152,17 @@ class YidCalHelper:
         except ValueError:
             nm = 1
             hy_next += 1
-
+            
         hd1_next = PHebrewDate(hy_next, nm, 1)
-        g1_next = hd1_next.to_pydate()
-        dayname_1 = self.get_day_of_week(g1_next)
-        days.append(dayname_1)
-        gdays.append(g1_next)
+
+        # Exclude 1 Tishrei
+        if not (nm == 7 and hd1_next.day == 1):
+            g1_next = hd1_next.to_pydate()
+            dayname_1 = self.get_day_of_week(g1_next)
+            days.append(dayname_1)
+            gdays.append(g1_next)
+
+
 
         month_name = hd.month_name()  # English, e.g. "Av"
         text = " & ".join(days) if len(days) == 2 else days[0]
@@ -197,25 +202,36 @@ class YidCalHelper:
         if smd is None:
             return False
 
-        # Exclude Elul (in pyluach, month=6 is Elul)
-        if hd_today.month == 6:
+        # Exclude Tishrei (in pyluach, month=7)
+        if hd_today.month == 7:
             return False
 
         return hd_today.day == smd
-
+        
     def is_upcoming_shabbos_mevorchim(self, today: datetime.date) -> bool:
         """
         Return True if the next Saturday after 'today' is Shabbos Mevorchim.
+        Skips Rosh Chodesh Tishrei (we don’t announce it).
         """
         wd = today.weekday()  # 0=Monday … 5=Saturday
         if wd == 5:
-            # If today is Saturday, "next Saturday" is 7 days later
             next_sat = today + datetime.timedelta(days=7)
         else:
             days_to_sat = (5 - wd) % 7
             next_sat = today + datetime.timedelta(days=days_to_sat)
 
-        return self.is_shabbos_mevorchim(next_sat)
+        # Check if Shabbos Mevorchim applies
+        if not self.is_shabbos_mevorchim(next_sat):
+            return False
+
+        # Check if the month being blessed is Tishrei — skip it
+        rc = self.get_rosh_chodesh_days(next_sat)
+        if rc.month == "TISHREI":
+            return False
+
+        return True
+
+
 
     def get_actual_molad(self, today: datetime.date) -> Molad:
         """
