@@ -1,6 +1,10 @@
 {
   "title": "YidCal",
+
   "config": {
+    "abort": {
+      "single_instance_allowed": "נישט מעגלעך צו צולייגן מער ווי איין מאל"
+    },
     "step": {
       "user": {
         "data": {
@@ -12,6 +16,7 @@
       }
     }
   },
+
   "options": {
     "step": {
       "init": {
