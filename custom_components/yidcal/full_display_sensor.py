@@ -23,10 +23,12 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         "ערב ראש השנה",
         "ראש השנה א׳",
         "ראש השנה ב׳",
+        "מוצאי ראש השנה",
         "צום גדליה",
         "שלוש עשרה מדות",
         "ערב יום כיפור",
         "יום הכיפורים",
+        "מוצאי יום הכיפורים",
         "ערב סוכות",
         "סוכות א׳",
         "סוכות ב׳",
@@ -37,6 +39,7 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         "הושענא רבה",
         "שמיני עצרת",
         "שמחת תורה",
+        "מוצאי סוכות",
         "ערב חנוכה",
         "חנוכה",
         "צום עשרה בטבת",
@@ -51,13 +54,17 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         "חול המועד פסח",
         "שביעי של פסח",
         "אחרון של פסח",
+        "מוצאי פסח",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
         "שבועות ב׳",
+        "מוצאי שבועות",
         "צום שבעה עשר בתמוז",
+        "מוצאי צום שבעה עשר בתמוז",
         "תשעה באב",
         "תשעה באב נדחה",
+        "מוצאי תשעה באב",
     }
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -124,23 +131,6 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
             wd, hr = now.weekday(), now.hour
             if (wd == 4 and hr >= 13) or wd == 5:
                 text += f" ~ {special.state}"
-
-        # ─── 6) MOTZEI (show any motzei sensor that is ON, EXCLUDING 17 Tammuz and Tisha B'av) ───
-        # List all motzei entity_ids except the two you want to skip:
-        motzei_list = [
-            "binary_sensor.yidcal_motzei_yom_kippur",
-            "binary_sensor.yidcal_motzei_pesach",
-            "binary_sensor.yidcal_motzei_sukkos",
-            "binary_sensor.yidcal_motzei_shavuos",
-            "binary_sensor.yidcal_motzei_rosh_hashana",
-            # (skip: yidcal_motzei_shiva_usor_btammuz)
-            # (skip: yidcal_motzei_tisha_bav)
-        ]
-        for ent_id in motzei_list:
-            ent = self.hass.states.get(ent_id)
-            if ent and ent.state == "on":
-                # Use the friendly name of that binary_sensor
-                text += f" - {ent.name}"
 
         self._state = text
         
