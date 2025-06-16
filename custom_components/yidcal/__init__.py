@@ -6,6 +6,7 @@ from homeassistant.helpers.event import async_call_later
 import logging
 
 from .const import DOMAIN
+from .config_flow import CONF_INCLUDE_ATTR_SENSORS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,11 +31,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "havdalah_offset", initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)
     )
 
+    # honor include_attribute_sensors from entry.options or entry.data
+    include_attrs = opts.get(
+        CONF_INCLUDE_ATTR_SENSORS,
+        initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
+    )
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "strip_nikud": strip,
         "candlelighting_offset": candle,
         "havdalah_offset": havd,
+        CONF_INCLUDE_ATTR_SENSORS: include_attrs,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -55,11 +63,18 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         "havdalah_offset", initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)
     )
 
+    # re-load include_attribute_sensors on options change
+    include_attrs = opts.get(
+        CONF_INCLUDE_ATTR_SENSORS,
+        initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
+    )
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "strip_nikud": strip,
         "candlelighting_offset": candle,
         "havdalah_offset": havd,
+        CONF_INCLUDE_ATTR_SENSORS: include_attrs,
     }
 
     # Schedule the reload one second later, but ensure the reload itself
