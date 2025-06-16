@@ -1,4 +1,3 @@
-# /config/custom_components/yidcal/config_flow.py
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -8,6 +7,9 @@ from .const import DOMAIN
 # Default offsets (minutes)
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
+
+# New option key
+CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
 
 
 class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -28,12 +30,19 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         "havdalah_offset", default=DEFAULT_HAVDALAH_OFFSET
                     ): int,
+                    vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
                 }
             )
             return self.async_show_form(step_id="user", data_schema=schema)
 
         # Once the user submits, store everything in config_entry.data
-        return self.async_create_entry(title="YidCal", data=user_input)
+        data = {
+            "strip_nikud": user_input["strip_nikud"],
+            "candlelighting_offset": user_input["candlelighting_offset"],
+            "havdalah_offset": user_input["havdalah_offset"],
+            CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
+        }
+        return self.async_create_entry(title="YidCal", data=data)
 
     @staticmethod
     @callback
@@ -50,25 +59,26 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Show the form to adjust options after setup."""
+        opts = self._config_entry.options
+        data = self._config_entry.data
+
+        strip_nikud_default = opts.get(
+            "strip_nikud", data.get("strip_nikud", False)
+        )
+        candle_offset_default = opts.get(
+            "candlelighting_offset",
+            data.get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET),
+        )
+        havdala_offset_default = opts.get(
+            "havdalah_offset",
+            data.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET),
+        )
+        include_attrs_default = opts.get(
+            CONF_INCLUDE_ATTR_SENSORS,
+            data.get(CONF_INCLUDE_ATTR_SENSORS, True),
+        )
+
         if user_input is None:
-            # 1) Look for existing value in options
-            # 2) If not in options, fall back to data
-            # 3) If neither, use DEFAULT_ constants
-            opts = self._config_entry.options
-            data = self._config_entry.data
-
-            strip_nikud_default = opts.get(
-                "strip_nikud", data.get("strip_nikud", False)
-            )
-            candle_offset_default = opts.get(
-                "candlelighting_offset",
-                data.get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET),
-            )
-            havdala_offset_default = opts.get(
-                "havdalah_offset",
-                data.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET),
-            )
-
             schema = vol.Schema(
                 {
                     vol.Optional("strip_nikud", default=strip_nikud_default): bool,
@@ -76,6 +86,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         "candlelighting_offset", default=candle_offset_default
                     ): int,
                     vol.Optional("havdalah_offset", default=havdala_offset_default): int,
+                    vol.Optional(
+                        CONF_INCLUDE_ATTR_SENSORS,
+                        default=include_attrs_default,
+                    ): bool,
                 }
             )
             return self.async_show_form(step_id="init", data_schema=schema)
