@@ -20,6 +20,10 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         """First step: ask the user for all the options."""
+        # ‹— Abort if we already have an entry
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+
         if user_input is None:
             schema = vol.Schema(
                 {
