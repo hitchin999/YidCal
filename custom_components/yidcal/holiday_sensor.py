@@ -44,10 +44,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ראש השנה א׳",
         "ראש השנה ב׳",
         "ראש השנה א׳ וב׳",
+        "מוצאי ראש השנה",
         "צום גדליה",
         "שלוש עשרה מדות",
         "ערב יום כיפור",
         "יום הכיפורים",
+        "מוצאי יום הכיפורים",
         "ערב סוכות",
         "סוכות א׳",
         "סוכות ב׳",
@@ -60,6 +62,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "הושענא רבה",
         "שמיני עצרת",
         "שמחת תורה",
+        "מוצאי סוכות",
         "ערב חנוכה",
         "חנוכה",
         "שובבים",
@@ -81,15 +84,19 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "חול המועד פסח",
         "שביעי של פסח",
         "אחרון של פסח",
+        "מוצאי פסח",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
         "שבועות ב׳",
         "שבועות א׳ וב׳",
+        "מוצאי שבועות",
         "צום שבעה עשר בתמוז",
+        "מוצאי צום שבעה עשר בתמוז",
         "ערב תשעה באב",
         "תשעה באב",
         "תשעה באב נדחה",
+        "מוצאי תשעה באב",
         "ראש חודש",
     ]
 
@@ -99,10 +106,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ערב ראש השנה",
         "ראש השנה א׳",
         "ראש השנה ב׳",
+        "מוצאי ראש השנה",
         "צום גדליה",
         "שלוש עשרה מדות",
         "ערב יום כיפור",
         "יום הכיפורים",
+        "מוצאי יום הכיפורים",
         "ערב סוכות",
         "סוכות א׳",
         "סוכות ב׳",
@@ -113,6 +122,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "הושענא רבה",
         "שמיני עצרת",
         "שמחת תורה",
+        "מוצאי סוכות",
         "ערב חנוכה",
         "חנוכה",
         "צום עשרה בטבת",
@@ -130,13 +140,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ד׳ דחול המועד פסח",
         "שביעי של פסח",
         "אחרון של פסח",
+        "מוצאי פסח",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
         "שבועות ב׳",
+        "מוצאי שבועות",
         "צום שבעה עשר בתמוז",
+        "מוצאי צום שבעה עשר בתמוז",
         "תשעה באב",
-        "תשעה באב נדחה",        
+        "תשעה באב נדחה", 
+        "מוצאי תשעה באב",
     }    
 
     def __init__(
@@ -467,7 +481,36 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         else:
             attrs["מען פאַסט אויס און"] = None
 
-        # ────────────────────────────────────────────────
+        # ───── MERGE IN MOTZEI FLAGS ─────
+        from .motzi_holiday_sensor import (
+            MotzeiYomKippurSensor,
+            MotzeiPesachSensor,
+            MotzeiSukkosSensor,
+            MotzeiShavuosSensor,
+            MotzeiRoshHashanaSensor,
+            MotzeiShivaUsorBTammuzSensor,
+            MotzeiTishaBavSensor,
+        )
+        motzi_classes = [
+            MotzeiYomKippurSensor,
+            MotzeiPesachSensor,
+            MotzeiSukkosSensor,
+            MotzeiShavuosSensor,
+            MotzeiRoshHashanaSensor,
+            MotzeiShivaUsorBTammuzSensor,
+            MotzeiTishaBavSensor,
+        ]
+        for cls in motzi_classes:
+            motzi = cls(self.hass, self._candle_offset, self._havdalah_offset)
+            await motzi.async_update(now)
+            # friendly Hebrew name as the attribute key
+            attrs[motzi._attr_name] = motzi.is_on
+            # merge in any debug attributes (start/end windows)
+            extra = getattr(motzi, "_attr_extra_state_attributes", {})
+            for k, v in extra.items():
+                attrs[k] = v
+        # ────────────────────────────────────
+
         # 10) PICK exactly one allowed holiday for the visible state
         picked: str | None = None
         for name in self.ALLOWED_HOLIDAYS:
