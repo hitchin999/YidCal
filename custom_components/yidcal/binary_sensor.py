@@ -35,6 +35,7 @@ from .motzi_holiday_sensor import (
 )
 
 from .const import DOMAIN
+from .config_flow import CONF_INCLUDE_ATTR_SENSORS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,10 +49,12 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ראש השנה א׳":           "rosh_hashana_1",
     "ראש השנה ב׳":           "rosh_hashana_2",
     "ראש השנה א׳ וב׳":       "rosh_hashana_1_2",
+    "מוצאי ראש השנה":        "motzei_rosh_hashana",
     "צום גדליה":             "tzom_gedalia",
     "שלוש עשרה מדות":        "shlosh_asrei_midos",
     "ערב יום כיפור":          "erev_yom_kippur",
     "יום הכיפורים":          "yom_kippur",
+    "מוצאי יום הכיפורים":      "motzei_yom_kippur",
     "ערב סוכות":             "erev_sukkos",
     "סוכות א׳":              "sukkos_1",
     "סוכות ב׳":              "sukkos_2",
@@ -64,6 +67,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "הושענא רבה":            "hoshanah_rabbah",
     "שמיני עצרת":            "shemini_atzeres",
     "שמחת תורה":             "simchas_torah",
+    "מוצאי סוכות":            "motzei_sukkos",
     "ערב חנוכה":             "erev_chanukah",
     "חנוכה":                 "chanukah",
     "שובבים":               "shovavim",
@@ -85,16 +89,20 @@ SLUG_OVERRIDES: dict[str, str] = {
     "חול המועד פסח":        "chol_hamoed_pesach",
     "שביעי של פסח":         "shviei_shel_pesach",
     "אחרון של פסח":         "achron_shel_pesach",
+    "מוצאי פסח":            "motzei_pesach",
     "ל\"ג בעומר":            "lag_baomer",
     "ערב שבועות":           "erev_shavuos",
-    "שבועות א׳":            "shavuos_1",
-    "שבועות ב׳":            "shavuos_2",
-    "שבועות א׳ וב׳":        "shavuos_1_2",
-    "צום שבעה עשר בתמוז":   "shiva_usor_btammuz",
-    "ערב תשעה באב":        "erev_tisha_bav",
-    "תשעה באב":             "tisha_bav",
-    "תשעה באב נדחה":        "tisha_bav_nidche",
-    "ראש חודש":             "rosh_chodesh",
+    "שבועות א׳":             "shavuos_1",
+    "שבועות ב׳":             "shavuos_2",
+    "שבועות א׳ וב׳":          "shavuos_1_2",
+    "מוצאי שבועות":           "motzei_shavuos",
+    "צום שבעה עשר בתמוז":      "shiva_usor_btammuz",
+    "מוצאי צום שבעה עשר בתמוז":  "motzei_shiva_usor_btammuz",
+    "ערב תשעה באב":           "erev_tisha_bav",
+    "תשעה באב":              "tisha_bav",
+    "תשעה באב נדחה":          "tisha_bav_nidche",
+    "מוצאי תשעה באב":         "motzei_tisha_bav",
+    "ראש חודש":              "rosh_chodesh",
 }
 
 # ─── The fixed dynamic‐attribute binary sensor ────────────────────────────────
@@ -402,24 +410,21 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities,
 ) -> None:
-    opts = hass.data[DOMAIN][entry.entry_id]
-    candle = opts["candlelighting_offset"]
-    havdalah = opts["havdalah_offset"]
+    cfg = hass.data[DOMAIN][entry.entry_id]
+    candle = cfg["candlelighting_offset"]
+    havdalah = cfg["havdalah_offset"]
+    # Honor the user’s runtime choice (fallback to initial data if no options yet)
+    include_attrs = entry.options.get(
+        CONF_INCLUDE_ATTR_SENSORS,
+        cfg.get(CONF_INCLUDE_ATTR_SENSORS, True),
+    )
 
     entities: list[BinarySensorEntity] = [
         NoMeluchaSensor(hass, candle, havdalah),
         ErevHolidaySensor(hass, candle),
     ]
-    for name in SLUG_OVERRIDES:
-        entities.append(HolidayAttributeBinarySensor(hass, name))
-    entities.extend([
-        MotzeiYomKippurSensor(hass, candle, havdalah),
-        MotzeiPesachSensor(hass, candle, havdalah),
-        MotzeiSukkosSensor(hass, candle, havdalah),
-        MotzeiShavuosSensor(hass, candle, havdalah),
-        MotzeiRoshHashanaSensor(hass, candle, havdalah),
-        MotzeiShivaUsorBTammuzSensor(hass, candle, havdalah),
-        MotzeiTishaBavSensor(hass, candle, havdalah),
-    ])
+    if include_attrs:
+        for name in SLUG_OVERRIDES:
+            entities.append(HolidayAttributeBinarySensor(hass, name))
 
     async_add_entities(entities, update_before_add=True)
