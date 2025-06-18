@@ -19,7 +19,6 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_icon = "mdi:candelabra-fire"
     _attr_name = "Zman Erev"
     _attr_unique_id = "yidcal_zman_erev"
-    _attr_entity_id = "sensor.yidcal_zman_erev"
 
     def __init__(self, hass: HomeAssistant, candle_offset: int):
         super().__init__()
@@ -30,15 +29,19 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        # initial calculation
         await self.async_update()
+        # schedule a midnight check every day
         async_track_time_change(
             self.hass,
-            self._weekly_update,
-            weekday=6, hour=0, minute=0, second=0,
+            self._midnight_check,
+            hour=0, minute=0, second=0
         )
 
-    async def _weekly_update(self, now: datetime) -> None:
-        await self.async_update()
+    async def _midnight_check(self, now: datetime) -> None:
+        # only run weekly on Sunday (weekday=6)
+        if now.weekday() == 6:
+            await self.async_update()
 
     async def async_update(self, now: datetime | None = None) -> None:
         src = self.hass.states.get("binary_sensor.yidcal_no_melucha")
@@ -65,7 +68,6 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_icon = "mdi:liquor"
     _attr_name = "Zman Motzi"
     _attr_unique_id = "yidcal_zman_motzi"
-    _attr_entity_id = "sensor.yidcal_zman_motzi"
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int):
         super().__init__()
@@ -76,15 +78,19 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        # initial calculation
         await self.async_update()
+        # schedule a midnight check every day
         async_track_time_change(
             self.hass,
-            self._weekly_update,
-            weekday=6, hour=0, minute=0, second=0,
+            self._midnight_check,
+            hour=0, minute=0, second=0
         )
 
-    async def _weekly_update(self, now: datetime) -> None:
-        await self.async_update()
+    async def _midnight_check(self, now: datetime) -> None:
+        # only run weekly on Sunday (weekday=6)
+        if now.weekday() == 6:
+            await self.async_update()
 
     async def async_update(self, now: datetime | None = None) -> None:
         src = self.hass.states.get("binary_sensor.yidcal_no_melucha")
@@ -103,18 +109,3 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         dt_utc = dt_local.astimezone(timezone.utc)
         self._attr_native_value = dt_utc
 
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities,
-) -> None:
-    cfg = hass.data[DOMAIN][entry.entry_id]
-    candle = cfg["candlelighting_offset"]
-    havdalah = cfg["havdalah_offset"]
-
-    entities = [
-        ZmanErevSensor(hass, candle),
-        ZmanMotziSensor(hass, havdalah),
-    ]
-    async_add_entities(entities, update_before_add=True)
