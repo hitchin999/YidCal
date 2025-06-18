@@ -3,32 +3,33 @@
 A custom Home Assistant integration that provides:
 
 * **No Melucha** (`binary_sensor.yidcal_no_melucha`) (e.g., on Shabbos and Yom Tov)
-* **Holiday Sensor** (`sensor.yidcal_holiday`) with boolean attributes for every holiday, including:  
+* **Holiday Sensor** (`sensor.yidcal_holiday`) with boolean attributes for every holiday, including:
   א׳ סליחות, ערב ראש השנה, ראש השנה א׳, ראש השנה ב׳, ראש השנה א׳ וב׳, מוצאי ראש השנה, צום גדליה, שלוש עשרה מדות, ערב יום כיפור, יום הכיפורים, מוצאי יום הכיפורים, ערב סוכות, סוכות א׳, סוכות ב׳, סוכות א׳ וב׳, א׳ דחול המועד סוכות, ב׳ דחול המועד סוכות, ג׳ דחול המועד סוכות, ד׳ דחול המועד סוכות, חול המועד סוכות, הושענא רבה, שמיני עצרת, שמחת תורה, מוצאי סוכות, ערב חנוכה, חנוכה, שובבים, שובבים ת״ת, צום עשרה בטבת, ט״ו בשבט, תענית אסתר, פורים, שושן פורים, ליל בדיקת חמץ, ערב פסח, פסח א׳, פסח ב׳, פסח א׳ וב׳, א׳ דחול המועד פסח, ב׳ דחול המועד פסח, ג׳ דחול המועד פסח, ד׳ דחול המועד פסח, חול המועד פסח, שביעי של פסח, אחרון של פסח, מוצאי פסח, ל״ג בעומר, ערב שבועות, שבועות א׳, שבועות ב׳, שבועות א׳ וב׳, מוצאי שבועות, צום שבעה עשר בתמוז, מוצאי צום שבעה עשר בתמוז, ערב תשעה באב, תשעה באב, תשעה באב נדחה, מוצאי תשעה באב, ראש חודש
 * **Erev** (`binary_sensor.yidcal_erev`) Turns on at the Alos Erev Shabbos, Yom Tov, etc., via the day-label sensor and dedicated binary sensors
 * **Full Molad Display** (`sensor.yidcal_molad` → `friendly` attribute) Full human-friendly Molad string in Yiddish
 * **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion
-* **Rosh Chodesh Today** (`binary_sensor.yidcal_rosh_chodesh_today`) `on` if today (after nightfall) is Rosh Chodesh
+* **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) ie: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Shabbos Mevorchim** and **Upcoming Shabbos Mevorchim** indicators (booleans)
 * **Rosh Chodesh** sensor with nightfall and midnight attributes
 * **Special Shabbos** sensor for Shabbat specials (שבת זכור, שבת נחמו, etc.)
 * **Sefiras HaOmer** counters in Yiddish with the option to remove nikud (הַיּוֹם אַרְבָּעִים יוֹם שֶׁהֵם חֲמִשָּׁה שָׁבוּעוֹת וַחֲמִשָּׁה יָמִים לָעֹֽמֶר and הוֹד שֶׁבְּיְסוֹד)
-* **Day Label Yiddish** (`sensor.yidcal_day_label`) Daily label in Yiddish (e.g. זונטאג, מאנטאג, ערש"ק, מוצש״ק)
+* **Day Label Yiddish** (`sensor.yidcal_day_label`) Daily label in Yiddish (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
 * **Date** (`sensor.yidcal_date`) Current Hebrew date in Yiddish (e.g., כ״ה חשון תשפ״ה)
-* **Perek Avos**: current Perek rendered in אבות פרק ה'
+* **Zman Erev** (`sensor.yidcal_zman_erev`) Next candle-lighting timestamp (Shabbos or Yom Tov eve)
+* **Zman Motzi** (`sensor.yidcal_zman_motzi`) Next havdalah timestamp (Shabbos or Yom Tov end)
+* **Perek Avos**: current Perek rendered in אבות פרק ה׳
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
 * **Tal U’Matar** (`sensor.yidcal_tal_umatar`) Indicates when to change the prayer between “V’sen Tal u’Matar”/“V’sen Beracha”
 * **No Music** (`binary_sensor.yidcal_no_music`) Indicates when music is prohibited (e.g., in Sefirah, 3 weeks)
-* **Perek Avos** (`sensor.yidcal_perek_avos`)  Current Perek of Pirkei Avos in Yiddish
+* **Perek Avos** (`sensor.yidcal_perek_avos`) Current Perek of Pirkei Avos in Yiddish
 * **Upcoming Shabbos Mevorchim** (`binary_sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim
 * **Shabbos Mevorchim** (`binary_sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim
 * **Special Prayer Sensor** (`sensor.yidcal_special_prayer`) Aggregates special insertions (e.g., ותן טל, יעלה ויבוא, על הניסים)
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
-* **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`)  Middos (qualities) of the day in the Omer count
+* **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
 
 All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.
-
 
 ---
 
@@ -36,14 +37,14 @@ All date calculations are standalone (no external Jewish-calendar integration) a
 
 After adding the integration via UI, go to **Settings → Devices & Services → YidCal → Options** to set:
 
-After installation, go to **Settings → Devices & Services → YidCal → Options** to configure:
+| Option                                          | Default | Description                                                                                                |
+| ----------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `וויפיל מינוט פארן שקיעה איז הדלקת הנרות`       | 15      | Minutes before sunset for Erev Shabbos                                                                     |
+| `וויפיל מינוט נאכן שקיעה איז מוצאי`             | 72      | Minutes after sunset for Motzaei Shabbos                                                                   |
+| `נעם אראפ די נְקֻודּוֹת`                        | false   | Remove Hebrew vowel points from Omer text                                                                  |
+| `צולייגען באזונדערע סענסאָרס פאר די ימים טובים` | true    | Add/remove separate binary sensors for each holiday (they always show as attributes in the holiday sensor) |
 
-| Option                                               | Default | Description                                                                                                        |
-| ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
-| `וויפיל מינוט פארן שקיעה איז הדלקת הנרות`            | 15      | Minutes before sunset for Erev Shabbos                                                                             |
-| `וויפיל מינוט נאכן שקיעה איז מוצאי`                  | 72      | Minutes after sunset for Motzaei Shabbos                                                                           |
-| `נעם אראפ די נְקֻודּוֹת`                                 | false   | Remove Hebrew vowel points from Omer text                                                                          |
-| `צולייגען באזונדערע סענסאָרס פאר די ימים טובים`       | true   | Add/remove separate binary sensors for each holiday (they are allways shown as attributes in the holiday sensor)    |
+> ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. You must manually remove them via **Settings → Entities**, or delete and re-add the integration with the holiday sensors option turned off.
 
 ---
 
@@ -91,8 +92,8 @@ content: |
 - R"Ch Today: {{ states('binary_sensor.yidcal_rosh_chodesh_today') }}
 
 # Shabbos Mevorchim
-- ש״מ: {{ states('binary_sensor.yidcal_shabbos_mevorchim') }}
-- Upcoming ש״מ: {{ states('binary_sensor.yidcal_upcoming_shabbos_mevorchim') }}
+- ש"מ: {{ states('binary_sensor.yidcal_shabbos_mevorchim') }}
+- Upcoming ש"מ: {{ states('binary_sensor.yidcal_upcoming_shabbos_mevorchim') }}
 
 # Special Shabbos
 - {{ states('sensor.yidcal_special_shabbos') }}
