@@ -38,6 +38,8 @@ from .no_music_sensor import NoMusicSensor
 from .full_display_sensor import FullDisplaySensor
 from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
 from .special_prayer_sensor import SpecialPrayerSensor
+from .zman_sensors import ZmanErevSensor, ZmanMotziSensor
+
 
 
 
@@ -117,6 +119,8 @@ async def async_setup_entry(
         MoridGeshemSensor(hass, yidcal_helper),
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
+        ZmanErevSensor(hass, candle_offset),
+        ZmanMotziSensor(hass, havdalah_offset),
     ], update_before_add=True)
 
 
