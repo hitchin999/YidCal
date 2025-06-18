@@ -23,6 +23,8 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     def __init__(self, hass: HomeAssistant, candle_offset: int):
         super().__init__()
+        slug = "zman_erev"
+        self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         self._candle = candle_offset
 
@@ -66,6 +68,8 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int):
         super().__init__()
+        slug = "zman_motzi"
+        self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         self._havdalah = havdalah_offset
 
