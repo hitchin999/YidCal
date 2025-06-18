@@ -120,7 +120,7 @@ async def async_setup_entry(
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
         ZmanErevSensor(hass, candle_offset),
-        ZmanMotziSensor(hass, havdalah_offset),
+        ZmanMotziSensor(hass, candle_offset, havdalah_offset),
     ], update_before_add=True)
 
 
