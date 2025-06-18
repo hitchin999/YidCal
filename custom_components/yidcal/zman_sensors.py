@@ -65,6 +65,7 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_icon = "mdi:liquor"
     _attr_name = "Zman Motzi"
     _attr_unique_id = "yidcal_zman_motzi"
+    _attr_entity_id = "sensor.yidcal_zman_motzi"
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int):
         super().__init__()
