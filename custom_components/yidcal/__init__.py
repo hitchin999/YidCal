@@ -16,56 +16,64 @@ PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 
-
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
+    try:
+        # 1) Reverse-lookup borough
+        def blocking_lookup():
+            from geopy.geocoders import Nominatim
+            geolocator = Nominatim(user_agent="yidcal")
+            loc = geolocator.reverse((latitude, longitude), language="en", timeout=10)
+            addr = loc.raw.get("address", {}) if loc else {}
 
-    def blocking_lookup():
-        from geopy.geocoders import Nominatim
+            city = (
+                addr.get("city")
+                or addr.get("town")
+                or addr.get("village")
+                or addr.get("hamlet")
+                or ""
+            )
+            borough = (
+                addr.get("city_district")
+                or addr.get("borough")
+                or addr.get("suburb")
+                or addr.get("neighbourhood")
+            )
+            if city == "New York" and borough:
+                city = borough
 
-        geolocator = Nominatim(user_agent="yidcal")
-        loc = geolocator.reverse((latitude, longitude), language="en", timeout=10)
-        address = loc.raw.get("address", {}) if loc else {}
+            state = addr.get("state", "")
+            return city, state
 
-        city = (
-            address.get("city")
-            or address.get("town")
-            or address.get("village")
-            or address.get("hamlet")
-            or ""
-        )
-        borough = (
-            address.get("city_district")
-            or address.get("borough")
-            or address.get("suburb")
-            or address.get("neighbourhood")
-        )
-        if city == "New York" and borough:
-            city = borough
+        city, state = await hass.async_add_executor_job(blocking_lookup)
 
-        state = address.get("state", "")
-        postcode = address.get("postcode", "")
-        return city, state, postcode
+        # 2) Forward-geocode only "City, State" to get the official centroid
+        def blocking_forward():
+            from geopy.geocoders import Nominatim
+            geolocator = Nominatim(user_agent="yidcal")
+            query = f"{city}, {state}"
+            loc = geolocator.geocode(query, exactly_one=True, timeout=10)
+            if not loc:
+                raise ValueError(f"Could not geocode '{query}'")
+            return loc.latitude, loc.longitude
 
-    city, state, postcode = await hass.async_add_executor_job(blocking_lookup)
+        lat, lon = await hass.async_add_executor_job(blocking_forward)
+    except Exception as e:
+        _LOGGER.warning("Geocoding failed (%s), falling back to HA lat/lon", e)
+        # fallback to Home Assistant’s configured coords
+        city, state = "", ""
+        lat, lon = latitude, longitude
 
-    query = f"{city}, {state}".strip(", ")
-
-    def blocking_forward():
-        from geopy.geocoders import Nominatim
-
-        geolocator = Nominatim(user_agent="yidcal")
-        loc = geolocator.geocode(query, exactly_one=True, timeout=10)
-        if not loc:
-            raise ValueError(f"Could not geocode '{query}'")
-        return loc.latitude, loc.longitude
-
-    lat, lon = await hass.async_add_executor_job(blocking_forward)
-
+    # 3) Timezone lookup
     def get_tzname(lat, lon):
         return TimezoneFinder().timezone_at(lng=lon, lat=lat) or "UTC"
 
-    tzname = await hass.async_add_executor_job(get_tzname, lat, lon)
+    try:
+        tzname = await hass.async_add_executor_job(get_tzname, lat, lon)
+    except Exception:
+        _LOGGER.warning("Timezone lookup failed, falling back to HA time_zone")
+        tzname = hass.config.time_zone
+
     return city, state, lat, lon, tzname or "UTC"
 
 
