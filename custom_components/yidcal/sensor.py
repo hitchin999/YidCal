@@ -410,33 +410,46 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
         )
-
     async def async_update(self, now: datetime | None = None) -> None:
-        """Recompute is_on. Only true if Friday→tomorrow is Mevorchim and now ∈ […]"""
+        """ON from Fri candle-lighting until Sat havdalah, only for a Mevorchim Shabbos."""
         try:
             tz = ZoneInfo(self.hass.config.time_zone)
             today_date = date.today()
+            weekday = today_date.weekday()
 
-            # ─── Guard: Must be Friday and tomorrow must be Mevorchim‐Saturday ───
-            if (
-                today_date.weekday() != 4
-                or not self.helper.is_shabbos_mevorchim(today_date + timedelta(days=1))
-            ):
+            # 1) Check if this is the right Shabbos:
+            is_mev = False
+            if weekday == 4:  # Friday → tomorrow is Saturday
+                is_mev = self.helper.is_shabbos_mevorchim(today_date + timedelta(days=1))
+            elif weekday == 5:  # Saturday itself
+                is_mev = self.helper.is_shabbos_mevorchim(today_date)
+
+            if not is_mev:
                 self._attr_is_on = False
                 return
 
+            # 2) Compute on/off times
             loc = LocationInfo(
                 latitude=self.hass.config.latitude,
                 longitude=self.hass.config.longitude,
                 timezone=self.hass.config.time_zone,
             )
-            s = sun(loc.observer, date=today_date, tzinfo=tz)
-            sunset = s["sunset"]
+            # Friday sunset
+            sun_today = sun(loc.observer, date=today_date, tzinfo=tz)
+            fri_sunset = sun_today["sunset"]
 
-            on_time = sunset - timedelta(minutes=self._candle_offset)
-            off_time = sunset + timedelta(minutes=self._havdalah_offset)
+            # Saturday sunset
+            sat_date = today_date + timedelta(days=(5 - weekday))
+            sun_sat = sun(loc.observer, date=sat_date, tzinfo=tz)
+            sat_sunset = sun_sat["sunset"]
 
-            now_local = datetime.now(tz)
+            # ON at Friday candle-lighting
+            on_time = fri_sunset - timedelta(minutes=self._candle_offset)
+            # OFF at Saturday havdalah
+            off_time = sat_sunset + timedelta(minutes=self._havdalah_offset)
+
+            now_local = (now or datetime.now(tz))
+
             self._attr_is_on = (on_time <= now_local < off_time)
 
         except Exception as e:
@@ -462,13 +475,46 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self.helper = helper
         self._attr_is_on = False
         
-    async def async_update(self, now=None) -> None:
-        try:
-            self._attr_is_on = self.helper.get_molad(date.today()).is_upcoming_shabbos_mevorchim
-        except Exception as e:
-            _LOGGER.error("Upcoming Shabbos Mevorchim failed: %s", e)
-            self._attr_is_on = False
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
 
+        # 1) Initial state
+        await self.async_update()
+
+        # 2) Poll every hour
+        async_track_time_interval(
+            self.hass,
+            self.async_update,
+            timedelta(hours=1),
+        )
+
+        # 3) Also re-check at Friday candle-lighting
+        async_track_sunset(
+            self.hass,
+            self.async_update,
+            offset=timedelta(minutes=-self.helper._candle_offset),
+        )
+    
+        
+    async def async_update(self, now=None) -> None:
+        tz = ZoneInfo(self.hass.config.time_zone)
+        today = date.today()
+        flag = self.helper.get_molad(today).is_upcoming_shabbos_mevorchim
+
+        if flag and today.weekday() == 4:
+            # after Friday candle-lighting → go OFF
+            loc = LocationInfo(
+                latitude=self.hass.config.latitude,
+                longitude=self.hass.config.longitude,
+                timezone=self.hass.config.time_zone,
+            )
+            sun_today = sun(loc.observer, date=today, tzinfo=tz)
+            candle = sun_today["sunset"] - timedelta(minutes=self.helper._candle_offset)
+            now_local = (now or datetime.now(tz))
+            if now_local >= candle:
+                flag = False
+
+        self._attr_is_on = bool(flag)
 
     @property
     def icon(self) -> str:
