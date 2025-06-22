@@ -139,7 +139,7 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         }
 
         # 7) round half-up at 30s
-        if target.second >= 30:
+        if target.second >= 25:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
