@@ -132,7 +132,7 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # 6) extra attributes
         self._attr_extra_state_attributes = {
-            "local_target_time": target.strftime("%-I:%M:%S %p"),
+            "zman_erev_with_seconds": target.strftime("%-I:%M:%S %p"),
             "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
             "latitude": self._geo.latitude,
             "longitude": self._geo.longitude,
@@ -227,7 +227,7 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         target = s_final + timedelta(minutes=self._havdalah)
 
         self._attr_extra_state_attributes = {
-            "local_target_time": target.strftime("%-I:%M:%S %p"),
+            "zman_motzi_with_seconds": target.strftime("%-I:%M:%S %p"),
             "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
             "latitude": self._geo.latitude,
             "longitude": self._geo.longitude,
