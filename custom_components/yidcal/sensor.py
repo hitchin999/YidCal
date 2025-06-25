@@ -39,7 +39,21 @@ from .full_display_sensor import FullDisplaySensor
 from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
 from .special_prayer_sensor import SpecialPrayerSensor
 from .zman_sensors import ZmanErevSensor, ZmanMotziSensor
-
+from .zman_krias_shma_mga import SofZmanKriasShmaMGASensor
+from .zman_chatzos_hayom import ChatzosHayomSensor
+from .zman_alos import AlosSensor
+from .zman_tefilah_mga import SofZmanTefilahMGASensor
+from .zman_netz import NetzSensor
+from .zman_tefilah_gra import SofZmanTefilahGRASensor
+from .zman_krias_shma_gra import SofZmanKriasShmaGRASensor
+from .zman_talis_tefilin import ZmanTalisTefilinSensor
+from .zman_mincha_gedola import MinchaGedolaSensor
+from .zman_mincha_ketana import MinchaKetanaSensor
+from .zman_plag_hamincha import PlagHaMinchaSensor
+from .zman_shkia import ShkiaSensor
+from .zman_maariv_60 import ZmanMaariv60Sensor
+from .zman_maariv_rt  import ZmanMaarivRTSensor
+from .zman_chatzos_haleila import ChatzosHaLailaSensor
 
 
 
@@ -121,6 +135,21 @@ async def async_setup_entry(
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
         ZmanErevSensor(hass, candle_offset, havdalah_offset),
         ZmanMotziSensor(hass, candle_offset, havdalah_offset),
+        SofZmanKriasShmaMGASensor(hass),
+        ChatzosHayomSensor(hass),
+        AlosSensor(hass),
+        SofZmanTefilahMGASensor(hass),
+        NetzSensor(hass),
+        SofZmanTefilahGRASensor(hass),
+        SofZmanKriasShmaGRASensor(hass),
+        ZmanTalisTefilinSensor(hass),
+        MinchaGedolaSensor(hass),
+        MinchaKetanaSensor(hass),
+        PlagHaMinchaSensor(hass),
+        ShkiaSensor(hass),
+        ZmanMaariv60Sensor(hass),
+        ZmanMaarivRTSensor(hass),
+        ChatzosHaLailaSensor(hass),
     ], update_before_add=True)
 
 
