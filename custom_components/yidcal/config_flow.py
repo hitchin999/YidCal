@@ -7,6 +7,8 @@ from .const import DOMAIN
 # Default offsets (minutes)
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
+DEFAULT_TALLIS_TEFILIN_OFFSET = 22  # minutes after Alos
+
 
 # New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
@@ -34,6 +36,9 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         "havdalah_offset", default=DEFAULT_HAVDALAH_OFFSET
                     ): int,
+                    vol.Optional(
+                        "tallis_tefilin_offset", default=DEFAULT_TALLIS_TEFILIN_OFFSET
+                    ): int,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
                 }
             )
@@ -44,6 +49,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "strip_nikud": user_input["strip_nikud"],
             "candlelighting_offset": user_input["candlelighting_offset"],
             "havdalah_offset": user_input["havdalah_offset"],
+            "tallis_tefilin_offset": user_input["tallis_tefilin_offset"],
             CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
         }
         return self.async_create_entry(title="YidCal", data=data)
@@ -77,6 +83,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "havdalah_offset",
             data.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET),
         )
+        tallis_default = opts.get(
+            "tallis_tefilin_offset",
+            data.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
+        )
         include_attrs_default = opts.get(
             CONF_INCLUDE_ATTR_SENSORS,
             data.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -90,6 +100,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         "candlelighting_offset", default=candle_offset_default
                     ): int,
                     vol.Optional("havdalah_offset", default=havdala_offset_default): int,
+                    vol.Optional("tallis_tefilin_offset", default=tallis_default): int,
                     vol.Optional(
                         CONF_INCLUDE_ATTR_SENSORS,
                         default=include_attrs_default,
