@@ -15,6 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
+DEFAULT_TALLIS_TEFILIN_OFFSET = 22
 
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
@@ -93,6 +94,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "havdalah_offset",
         initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET),
     )
+    tallis = opts.get(
+        "tallis_tefilin_offset",
+        initial.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
+    )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
         initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -111,6 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "strip_nikud": strip,
         "candlelighting_offset": candle,
         "havdalah_offset": havdala,
+        "tallis_tefilin_offset": tallis,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
     }
     # Store global config for sensors
@@ -123,6 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "longitude": lon,
         "tzname": tzname,
         "city": f"{city}, {state}".strip(", "),
+        "tallis_tefilin_offset": tallis,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -143,6 +150,10 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     havdala = opts.get(
         "havdalah_offset",
         initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET),
+    )
+    tallis = opts.get(
+        "tallis_tefilin_offset",
+        initial.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
     )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
