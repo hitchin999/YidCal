@@ -3,7 +3,6 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 
-
 from .const import DOMAIN
 
 # Default offsets (minutes)
@@ -24,7 +23,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         """First step: ask the user for all the options."""
-        # ‹— Abort if we already have an entry
+        # Abort if we already have an entry
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
 
@@ -83,8 +82,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Show the form to adjust options after setup."""
-        opts = self._config_entry.options
-        data = self._config_entry.data
+        opts = self._config_entry.options or {}
+        data = self._config_entry.data or {}
 
         strip_nikud_default = opts.get(
             "strip_nikud", data.get("strip_nikud", False)
@@ -105,7 +104,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "day_label_language",
             data.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
         )
-
         include_attrs_default = opts.get(
             CONF_INCLUDE_ATTR_SENSORS,
             data.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -122,7 +120,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional("tallis_tefilin_offset", default=tallis_default): int,
                     vol.Optional(
                         "day_label_language",
-                        default=DEFAULT_DAY_LABEL_LANGUAGE,
+                        default=day_label_default,
                     ): selector({
                         "select": {
                             "options": [
@@ -131,7 +129,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             ]
                         }
                     }),
-
                     vol.Optional(
                         CONF_INCLUDE_ATTR_SENSORS,
                         default=include_attrs_default,
@@ -142,3 +139,4 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         # Save updated options into config_entry.options
         return self.async_create_entry(title="", data=user_input)
+        
