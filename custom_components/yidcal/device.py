@@ -21,7 +21,7 @@ class YidCalDevice(Entity):
 
     def __init__(self, *args, **kwargs):
         """Initialize listener tracking list."""
-        super().__init__(*args, **kwargs)
+        super().__init__()
         # Store unsubscribe callbacks from any async_track_... listener
         self._listener_unsubs: list[callable] = []
 
