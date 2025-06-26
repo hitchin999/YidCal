@@ -1,6 +1,8 @@
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.selector import selector
+
 
 from .const import DOMAIN
 
@@ -8,7 +10,7 @@ from .const import DOMAIN
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22  # minutes after Alos
-
+DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 
 # New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
@@ -39,6 +41,17 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         "tallis_tefilin_offset", default=DEFAULT_TALLIS_TEFILIN_OFFSET
                     ): int,
+                    vol.Optional(
+                        "day_label_language",
+                        default=DEFAULT_DAY_LABEL_LANGUAGE,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "yiddish", "label": "זונטאג, מאנטאג"},
+                                {"value": "hebrew",  "label": "יום א', יום ב"},
+                            ]
+                        }
+                    }),
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
                 }
             )
@@ -50,6 +63,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "candlelighting_offset": user_input["candlelighting_offset"],
             "havdalah_offset": user_input["havdalah_offset"],
             "tallis_tefilin_offset": user_input["tallis_tefilin_offset"],
+            "day_label_language": user_input["day_label_language"],
             CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
         }
         return self.async_create_entry(title="YidCal", data=data)
@@ -87,6 +101,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "tallis_tefilin_offset",
             data.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
         )
+        day_label_default = opts.get(
+            "day_label_language",
+            data.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
+        )
+
         include_attrs_default = opts.get(
             CONF_INCLUDE_ATTR_SENSORS,
             data.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -101,6 +120,18 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     ): int,
                     vol.Optional("havdalah_offset", default=havdala_offset_default): int,
                     vol.Optional("tallis_tefilin_offset", default=tallis_default): int,
+                    vol.Optional(
+                        "day_label_language",
+                        default=DEFAULT_DAY_LABEL_LANGUAGE,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "yiddish", "label": "זונטאג, מאנטאג"},
+                                {"value": "hebrew",  "label": "יום א', יום ב"},
+                            ]
+                        }
+                    }),
+
                     vol.Optional(
                         CONF_INCLUDE_ATTR_SENSORS,
                         default=include_attrs_default,
