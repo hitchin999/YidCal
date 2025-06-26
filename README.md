@@ -13,7 +13,7 @@ A custom Home Assistant integration that provides:
 * **Rosh Chodesh** sensor with nightfall and midnight attributes
 * **Special Shabbos** sensor for Shabbat specials (שבת זכור, שבת נחמו, etc.)
 * **Sefiras HaOmer** counters in Yiddish with the option to remove nikud (הַיּוֹם אַרְבָּעִים יוֹם שֶׁהֵם חֲמִשָּׁה שָׁבוּעוֹת וַחֲמִשָּׁה יָמִים לָעֹֽמֶר and הוֹד שֶׁבְּיְסוֹד)
-* **Day Label Yiddish** (`sensor.yidcal_day_label`) Daily label in Yiddish (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
+* **Day Label Yiddish** (`sensor.yidcal_day_label_yiddish`) Daily label in Yiddish (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
 * **Day Label Hebrew** (`sensor.yidcal_day_label_hebrew`) Daily label in Hebrew (e.g. יום א' יום ב)
 * **Daily Tehilim** (`sensor.yidcal_tehilim_daily`) Five-chapter rotation of Tehilim (e.g. א–ה, ו–ט)
 * **Date** (`sensor.yidcal_date`) Current Hebrew date in Yiddish (e.g., כ"ה חשון תשפ"ה)
