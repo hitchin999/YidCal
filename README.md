@@ -71,7 +71,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `וויפיל מינוט נאכן עלות איז טלית ותפילין`       | 22      | Minutes after Alos HaShachar for Talis & Tefilin (Misheyakir)                                              |
 | `נעם אראפ די נְקֻודּוֹת`                        | false   | Remove Hebrew vowel points from Omer text                                                                  |
 | `צולייגען באזונדערע סענסאָרס פאר די ימים טובים` | true    | Add/remove separate binary sensors for each holiday (they always show as attributes in the holiday sensor) |
-| `וועל אויס ווי דו ווילסט זעהן דעם טאג`          | yiddish | Choose how to display the day label (Yiddish or Hebrew)                                                    |
+| `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די`          | yiddish | Choose how to display the day label (Yiddish or Hebrew)                                                    |
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. You must manually remove them via **Settings → Entities**, or delete and re-add the integration with the holiday sensors option turned off.
 
