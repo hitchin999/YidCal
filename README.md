@@ -14,6 +14,8 @@ A custom Home Assistant integration that provides:
 * **Special Shabbos** sensor for Shabbat specials (שבת זכור, שבת נחמו, etc.)
 * **Sefiras HaOmer** counters in Yiddish with the option to remove nikud (הַיּוֹם אַרְבָּעִים יוֹם שֶׁהֵם חֲמִשָּׁה שָׁבוּעוֹת וַחֲמִשָּׁה יָמִים לָעֹֽמֶר and הוֹד שֶׁבְּיְסוֹד)
 * **Day Label Yiddish** (`sensor.yidcal_day_label`) Daily label in Yiddish (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
+* **Day Label Hebrew** (`sensor.yidcal_day_label_hebrew`) Daily label in Hebrew (e.g. יום א' יום ב)
+* **Daily Tehilim** (`sensor.yidcal_tehilim_daily`) Five-chapter rotation of Tehilim (e.g. א–ה, ו–ט)
 * **Date** (`sensor.yidcal_date`) Current Hebrew date in Yiddish (e.g., כ"ה חשון תשפ"ה)
 * **Zman Erev** (`sensor.yidcal_zman_erev`) Next candle-lighting timestamp (Shabbos or Yom Tov eve)
 * **Zman Motzi** (`sensor.yidcal_zman_motzi`) Next havdalah timestamp (Shabbos or Yom Tov end)
@@ -27,39 +29,21 @@ A custom Home Assistant integration that provides:
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
 * **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
-
-**New Zmanim Sensors**
-
 * **Zman Talis & Tefilin** (`sensor.yidcal_zman_tallis_tefilin`) – Misheyakir: Alos HaShachar + configured offset
-
 * **Zman Sof Krias Shma (MGA)** (`sensor.yidcal_sof_zman_krias_shma_mga`) – end-of-Shema, Magen Avraham
-
 * **Zman Sof Krias Shma (GRA)** (`sensor.yidcal_sof_zman_krias_shma_gra`) – end-of-Shema, Vilna Ga’on
-
 * **Zman Sof Tefilah (MGA)** (`sensor.yidcal_sof_zman_tefilah_mga`) – end-of-prayer, Magen Avraham
-
 * **Zman Sof Tefilah (GRA)** (`sensor.yidcal_sof_zman_tefilah_gra`) – end-of-prayer, Vilna Ga’on
-
 * **Zman Netz HaChamah** (`sensor.yidcal_netz`) – sunrise
-
 * **Zman Alos HaShachar** (`sensor.yidcal_alos`) – dawn
-
 * **Zman Chatzos** (`sensor.yidcal_chatzos_hayom`) – halakhic midday
-
 * **Zman Plag HaMincha** (`sensor.yidcal_plag_mincha`) – 10¾-sha‘ot
-
 * **Zman Shkiat HaChamah** (`sensor.yidcal_shkia`) – sunset
-
 * **Zman Maariv +60m** (`sensor.yidcal_zman_maariv_60`) – 60 min after sunset
-
 * **Zman Maariv R"T** (`sensor.yidcal_zman_maariv_rt`) – 72 min after sunset
-
 * **Zman Chatzos Hayom** (`sensor.yidcal_chatzos_hayom`) – midnight of night,
-
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
-
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
-
 * **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – midnight of night
 
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
@@ -87,6 +71,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `וויפיל מינוט נאכן עלות איז טלית ותפילין`       | 22      | Minutes after Alos HaShachar for Talis & Tefilin (Misheyakir)                                              |
 | `נעם אראפ די נְקֻודּוֹת`                        | false   | Remove Hebrew vowel points from Omer text                                                                  |
 | `צולייגען באזונדערע סענסאָרס פאר די ימים טובים` | true    | Add/remove separate binary sensors for each holiday (they always show as attributes in the holiday sensor) |
+| `וועל אויס ווי דו ווילסט זעהן דעם טאג`          | yiddish | Choose how to display the day label (Yiddish or Hebrew)                                                    |
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. You must manually remove them via **Settings → Entities**, or delete and re-add the integration with the holiday sensors option turned off.
 
