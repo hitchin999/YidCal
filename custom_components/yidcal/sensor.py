@@ -54,8 +54,8 @@ from .zman_shkia import ShkiaSensor
 from .zman_maariv_60 import ZmanMaariv60Sensor
 from .zman_maariv_rt  import ZmanMaarivRTSensor
 from .zman_chatzos_haleila import ChatzosHaLailaSensor
-
-
+from .tehilim_daily_sensor import TehilimDailySensor
+from .day_label_hebrew import DayLabelHebrewSensor
 
 from .const import DOMAIN
 
@@ -150,6 +150,8 @@ async def async_setup_entry(
         ZmanMaariv60Sensor(hass),
         ZmanMaarivRTSensor(hass),
         ChatzosHaLailaSensor(hass),
+        TehilimDailySensor(hass, yidcal_helper),
+        DayLabelHebrewSensor(hass, candle_offset, havdalah_offset),
     ], update_before_add=True)
 
 
