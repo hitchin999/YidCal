@@ -16,6 +16,7 @@ PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22
+DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
@@ -98,6 +99,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "tallis_tefilin_offset",
         initial.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
     )
+    day_label = opts.get(
+        "day_label_language",
+        initial.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
+    )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
         initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -117,6 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "candlelighting_offset": candle,
         "havdalah_offset": havdala,
         "tallis_tefilin_offset": tallis,
+        "day_label_language": day_label,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
     }
     # Store global config for sensors
@@ -130,6 +136,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "tzname": tzname,
         "city": f"{city}, {state}".strip(", "),
         "tallis_tefilin_offset": tallis,
+        "day_label_language": day_label,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
