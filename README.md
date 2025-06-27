@@ -6,7 +6,8 @@ A custom Home Assistant integration that provides:
 * **Holiday Sensor** (`sensor.yidcal_holiday`) with boolean attributes for every holiday, including:
   א׳ סליחות, ערב ראש השנה, ראש השנה א׳, ראש השנה ב׳, ראש השנה א׳ וב׳, מוצאי ראש השנה, צום גדליה, שלוש עשרה מדות, ערב יום כיפור, יום הכיפורים, מוצאי יום הכיפורים, ערב סוכות, סוכות א׳, סוכות ב׳, סוכות א׳ וב׳, א׳ דחול המועד סוכות, ב׳ דחול המועד סוכות, ג׳ דחול המועד סוכות, ד׳ דחול המועד סוכות, חול המועד סוכות, הושענא רבה, שמיני עצרת, שמחת תורה, מוצאי סוכות, ערב חנוכה, חנוכה, שובבים, שובבים ת״ת, צום עשרה בטבת, ט״ו בשבט, תענית אסתר, פורים, שושן פורים, ליל בדיקת חמץ, ערב פסח, פסח א׳, פסח ב׳, פסח א׳ וב׳, א׳ דחול המועד פסח, ב׳ דחול המועד פסח, ג׳ דחול המועד פסח, ד׳ דחול המועד פסח, חול המועד פסח, שביעי של פסח, אחרון של פסח, מוצאי פסח, ל״ג בעומר, ערב שבועות, שבועות א׳, שבועות ב׳, שבועות א׳ וב׳, מוצאי שבועות, צום שבעה עשר בתמוז, מוצאי צום שבעה עשר בתמוז, ערב תשעה באב, תשעה באב, תשעה באב נדחה, מוצאי תשעה באב, ראש חודש
 * **Erev** (`binary_sensor.yidcal_erev`) Turns on at the Alos Erev Shabbos, Yom Tov, etc., via the day-label sensor and dedicated binary sensors
-* **Full Molad Display** (`sensor.yidcal_molad` → `friendly` attribute) Full human-friendly Molad string in Yiddish
+* **Molad** (`sensor.yidcal_molad` → `friendly` attribute) Full human-friendly Molad string in Yiddish
+* **Full Display Sensor** (sensor.yidcal_full_display) displays it all in one (e.g פרייטאג פרשת קרח ~ ב׳ ד׳ראש חודש תמוז)
 * **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion
 * **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) i.e.: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Shabbos Mevorchim** and **Upcoming Shabbos Mevorchim** indicators (booleans)
