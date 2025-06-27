@@ -160,7 +160,7 @@ async def async_setup_entry(
         UpcomingYomTovSensor(hass, candle_offset, havdalah_offset),
         SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
-        
+        IshpizinSensor(hass, havdalah_offset),
     ], update_before_add=True)
 
 
