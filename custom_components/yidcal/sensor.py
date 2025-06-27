@@ -57,6 +57,7 @@ from .zman_chatzos_haleila import ChatzosHaLailaSensor
 from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
 from .upcoming_holiday_sensor import UpcomingYomTovSensor
+from .ishpizin_sensor import IshpizinSensor
 from .zman_chumetz import (
     SofZmanAchilasChumetzSensor,
     SofZmanSriefesChumetzSensor,
