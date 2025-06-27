@@ -30,10 +30,10 @@ A custom Home Assistant integration that provides:
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
 * **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
 * **Zman Talis & Tefilin** (`sensor.yidcal_zman_tallis_tefilin`) – Misheyakir: Alos HaShachar + configured offset
-* **Zman Sof Krias Shma (MGA)** (`sensor.yidcal_sof_zman_krias_shma_mga`) – end-of-Shema, Magen Avraham
-* **Zman Sof Krias Shma (GRA)** (`sensor.yidcal_sof_zman_krias_shma_gra`) – end-of-Shema, Vilna Ga’on
-* **Zman Sof Tefilah (MGA)** (`sensor.yidcal_sof_zman_tefilah_mga`) – end-of-prayer, Magen Avraham
-* **Zman Sof Tefilah (GRA)** (`sensor.yidcal_sof_zman_tefilah_gra`) – end-of-prayer, Vilna Ga’on
+* **Sof Zman Krias Shma (MGA)** (`sensor.yidcal_sof_zman_krias_shma_mga`) – end-of-Shema, Magen Avraham
+* **Sof Zman Krias Shma (GRA)** (`sensor.yidcal_sof_zman_krias_shma_gra`) – end-of-Shema, Vilna Ga’on
+* **Sof Zman Tefilah (MGA)** (`sensor.yidcal_sof_zman_tefilah_mga`) – end-of-prayer, Magen Avraham
+* **Sof Zman Tefilah (GRA)** (`sensor.yidcal_sof_zman_tefilah_gra`) – end-of-prayer, Vilna Ga’on
 * **Zman Netz HaChamah** (`sensor.yidcal_netz`) – sunrise
 * **Zman Alos HaShachar** (`sensor.yidcal_alos`) – dawn
 * **Zman Chatzos** (`sensor.yidcal_chatzos_hayom`) – halakhic midday
@@ -45,6 +45,9 @@ A custom Home Assistant integration that provides:
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
 * **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – midnight of night
+* **Upcoming Holiday Sensor** (`sensor.yidcal_upcoming_holiday`)
+* **Sof Zman Achilas Chumetz** (`sensor.yidcal_zman_achilas_chumetz`)
+* **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
 
