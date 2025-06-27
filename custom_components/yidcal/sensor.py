@@ -56,7 +56,11 @@ from .zman_maariv_rt  import ZmanMaarivRTSensor
 from .zman_chatzos_haleila import ChatzosHaLailaSensor
 from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
-
+from .upcoming_holiday_sensor import UpcomingYomTovSensor
+from .zman_chumetz import (
+    SofZmanAchilasChumetzSensor,
+    SofZmanSriefesChumetzSensor,
+)
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -152,6 +156,10 @@ async def async_setup_entry(
         ChatzosHaLailaSensor(hass),
         TehilimDailySensor(hass, yidcal_helper),
         DayLabelHebrewSensor(hass, candle_offset, havdalah_offset),
+        UpcomingYomTovSensor(hass, candle_offset, havdalah_offset),
+        SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
+        SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
+        
     ], update_before_add=True)
 
 
