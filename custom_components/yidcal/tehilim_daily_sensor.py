@@ -14,7 +14,7 @@ from .yidcal_lib.helper import int_to_hebrew
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 REFERENCE_DATE  = date(2025, 6, 25)
-REFERENCE_INDEX = 17
+REFERENCE_INDEX = 16
 CHAPTER_COUNT   = 150
 BLOCK_SIZE      = 5
 CYCLE_LENGTH    = (CHAPTER_COUNT + BLOCK_SIZE - 1) // BLOCK_SIZE  # = 30
