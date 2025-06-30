@@ -142,6 +142,6 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         if self._include_date:
             date_ent = self.hass.states.get("sensor.yidcal_date")
             if date_ent and date_ent.state not in (None, "", STATE_UNKNOWN):
-                text += f" – {date_ent.state}"
+                text += f" - {date_ent.state}"
                 
         self._state = text
