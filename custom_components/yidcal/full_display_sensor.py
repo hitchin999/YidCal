@@ -11,6 +11,8 @@ from homeassistant.helpers.event import async_track_time_interval
 from .device import YidCalDevice
 from .const import DOMAIN
 from . import DEFAULT_DAY_LABEL_LANGUAGE
+from homeassistant.const import STATE_UNKNOWN
+
 
 class FullDisplaySensor(YidCalDevice, SensorEntity):
     """
@@ -81,10 +83,8 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
 
         # Read user choice for day-label language
         cfg = hass.data[DOMAIN]["config"]
-        self._day_label_language = cfg.get(
-            "day_label_language",
-            DEFAULT_DAY_LABEL_LANGUAGE
-        )
+        self._day_label_language = cfg.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE)
+        self._include_date      = cfg.get("include_date", False)
 
     async def async_added_to_hass(self) -> None:
         """Register initial update and start once-per-minute polling."""
@@ -138,5 +138,10 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
             wd, hr = now.weekday(), now.hour
             if (wd == 4 and hr >= 13) or wd == 5:
                 text += f" ~ {special.state}"
-
+        # 6) Optional “today’s date”
+        if self._include_date:
+            date_ent = self.hass.states.get("sensor.yidcal_date")
+            if date_ent and date_ent.state not in (None, "", STATE_UNKNOWN):
+                text += f" – {date_ent.state}"
+                
         self._state = text
