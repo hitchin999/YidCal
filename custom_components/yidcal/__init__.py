@@ -9,6 +9,8 @@ from timezonefinder import TimezoneFinder
 
 from .const import DOMAIN
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
+from .config_flow import CONF_INCLUDE_DATE
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,6 +109,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_INCLUDE_ATTR_SENSORS,
         initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
     )
+    include_date = opts.get(
+        CONF_INCLUDE_DATE,
+        initial.get(CONF_INCLUDE_DATE, False),
+    )
 
     # Resolve and store geo+tz config
     latitude = hass.config.latitude
@@ -124,6 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
+        CONF_INCLUDE_DATE:        include_date,
     }
     # Store global config for sensors
     hass.data[DOMAIN]["config"] = {
@@ -137,6 +144,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "city": f"{city}, {state}".strip(", "),
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
+        "include_date":        include_date,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
