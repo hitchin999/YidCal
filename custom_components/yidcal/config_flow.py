@@ -9,7 +9,10 @@ from .const import DOMAIN
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22  # minutes after Alos
+CONF_INCLUDE_DATE = "include_date"
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
+
+
 
 # New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
@@ -51,6 +54,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             ]
                         }
                     }),
+                    vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
                 }
             )
@@ -63,6 +67,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "havdalah_offset": user_input["havdalah_offset"],
             "tallis_tefilin_offset": user_input["tallis_tefilin_offset"],
             "day_label_language": user_input["day_label_language"],
+            CONF_INCLUDE_DATE:        user_input[CONF_INCLUDE_DATE],
             CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
         }
         return self.async_create_entry(title="YidCal", data=data)
@@ -104,11 +109,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "day_label_language",
             data.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
         )
+        include_date_default = opts.get(
+            CONF_INCLUDE_DATE,
+            data.get(CONF_INCLUDE_DATE, False),
+        )
         include_attrs_default = opts.get(
             CONF_INCLUDE_ATTR_SENSORS,
             data.get(CONF_INCLUDE_ATTR_SENSORS, True),
         )
-
         if user_input is None:
             schema = vol.Schema(
                 {
@@ -129,6 +137,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             ]
                         }
                     }),
+                    vol.Optional(
+                        CONF_INCLUDE_DATE,
+                        default=include_date_default,
+                    ): bool,
                     vol.Optional(
                         CONF_INCLUDE_ATTR_SENSORS,
                         default=include_attrs_default,
