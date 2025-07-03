@@ -24,6 +24,8 @@ from hdate import HDateInfo
 from hdate.translator import set_language
 set_language("he")
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from .yidcal_lib.helper import YidCalHelper
+from .sensor import ShabbosMevorchimSensor, UpcomingShabbosMevorchimSensor
 from .no_music_sensor import NoMusicSensor
 from .upcoming_holiday_sensor import UpcomingYomTovSensor
 from .nine_days_sensor import NineDaysSensor
@@ -422,7 +424,11 @@ async def async_setup_entry(
         cfg.get(CONF_INCLUDE_ATTR_SENSORS, True),
     )
 
+    helper = YidCalHelper(hass.config)
+    
     entities: list[BinarySensorEntity] = [
+        ShabbosMevorchimSensor(hass, helper, candle, havdalah),
+        UpcomingShabbosMevorchimSensor(hass, helper),
         NoMeluchaSensor(hass, candle, havdalah),
         ErevHolidaySensor(hass, candle),
         NoMusicSensor(hass, candle, havdalah),
