@@ -58,6 +58,7 @@ from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
 from .upcoming_holiday_sensor import UpcomingYomTovSensor
 from .ishpizin_sensor import IshpizinSensor
+from .nine_days_sensor import NineDaysSensor
 from .zman_chumetz import (
     SofZmanAchilasChumetzSensor,
     SofZmanSriefesChumetzSensor,
@@ -161,6 +162,7 @@ async def async_setup_entry(
         SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
         IshpizinSensor(hass, havdalah_offset),
+        NineDaysSensor(hass, candle_offset, havdalah_offset),
     ], update_before_add=True)
 
 
