@@ -24,6 +24,9 @@ from hdate import HDateInfo
 from hdate.translator import set_language
 set_language("he")
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from .no_music_sensor import NoMusicSensor
+from .upcoming_holiday_sensor import UpcomingYomTovSensor
+from .nine_days_sensor import NineDaysSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -422,6 +425,9 @@ async def async_setup_entry(
     entities: list[BinarySensorEntity] = [
         NoMeluchaSensor(hass, candle, havdalah),
         ErevHolidaySensor(hass, candle),
+        NoMusicSensor(hass, candle, havdalah),
+        UpcomingYomTovSensor(hass, candle, havdalah),
+        NineDaysSensor(hass, candle, havdalah),
     ]
     if include_attrs:
         for name in SLUG_OVERRIDES:
