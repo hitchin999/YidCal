@@ -24,8 +24,8 @@ A custom Home Assistant integration that provides:
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
 * **Tal U’Matar** (`sensor.yidcal_tal_umatar`) Indicates when to change the prayer between “V’sen Tal u’Matar”/“V’sen Beracha”
 * **No Music** (`binary_sensor.yidcal_no_music`) Indicates when music is prohibited (e.g., in Sefirah, three weeks)
-* **Upcoming Shabbos Mevorchim** (`binary_sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim
-* **Shabbos Mevorchim** (`binary_sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim
+* **Upcoming Shabbos Mevorchim** (`sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim
+* **Shabbos Mevorchim** (`sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim
 * **Special Prayer Sensor** (`sensor.yidcal_special_prayer`) Aggregates special insertions (e.g., ותן טל, יעלה ויבוא, על הניסים)
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
@@ -46,11 +46,11 @@ A custom Home Assistant integration that provides:
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
 * **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – midnight of night
-* **Upcoming Holiday Sensor** (`sensor.yidcal_upcoming_holiday`)
+* **Upcoming Holiday Sensor** (`binary_sensor.yidcal_upcoming_holiday`)
 * **Sof Zman Achilas Chumetz** (`sensor.yidcal_zman_achilas_chumetz`)
 * **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
-* **Nine Days** (`sensor.yidcal_nine_days`) - turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
+* **Nine Days** (`binary_sensor.yidcal_nine_days`) - turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
   
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
 
