@@ -34,7 +34,6 @@ from .parsha_sensor import ParshaSensor
 from .date_sensor import DateSensor
 from .perek_avot_sensor import PerekAvotSensor
 from .holiday_sensor import HolidaySensor
-from .no_music_sensor import NoMusicSensor
 from .full_display_sensor import FullDisplaySensor
 from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
 from .special_prayer_sensor import SpecialPrayerSensor
@@ -56,9 +55,7 @@ from .zman_maariv_rt  import ZmanMaarivRTSensor
 from .zman_chatzos_haleila import ChatzosHaLailaSensor
 from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
-from .upcoming_holiday_sensor import UpcomingYomTovSensor
 from .ishpizin_sensor import IshpizinSensor
-from .nine_days_sensor import NineDaysSensor
 from .zman_chumetz import (
     SofZmanAchilasChumetzSensor,
     SofZmanSriefesChumetzSensor,
@@ -134,7 +131,6 @@ async def async_setup_entry(
         DateSensor(hass, havdalah_offset),
         PerekAvotSensor(hass),
         HolidaySensor(hass, candle_offset, havdalah_offset),
-        NoMusicSensor(hass, candle_offset, havdalah_offset),
         FullDisplaySensor(hass),
         MoridGeshemSensor(hass, yidcal_helper),
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
@@ -158,11 +154,9 @@ async def async_setup_entry(
         ChatzosHaLailaSensor(hass),
         TehilimDailySensor(hass, yidcal_helper),
         DayLabelHebrewSensor(hass, candle_offset, havdalah_offset),
-        UpcomingYomTovSensor(hass, candle_offset, havdalah_offset),
         SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
         IshpizinSensor(hass, havdalah_offset),
-        NineDaysSensor(hass, candle_offset, havdalah_offset),
     ], update_before_add=True)
 
 
