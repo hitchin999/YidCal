@@ -50,7 +50,7 @@ A custom Home Assistant integration that provides:
 * **Sof Zman Achilas Chumetz** (`sensor.yidcal_zman_achilas_chumetz`)
 * **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
-
+* **Nine Days** (`sensor.yidcal_nine_days`) - turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
 
 ---
