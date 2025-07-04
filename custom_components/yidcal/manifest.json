@@ -13,6 +13,5 @@
   ],
   "codeowners": ["@hitchin999"],
   "iot_class": "local_polling",
-  "config_flow": true,
-  "platforms": ["sensor", "binary_sensor"]
+  "config_flow": true
 }
