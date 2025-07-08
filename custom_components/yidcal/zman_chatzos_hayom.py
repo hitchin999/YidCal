@@ -83,8 +83,8 @@ class ChatzosHayomSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "chatzos_hayom_with_Seconds": target.isoformat(),
         }
 
-        # 7) custom rounding: under 58 s → floor, 58 s or above → ceil
-        if target.second >= 58:
+        # 7) custom rounding: under 30 s → floor, 30 s or above → ceil
+        if target.second >= 30:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
