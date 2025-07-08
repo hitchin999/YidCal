@@ -79,10 +79,8 @@ class SofZmanTefilahGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
             "tefila_gra_with_seconds":  target.isoformat(),
         }
 
-        # custom rounding: <56 s floor, ≥56 s ceil
-        if target.second >= 56:
-            target += timedelta(minutes=1)
-        target = target.replace(second=0, microsecond=0)
+        # floor to the previous minute (any seconds 0–59)
+        target = (target - timedelta(minutes=1)).replace(second=0, microsecond=0)
 
         # set native UTC value
         self._attr_native_value = target.astimezone(timezone.utc)
