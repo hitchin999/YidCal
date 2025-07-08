@@ -1,4 +1,4 @@
-name: Attach ZIP Asset on Release
+name: Attach YidCal ZIP on Release
 
 on:
   release:
@@ -10,14 +10,16 @@ permissions:
 jobs:
   attach-asset:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Package YidCal
         run: |
-          cd custom_components
-          zip -r ../yidcal.zip yidcal
+          cd custom_components/yidcal
+          zip -r __artifact__.zip .
+          mv __artifact__.zip $GITHUB_WORKSPACE/yidcal.zip
           echo "ASSET=yidcal.zip" >> $GITHUB_ENV
 
       - name: Upload ZIP Asset
@@ -27,4 +29,3 @@ jobs:
           files: ${{ env.ASSET }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
