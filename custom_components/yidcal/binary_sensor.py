@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from homeassistant.const import STATE_ON
 from homeassistant.config_entries import ConfigEntry
@@ -15,14 +16,14 @@ from homeassistant.helpers.event import (
 from homeassistant.core import HomeAssistant
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.util import dt as dt_util
-from zoneinfo import ZoneInfo
-from .device import YidCalDevice
 
-from astral import LocationInfo
-from astral.sun import sun
+from zmanim.zmanim_calendar import ZmanimCalendar
+from .zman_sensors import get_geo
 from hdate import HDateInfo
 from hdate.translator import set_language
+
 set_language("he")
+
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from .yidcal_lib.helper import YidCalHelper
 from .sensor import ShabbosMevorchimSensor, UpcomingShabbosMevorchimSensor
@@ -41,10 +42,22 @@ from .motzi_holiday_sensor import (
 
 from .const import DOMAIN
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
+from .device import YidCalDevice
 
 _LOGGER = logging.getLogger(__name__)
 
+# ─── Rounding helpers ────────────────────────────────────────────────────────
+def round_half_up(dt: datetime) -> datetime:
+    """Round dt to nearest minute: <30s floor, ≥30s ceil."""
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
 
+def round_ceil(dt: datetime) -> datetime:
+    """Round dt up to next minute if any seconds, else keep minute."""
+    if dt.second >= 1:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
 
 
 # ─── Your override map ────────────────────────────────────────────────────────
@@ -113,6 +126,7 @@ SLUG_OVERRIDES: dict[str, str] = {
 # ─── The fixed dynamic‐attribute binary sensor ────────────────────────────────
 
 
+
 class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """Mirrors one attribute from sensor.yidcal_holiday, with restore-on-reboot."""
 
@@ -173,9 +187,7 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
 
 
 class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
-    """True from alos ha-shachar until candle-lighting on Erev-Shabbos or any Erev-Yom-Tov,
-    showing debug flags and next Erev window start/end."""
-
+    """True from alos ha-shachar until candle-lighting on Erev-Shabbos or any Erev-Yom-Tov."""
     _attr_name = "Erev"
     _attr_icon = "mdi:weather-sunset-up"
 
@@ -187,13 +199,12 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self.hass = hass
         self._candle = candle_offset
         self._diaspora = True
-        self._tz = ZoneInfo(hass.config.time_zone)
-        self._loc = LocationInfo(
-            latitude=hass.config.latitude,
-            longitude=hass.config.longitude,
-            timezone=hass.config.time_zone,
-        )
-        self._attr_extra_state_attributes: dict[str, str] = {}
+
+        # timezone + placeholder geo
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg["tzname"])
+        self._geo: GeoLocation | None = None
+        self._attr_extra_state_attributes: dict[str, str | bool] = {}
 
     def _schedule_update(self, *_args) -> None:
         self.hass.loop.call_soon_threadsafe(
@@ -205,7 +216,13 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
+
+        # load geo once
+        self._geo = await get_geo(self.hass)
+        # initial calculation
         await self.async_update()
+
+        # poll every minute
         self._register_interval(
             self.hass,
             self._schedule_update,
@@ -213,14 +230,23 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
 
     async def async_update(self, now: datetime | None = None) -> None:
-        # current time and today's date
         now = (now or datetime.now(self._tz)).astimezone(self._tz)
         today = now.date()
 
-        # compute today's dawn and candle-lighting
-        sun_today = sun(self._loc.observer, date=today, tzinfo=self._tz)
-        alos_today = sun_today["sunrise"] - timedelta(minutes=72)
-        candle_today = sun_today["sunset"] - timedelta(minutes=self._candle)
+        if not self._geo:
+            return
+
+        # compute raw dawn & candle thresholds
+        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
+        sunrise = cal_today.sunrise().astimezone(self._tz)
+        sunset = cal_today.sunset().astimezone(self._tz)
+
+        raw_alos = sunrise - timedelta(minutes=72)
+        raw_candle = sunset - timedelta(minutes=self._candle)
+
+        # apply half-up rounding to on/off thresholds
+        alos = round_half_up(raw_alos)
+        candle = round_half_up(raw_candle)
 
         # festival flags
         hd_today = HDateInfo(today, diaspora=self._diaspora)
@@ -230,42 +256,47 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         is_shabbos_today = (today.weekday() == 5)
 
         # raw conditions
-        raw_erev_shabbos = (today.weekday() == 4)
+        raw_erev_shabbos = today.weekday() == 4
         raw_erev_holiday = is_yomtov_tomorrow and not is_yomtov_today
 
-        # suppressed conditions
-        is_erev_shabbos = raw_erev_shabbos and not is_yomtov_today and now < candle_today
-        is_erev_holiday = raw_erev_holiday and not is_shabbos_today and now >= alos_today
+        # suppressed conditions using rounded thresholds
+        is_erev_shabbos = raw_erev_shabbos and not is_yomtov_today and now < candle
+        is_erev_holiday = raw_erev_holiday and not is_shabbos_today and now >= alos
 
-        # compute on/off state (unchanged logic)
-        in_current = (alos_today <= now < candle_today)
+        # compute final on/off
+        in_current = (alos <= now < candle)
         self._attr_is_on = in_current and (is_erev_shabbos or is_erev_holiday)
 
         # blocked debug flags
         blocked_shabbos = raw_erev_shabbos and is_yomtov_today
         blocked_holiday = raw_erev_holiday and is_shabbos_today
 
-        # find next Erev window start/end using suppressed logic
-        next_start = None
-        next_end = None
-        for i in range(0, 32):
+        # find next window start/end and round them
+        next_start = next_end = None
+        for i in range(32):
             d = today + timedelta(days=i)
             hd_d = HDateInfo(d, diaspora=self._diaspora)
             hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
             yomd = hd_d.is_yom_tov
             yomd1 = hd_d1.is_yom_tov
-            shd = (d.weekday() == 5)
+            shd = d.weekday() == 5
             ev_sh = (d.weekday() == 4 and not yomd)
             ev_hol = (yomd1 and not shd)
             if not (ev_sh or ev_hol):
                 continue
-            sun_d = sun(self._loc.observer, date=d, tzinfo=self._tz)
-            start_d = sun_d["sunrise"] - timedelta(minutes=72)
-            end_d = sun_d["sunset"] - timedelta(minutes=self._candle)
-            if d == today and now >= end_d:
+
+            cal_d = ZmanimCalendar(geo_location=self._geo, date=d)
+            sunrise_d = cal_d.sunrise().astimezone(self._tz)
+            sunset_d = cal_d.sunset().astimezone(self._tz)
+            raw_start = sunrise_d - timedelta(minutes=72)
+            raw_end = sunset_d - timedelta(minutes=self._candle)
+
+            # skip if today’s window already past
+            if d == today and now >= raw_end:
                 continue
-            next_start = start_d
-            next_end = end_d
+
+            next_start = round_half_up(raw_start)
+            next_end = round_half_up(raw_end)
             break
 
         # build attributes
@@ -286,12 +317,8 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._attr_extra_state_attributes = attrs
 
 
-
-
-
 class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
-
     _attr_name = "No Melucha"
     _attr_icon = "mdi:briefcase-variant-off"
 
@@ -304,22 +331,16 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._diaspora = True
         self._candle = candle_offset
         self._havdalah = havdalah_offset
-        self._tz = ZoneInfo(hass.config.time_zone)
-        self._loc = LocationInfo(
-            latitude=hass.config.latitude,
-            longitude=hass.config.longitude,
-            timezone=hass.config.time_zone,
-        )
-        self._attr_extra_state_attributes: dict[str, str] = {}
+
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg["tzname"])
+        self._geo: GeoLocation | None = None
+        self._attr_extra_state_attributes: dict[str, str | bool] = {}
 
     async def async_added_to_hass(self) -> None:
-        """Register immediate update and once-per-minute polling."""
         await super().async_added_to_hass()
-
-        # Immediate update
+        self._geo = await get_geo(self.hass)
         await self.async_update()
-
-        # Poll every minute (use base-class wrapper to store unsubscribe)
         self._register_interval(
             self.hass,
             self.async_update,
@@ -327,24 +348,25 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
 
     async def async_update(self, now: datetime | None = None) -> None:
-        """Compute whether melucha is prohibited (Shabbos/Yom Tov window)."""
-        # 1) get correct current time in local tz
         now = dt_util.now().astimezone(self._tz)
         today = now.date()
 
-        # 2) compute sunset + candle-lighting threshold for today
-        s_today = sun(self._loc.observer, date=today, tzinfo=self._tz)
-        sunset_today = s_today["sunset"]
+        if not self._geo:
+            return
+
+        # compute raw window start/end
+        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
+        s_eve = cal_today.sunset().astimezone(self._tz)  # eve‐sunset for today
+        # for multi‐day YT you'd compute start_date… but this is your original logic
+        sunset_today = s_eve  # reused for brevity
         candle_time = sunset_today - timedelta(minutes=self._candle)
 
-        # 3) decide which Gregorian date to check for festival
+        # festival detection (unchanged from original)…
         check_date = today + timedelta(days=1) if now >= candle_time else today
         hd = HDateInfo(check_date, diaspora=self._diaspora)
         is_yomtov = hd.is_yom_tov
 
-        # 4) find festival span (start_date…end_date)
         if is_yomtov:
-            # multi-day Yom Tov: expand around check_date
             start_date = check_date
             while HDateInfo(start_date - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
                 start_date -= timedelta(days=1)
@@ -352,62 +374,47 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             while HDateInfo(end_date + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
                 end_date += timedelta(days=1)
             info = HDateInfo(start_date, diaspora=self._diaspora)
-            holiday = info.holidays[0]
-            festival_name = str(holiday)
+            festival_name = str(info.holidays[0])
         else:
-            # Shabbos as two-day festival (Fri→Sat)
-            wd = today.weekday()  # Mon=0…Fri=4,Sat=5
+            wd = today.weekday()
             if wd == 5 and now < (sunset_today + timedelta(minutes=self._havdalah)):
-                # still Sat before havdalah: started Fri
                 start_date = today - timedelta(days=1)
             else:
-                # upcoming Fri
                 days_to_friday = (4 - wd) % 7
                 start_date = today + timedelta(days=days_to_friday)
             end_date = start_date + timedelta(days=1)
             festival_name = "שבת"
 
-        # 5) compute the candle window:
-        #    - for multi-day Yom Tov, use the eve *before* the first day
-        #    - for Shabbos, use that Friday itself
-        if is_yomtov:
-            eve_date = start_date - timedelta(days=1)
-        else:
-            eve_date = start_date
+        # recompute eve/final for full window
+        cal_eve = ZmanimCalendar(geo_location=self._geo, date=(start_date - timedelta(days=1) if is_yomtov else start_date))
+        s_eve = cal_eve.sunset().astimezone(self._tz)
+        cal_final = ZmanimCalendar(geo_location=self._geo, date=end_date)
+        s_final = cal_final.sunset().astimezone(self._tz)
 
-        # sunrise/sunset for eve and final day
-        s_eve = sun(self._loc.observer, date=eve_date, tzinfo=self._tz)["sunset"]
-        s_final = sun(self._loc.observer, date=end_date, tzinfo=self._tz)["sunset"]
+        raw_start = s_eve - timedelta(minutes=self._candle)
+        raw_end = s_final + timedelta(minutes=self._havdalah)
 
-        window_start = s_eve - timedelta(minutes=self._candle)
-        window_end = s_final + timedelta(minutes=self._havdalah)
+        # rounding per your request
+        window_start = round_half_up(raw_start)
+        window_end = round_ceil(raw_end)
+
         in_window = window_start <= now < window_end
 
-        # only show “Shabbos” when we’re actually in that Fri→Sat window
-        if festival_name == "שבת" and not in_window:
-            festival_name = None
-
-        # 6) set state & attributes
         self._attr_is_on = in_window
         erev = self.hass.states.get("binary_sensor.yidcal_erev")
         erev_attrs = erev.attributes if erev else {}
+
         self._attr_extra_state_attributes = {
             "now": now.isoformat(),
-            #"today": str(today),
-            #"check_date": str(check_date),
-            "festival_name": festival_name,
+            "festival_name": festival_name if (festival_name == "שבת" and in_window) or festival_name != "שבת" else None,
             "is_erev_holiday": erev_attrs.get("is_erev_holiday", False),
             "is_erev_shabbos": erev_attrs.get("is_erev_shabbos", False),
             "is_yomtov": is_yomtov,
             "is_shabbos": (festival_name == "שבת" and in_window),
-            #"candle_eve": eve_date.isoformat(),
-            #"sunset_eve": s_eve.isoformat(),
-            #"sunset_final": s_final.isoformat(),
             "window_start": window_start.isoformat(),
             "window_end": window_end.isoformat(),
             "in_window": in_window,
         }
-
 
 
 async def async_setup_entry(
@@ -418,7 +425,6 @@ async def async_setup_entry(
     cfg = hass.data[DOMAIN][entry.entry_id]
     candle = cfg["candlelighting_offset"]
     havdalah = cfg["havdalah_offset"]
-    # Honor the user’s runtime choice (fallback to initial data if no options yet)
     include_attrs = entry.options.get(
         CONF_INCLUDE_ATTR_SENSORS,
         cfg.get(CONF_INCLUDE_ATTR_SENSORS, True),
