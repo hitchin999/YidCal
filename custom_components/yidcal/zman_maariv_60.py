@@ -66,10 +66,11 @@ class ZmanMaariv60Sensor(YidCalDevice, RestoreEntity, SensorEntity):
             "maariv_60_with_seconds":   target.isoformat(),
         }
 
-        # custom rounding: <56 s floor, ≥56 s ceil
-        if target.second >= 5:
-            target += timedelta(minutes=1)
-        target = target.replace(second=0, microsecond=0)
+        # ceil to next minute if there's any seconds, else keep the same minute
+        if raw.second >= 1:
+            raw += timedelta(minutes=1)
+        return raw.replace(second=0, microsecond=0)
+
 
         self._attr_native_value = target.astimezone(timezone.utc)
         
