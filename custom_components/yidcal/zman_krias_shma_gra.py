@@ -79,7 +79,7 @@ class SofZmanKriasShmaGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
         }
 
         # floor to the previous minute (any seconds 0–59)
-        return (raw - timedelta(minutes=1)).replace(second=0, microsecond=0)
+        floored = (target - timedelta(minutes=1)).replace(second=0, microsecond=0)
 
         # set native UTC
         self._attr_native_value = target.astimezone(timezone.utc)
