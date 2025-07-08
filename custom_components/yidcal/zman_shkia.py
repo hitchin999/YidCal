@@ -66,9 +66,10 @@ class ShkiaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         }
 
         # ceil to next minute if there's any seconds, else keep the same minute
+        target = shkia
         if target.second >= 1:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
-        self._attr_native_value = shkia.astimezone(timezone.utc)
+        self._attr_native_value = target.astimezone(timezone.utc)
         
