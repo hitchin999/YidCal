@@ -82,8 +82,8 @@ class ChatzosHaLailaSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "chatzos_haleila_with_seconds":  target.isoformat(),
         }
 
-        # 6) custom rounding: <58 s floor, ≥58 s ceil
-        if target.second >= 58:
+        # 6) custom rounding: <30 s floor, ≥30 s ceil
+        if target.second >= 30:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
