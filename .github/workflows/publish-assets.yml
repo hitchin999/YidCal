@@ -16,15 +16,15 @@ jobs:
 
       - name: Package YidCal
         run: |
-          zip -r yidcal.zip . \
-            -x .git/** \
-            -x .github/**
+          cd custom_components
+          zip -r ../yidcal.zip yidcal
+          echo "ASSET=yidcal.zip" >> $GITHUB_ENV
 
-      - name: Upload ZIP asset
+      - name: Upload ZIP Asset
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: yidcal.zip
+          files: ${{ env.ASSET }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
