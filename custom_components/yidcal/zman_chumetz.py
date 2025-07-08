@@ -117,10 +117,8 @@ class _BaseChumetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "sof_zman_chumetz_with_seconds":  raw.isoformat(),
         }
 
-        # rounding: below 56s → floor, ≥56s → ceil
-        if raw.second >= 56:
-            raw += timedelta(minutes=1)
-        return raw.replace(second=0, microsecond=0)
+        # floor to the previous minute (any seconds 0–59)
+        return (raw - timedelta(minutes=1)).replace(second=0, microsecond=0)
 
     # subclasses implement async_update()
 
