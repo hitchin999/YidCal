@@ -66,7 +66,7 @@ class ZmanMaarivRTSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "maarive_rt_with_seconds":   target.isoformat(),
         }
 
-        # custom rounding: <56 s floor, ≥56 s ceil
+        # ceil to next minute if there's any seconds, else keep the same minute
         if target.second >= 1:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
