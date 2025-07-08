@@ -139,7 +139,7 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         }
 
         # 7) round half-up at 30s
-        if target.second >= 25:
+        if target.second >= 30:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
@@ -233,9 +233,11 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "longitude": self._geo.longitude,
         }
 
-        if target.second >= 5:
+        # ceil to next minute if there's any seconds, else keep the same minute
+        if target.second >= 1:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
+        
         self._attr_native_value = target.astimezone(timezone.utc)
 
 # no async_setup_entry here—these sensors are registered from sensor.py
