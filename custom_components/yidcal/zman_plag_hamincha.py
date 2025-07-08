@@ -83,8 +83,8 @@ class PlagHaMinchaSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "plag_hamincha_with_seconds": target.isoformat(),
         }
 
-        # 7) custom rounding: under 56 s floor, 56 s+ ceil
-        if target.second >= 5:
+        # 7) custom rounding: <30 s floor, ≥30 s ceil
+        if target.second >= 30:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
