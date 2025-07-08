@@ -22,6 +22,13 @@ DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
+    
+    # Hard-code Monroe NY
+    # if the HA-configured coords fall inside a rough Monroe bounding box…
+    if 41.2 <= latitude <= 41.45 and -74.3 <= longitude <= -74.0:
+        # snap to the exact Monroe center
+        return "Kiryas Joel", "NY", 41.34204, -74.16792, hass.config.time_zone
+
     try:
         # 1) Reverse-lookup borough
         def blocking_lookup():
