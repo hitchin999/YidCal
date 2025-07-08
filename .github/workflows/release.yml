@@ -5,6 +5,10 @@ on:
     # Triggers on tags like v0.1.7
     tags:
       - 'v*.*.*'
+  workflow_dispatch:  
+
+permissions:
+  contents: write
 jobs:
   publish:
     runs-on: ubuntu-latest
