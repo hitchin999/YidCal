@@ -1,3 +1,5 @@
+[![YidCal total downloads](https://img.shields.io/github/downloads/hitchin999/YidCal/total.svg?style=for-the-badge)](https://github.com/hitchin999/YidCal/releases)
+
 # YidCal is a Yiddish Calendar Integration for Home Assistant
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hitchin999&repository=YidCal&category=Integration)
