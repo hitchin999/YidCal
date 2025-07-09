@@ -83,8 +83,8 @@ class SofZmanKriasShmaMGASensor(YidCalDevice, RestoreEntity, SensorEntity):
             "krias_shma_mga_with_seconds": target.isoformat(),
         }
 
-        # 7) floor to the previous minute (any seconds 0–59)
-        target = (target - timedelta(minutes=1)).replace(second=0, microsecond=0)
+        # 7) floor to the minute (any seconds 0–59)
+        target = target.replace(second=0, microsecond=0)
 
         # 8) set native UTC value
         self._attr_native_value = target.astimezone(timezone.utc)
