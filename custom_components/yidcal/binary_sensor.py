@@ -54,12 +54,9 @@ def round_half_up(dt: datetime) -> datetime:
     return dt.replace(second=0, microsecond=0)
 
 def round_ceil(dt: datetime) -> datetime:
-    """Round dt up to next minute if any seconds, else keep minute."""
-    if dt.second >= 1:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
+    # always bump to the next minute then strip seconds
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    
 # ─── Your override map ────────────────────────────────────────────────────────
 SLUG_OVERRIDES: dict[str, str] = {
     "א׳ סליחות":             "alef_selichos",
