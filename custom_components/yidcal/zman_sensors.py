@@ -233,10 +233,8 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "longitude": self._geo.longitude,
         }
 
-        # ceil to next minute if there's any seconds, else keep the same minute
-        if target.second >= 1:
-            target += timedelta(minutes=1)
-        target = target.replace(second=0, microsecond=0)
+        # ceil to minute if there's any seconds
+        target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
         
         self._attr_native_value = target.astimezone(timezone.utc)
 
