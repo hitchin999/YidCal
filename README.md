@@ -151,3 +151,4 @@ card:
         {% endif %}
       text_only: true
 ````
+> _By Yoel Goldstein / Vaayer LLC_
