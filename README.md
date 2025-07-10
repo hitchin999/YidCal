@@ -1,4 +1,9 @@
-[![YidCal total downloads](https://img.shields.io/github/downloads/hitchin999/YidCal/total.svg?style=for-the-badge)](https://github.com/hitchin999/YidCal/releases)
+[![Total Downloads](https://img.shields.io/github/downloads/hitchin999/YidCal/total.svg?label=Total%20Downloads&style=for-the-badge&color=blue)](https://github.com/hitchin999/YidCal/releases)
+
+[![Active YidCal Installs][yidcal-badge]][yidcal-analytics]
+
+[yidcal-badge]: https://img.shields.io/badge/dynamic/json?label=Active%20Installs&url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.yidcal.total&style=for-the-badge&color=blue
+[yidcal-analytics]: https://analytics.home-assistant.io/integration/yidcal
 
 # YidCal is a Yiddish Calendar Integration for Home Assistant
 
