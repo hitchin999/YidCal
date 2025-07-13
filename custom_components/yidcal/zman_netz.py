@@ -59,10 +59,8 @@ class NetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         target   = sunrise
 
-        # Debug attrs
-        self._attr_extra_state_attributes = {
-            "netz_with_seconds": sunrise.isoformat(),
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # custom rounding: <30 s floor, ≥30 s ceil
         if target.second >= 30:
@@ -70,3 +68,17 @@ class NetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
         target = target.replace(second=0, microsecond=0)
 
         self._attr_native_value = target.astimezone(timezone.utc)
+
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+        
+        # Debug attrs
+        self._attr_extra_state_attributes = {
+            "netz_with_seconds": full_iso,
+            "netz_simple":  human,
+        }
