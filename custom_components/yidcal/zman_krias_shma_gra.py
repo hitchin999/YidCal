@@ -69,17 +69,30 @@ class SofZmanKriasShmaGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
         # 4) Sof Zman Kri’at Shema (GRA) = dawn + 3 * hour_td
         target     = dawn + hour_td * 3
 
-        # debug attrs
-        self._attr_extra_state_attributes = {
-            #"dawn":       dawn.isoformat(),
-            #"sunrise":    dawn.isoformat(),
-            #"sunset":     nightfall.isoformat(),
-            #"hour_len":   str(hour_td),
-            "krias_shma_gra_with_seconds": target.isoformat(),
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # floor to the minute (any seconds 0–59)
         target = target.replace(second=0, microsecond=0)
 
         # set native UTC
         self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+        
+
+        # debug attrs
+        self._attr_extra_state_attributes = {
+            #"dawn":       dawn.isoformat(),
+            #"sunrise":    dawn.isoformat(),
+            #"sunset":     nightfall.isoformat(),
+            #"hour_len":   str(hour_td),
+            "krias_shma_gra_with_seconds": full_iso,
+            "krias_shma_gra_simple":  human,
+        }
