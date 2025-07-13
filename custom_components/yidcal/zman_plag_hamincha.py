@@ -73,15 +73,8 @@ class PlagHaMinchaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # 5) Plag HaMincha = dawn + 10.75 * hour_td
         target    = dawn + hour_td * 10.75
 
-        # 6) expose debug attrs
-        self._attr_extra_state_attributes = {
-            #"dawn":       dawn.isoformat(),
-            #"sunrise":    sunrise.isoformat(),
-            #"sunset":     sunset.isoformat(),
-            #"nightfall":  nightfall.isoformat(),
-            #"hour_len":   str(hour_td),
-            "plag_hamincha_with_seconds": target.isoformat(),
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # 7) custom rounding: <30 s floor, ≥30 s ceil
         if target.second >= 30:
@@ -91,3 +84,21 @@ class PlagHaMinchaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # 8) set native UTC value
         self._attr_native_value = target.astimezone(timezone.utc)
         
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+
+        # 6) expose debug attrs
+        self._attr_extra_state_attributes = {
+            #"dawn":       dawn.isoformat(),
+            #"sunrise":    sunrise.isoformat(),
+            #"sunset":     sunset.isoformat(),
+            #"nightfall":  nightfall.isoformat(),
+            #"hour_len":   str(hour_td),
+            "plag_hamincha_with_seconds": full_iso,
+            "plag_hamincha_simple":  human,
+        }
