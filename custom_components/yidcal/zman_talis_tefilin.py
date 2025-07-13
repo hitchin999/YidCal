@@ -68,14 +68,9 @@ class ZmanTalisTefilinSensor(YidCalDevice, RestoreEntity, SensorEntity):
         alos_time = sunrise - timedelta(minutes=DEFAULT_ALOS_OFFSET)
         # 2) Zman Talis & Tefilin = Alos + user offset
         target = alos_time + timedelta(minutes=self._offset)
-
-        # expose extra attributes for debugging
-        self._attr_extra_state_attributes = {
-            #"sunrise": sunrise.isoformat(),
-            "alos_with_seconds": alos_time.isoformat(),
-            "tallis_with_seconds": target.isoformat(),
-            "offset_minutes": self._offset,
-        }
+        
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # custom rounding: <30 s floor, ≥30 s ceil
         if target.second >= 30:
@@ -84,3 +79,21 @@ class ZmanTalisTefilinSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # set the UTC timestamp value
         self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+        
+
+        # expose extra attributes for debugging
+        self._attr_extra_state_attributes = {
+            #"sunrise": sunrise.isoformat(),
+            "alos_with_seconds": alos_time.isoformat(),
+            "tallis_with_seconds": full_iso,
+            "tallis_simple":  human,
+            "offset_minutes": self._offset,
+        }
