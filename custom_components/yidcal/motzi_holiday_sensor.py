@@ -4,16 +4,24 @@ from __future__ import annotations
 import datetime
 from datetime import timedelta, time
 from zoneinfo import ZoneInfo
-from .device import YidCalDevice
+
+from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.event import async_track_time_interval
 
 from astral import LocationInfo
 from astral.sun import sun
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from hdate import HDateInfo
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.restore_state import RestoreEntity
+from zmanim.zmanim_calendar import ZmanimCalendar
+from .device import YidCalDevice
+from .zman_sensors import get_geo
+from .const import DOMAIN
+
+
+
 
 """
 Base class for “מוצאי <holiday>” sensors.
@@ -241,4 +249,95 @@ class MotzeiTishaBavSensor(MotzeiHolidaySensor):
             candle_offset=candle_offset,
             havdalah_offset=havdalah_offset,
         )
+        
+
+class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
+    """True from havdalah on Shabbos or Yom Tov until 2 AM next day."""
+    _attr_name = "Motzi"
+    _attr_icon = "mdi:liquor"
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        candle_offset: int,
+        havdalah_offset: int,
+    ) -> None:
+        super().__init__()
+        slug = "motzi"
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id = f"binary_sensor.yidcal_{slug}"
+        self.hass = hass
+
+        self._candle = candle_offset
+        self._havdalah = havdalah_offset
+
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg["tzname"])
+        self._geo: ZmanimCalendar | None = None
+        self._state = False
+        self._attr_extra_state_attributes: dict[str, bool | str] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # restore last state
+        last = await self.async_get_last_state()
+        if last:
+            self._state = (last.state == "on")
+        # load geo once
+        self._geo = await get_geo(self.hass)
+        # initial calc
+        await self.async_update()
+        # poll every minute
+        self._register_interval(
+            self.hass,
+            self.async_update,
+            timedelta(minutes=1),
+        )
+
+    @property
+    def is_on(self) -> bool:
+        return self._state
+
+    async def async_update(self, now: datetime.datetime | None = None) -> None:
+        now = (now or datetime.datetime.now(self._tz)).astimezone(self._tz)
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        
+        # raw detection
+        raw_shabbos = (yesterday.weekday() == 5)
+        raw_holiday = HDateInfo(today, diaspora=True).is_yom_tov
+
+        if not self._geo:
+            self._state = False
+            return
+
+        # compute yesterday's sunset
+        cal_prev = ZmanimCalendar(geo_location=self._geo, date=yesterday)
+        sunset_prev = cal_prev.sunset().astimezone(self._tz)
+
+        # window: havdalah → 2 AM today
+        start = sunset_prev + timedelta(minutes=self._havdalah)
+        end = datetime.datetime.combine(today, time(2, 0), tzinfo=self._tz)
+
+        in_window = (start <= now < end)
+        self._state = in_window and (raw_shabbos or raw_holiday)
+
+
+
+        # blocking: e.g. a raw shabbos motzi that coincides with a Yom Tov today
+        is_yomtov_today = HDateInfo(today, diaspora=True).is_yom_tov
+        is_shabbos_today = (today.weekday() == 5)
+
+        attrs: dict[str, bool | str] = {
+            "now": now.isoformat(),
+            "is_motzi_shabbos": raw_shabbos,
+            "is_motzi_yomtov": raw_holiday,
+            "blocked_motzi_shabbos": raw_shabbos and is_yomtov_today,
+            "blocked_motzi_yomtov": raw_holiday and is_shabbos_today,
+        }
+        if in_window:
+            attrs["window_start"] = start.isoformat()
+            attrs["window_end"] = end.isoformat()
+
+        self._attr_extra_state_attributes = attrs
         
