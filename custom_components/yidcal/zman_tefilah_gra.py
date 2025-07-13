@@ -69,6 +69,23 @@ class SofZmanTefilahGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Sof Zman Tefilah (Gra) = dawn + 4 * hour_td
         target   = dawn + hour_td * 4
+        
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
+        
+        # floor to the minute (any seconds 0–59)
+        target = target.replace(second=0, microsecond=0)
+
+        # set native UTC value
+        self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
 
         # expose for debugging
         self._attr_extra_state_attributes = {
@@ -76,11 +93,6 @@ class SofZmanTefilahGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunrise":     dawn.isoformat(),
             #"sunset":      nightfall.isoformat(),
             #"hour_len":    str(hour_td),
-            "tefila_gra_with_seconds":  target.isoformat(),
+            "tefila_gra_with_seconds":  full_iso,
+            "tefila_gra_simple":  human,
         }
-
-        # floor to the minute (any seconds 0–59)
-        target = target.replace(second=0, microsecond=0)
-
-        # set native UTC value
-        self._attr_native_value = target.astimezone(timezone.utc)
