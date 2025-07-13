@@ -74,13 +74,8 @@ class ChatzosHaLailaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # 4) Chatzos Ha-Laila = night_start + 6 * hour_td
         target       = night_start + hour_td * 6
 
-        # 5) expose debug attrs
-        self._attr_extra_state_attributes = {
-            #"night_start": night_start.isoformat(),
-            #"dawn_next":   dawn_next.isoformat(),
-            #"hour_len":    str(hour_td),
-            "chatzos_haleila_with_seconds":  target.isoformat(),
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # 6) custom rounding: <30 s floor, ≥30 s ceil
         if target.second >= 30:
@@ -89,3 +84,21 @@ class ChatzosHaLailaSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # 7) set native UTC timestamp
         self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+        
+        # 5) expose debug attrs
+        self._attr_extra_state_attributes = {
+            #"night_start": night_start.isoformat(),
+            #"dawn_next":   dawn_next.isoformat(),
+            #"hour_len":    str(hour_td),
+            "chatzos_haleila_with_seconds":  full_iso,
+            "chatzos_haleila_simple":  human,
+            
+        }
