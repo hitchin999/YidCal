@@ -60,13 +60,23 @@ class ShkiaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         cal      = ZmanimCalendar(geo_location=self._geo, date=today)
         shkia    = cal.sunset().astimezone(self._tz)
 
-        # expose for debugging
-        self._attr_extra_state_attributes = {
-            "shkia_with_seconds": shkia.isoformat(),
-        }
+
 
         # ceil to minute if there's any seconds
         target = (shkia + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
         self._attr_native_value = target.astimezone(timezone.utc)
         
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+        
+        # expose for debugging
+        self._attr_extra_state_attributes = {
+            "shkia_with_seconds": shkia.isoformat(),
+            "shkia_simple":  human,
+        }
