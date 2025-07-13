@@ -38,6 +38,7 @@ from .motzi_holiday_sensor import (
     MotzeiRoshHashanaSensor,
     MotzeiShivaUsorBTammuzSensor,
     MotzeiTishaBavSensor,
+    MotziSensor,
 )
 
 from .const import DOMAIN
@@ -83,6 +84,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "שמיני עצרת":            "shemini_atzeres",
     "שמחת תורה":             "simchas_torah",
     "מוצאי סוכות":            "motzei_sukkos",
+    "אסרו חג סוכות":         "isri_chag_sukkos",
     "ערב חנוכה":             "erev_chanukah",
     "חנוכה":                 "chanukah",
     "שובבים":               "shovavim",
@@ -105,12 +107,14 @@ SLUG_OVERRIDES: dict[str, str] = {
     "שביעי של פסח":         "shviei_shel_pesach",
     "אחרון של פסח":         "achron_shel_pesach",
     "מוצאי פסח":            "motzei_pesach",
+    "אסרו חג פסח":          "isri_chag_pesach",
     "ל\"ג בעומר":            "lag_baomer",
     "ערב שבועות":           "erev_shavuos",
     "שבועות א׳":             "shavuos_1",
     "שבועות ב׳":             "shavuos_2",
     "שבועות א׳ וב׳":          "shavuos_1_2",
     "מוצאי שבועות":           "motzei_shavuos",
+    "אסרו חג שבועות":         "isri_chag_shavuos",
     "צום שבעה עשר בתמוז":      "shiva_usor_btammuz",
     "מוצאי צום שבעה עשר בתמוז":  "motzei_shiva_usor_btammuz",
     "ערב תשעה באב":           "erev_tisha_bav",
@@ -437,6 +441,7 @@ async def async_setup_entry(
         NoMusicSensor(hass, candle, havdalah),
         UpcomingYomTovSensor(hass, candle, havdalah),
         NineDaysSensor(hass, candle, havdalah),
+        MotziSensor(hass, candle, havdalah),
     ]
     if include_attrs:
         for name in SLUG_OVERRIDES:
