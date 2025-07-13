@@ -30,7 +30,16 @@ from .sensor import ShabbosMevorchimSensor, UpcomingShabbosMevorchimSensor
 from .no_music_sensor import NoMusicSensor
 from .upcoming_holiday_sensor import UpcomingYomTovSensor
 from .nine_days_sensor import NineDaysSensor
-
+from .motzi_holiday_sensor import (
+    MotzeiYomKippurSensor,
+    MotzeiPesachSensor,
+    MotzeiSukkosSensor,
+    MotzeiShavuosSensor,
+    MotzeiRoshHashanaSensor,
+    MotzeiShivaUsorBTammuzSensor,
+    MotzeiTishaBavSensor,
+    MotziSensor,
+)
 
 from .const import DOMAIN
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
@@ -424,7 +433,6 @@ async def async_setup_entry(
 
     helper = YidCalHelper(hass.config)
     
-    # 1) Core sensors (no Motzi ones here)
     entities: list[BinarySensorEntity] = [
         ShabbosMevorchimSensor(hass, helper, candle, havdalah),
         UpcomingShabbosMevorchimSensor(hass, helper),
@@ -433,33 +441,10 @@ async def async_setup_entry(
         NoMusicSensor(hass, candle, havdalah),
         UpcomingYomTovSensor(hass, candle, havdalah),
         NineDaysSensor(hass, candle, havdalah),
+        MotziSensor(hass, candle, havdalah),
     ]
-
     if include_attrs:
         for name in SLUG_OVERRIDES:
             entities.append(HolidayAttributeBinarySensor(hass, name))
-
-    from .motzi_holiday_sensor import (
-        MotzeiYomKippurSensor,
-        MotzeiPesachSensor,
-        MotzeiSukkosSensor,
-        MotzeiShavuosSensor,
-        MotzeiRoshHashanaSensor,
-        MotzeiShivaUsorBTammuzSensor,
-        MotzeiTishaBavSensor,
-        MotziSensor,
-    )
-
-    entities.extend([
-        MotzeiYomKippurSensor(hass, candle, havdalah),
-        MotzeiPesachSensor(hass, candle, havdalah),
-        MotzeiSukkosSensor(hass, candle, havdalah),
-        MotzeiShavuosSensor(hass, candle, havdalah),
-        MotzeiRoshHashanaSensor(hass, candle, havdalah),
-        MotzeiShivaUsorBTammuzSensor(hass, candle, havdalah),
-        MotzeiTishaBavSensor(hass, candle, havdalah),
-        MotziSensor(hass, candle, havdalah),
-    ])
-
 
     async_add_entities(entities, update_before_add=True)
