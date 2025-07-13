@@ -63,6 +63,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שמיני עצרת",
         "שמחת תורה",
         "מוצאי סוכות",
+        "אסרו חג סוכות",
         "ערב חנוכה",
         "חנוכה",
         "שובבים",
@@ -85,12 +86,14 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שביעי של פסח",
         "אחרון של פסח",
         "מוצאי פסח",
+        "אסרו חג פסח",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
         "שבועות ב׳",
         "שבועות א׳ וב׳",
         "מוצאי שבועות",
+        "אסרו חג שבועות",
         "צום שבעה עשר בתמוז",
         "מוצאי צום שבעה עשר בתמוז",
         "ערב תשעה באב",
@@ -123,6 +126,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שמיני עצרת",
         "שמחת תורה",
         "מוצאי סוכות",
+        "אסרו חג סוכות",
         "ערב חנוכה",
         "חנוכה",
         "צום עשרה בטבת",
@@ -141,11 +145,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שביעי של פסח",
         "אחרון של פסח",
         "מוצאי פסח",
+        "אסרו חג פסח",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
         "שבועות ב׳",
         "מוצאי שבועות",
+        "אסרו חג שבועות",
         "צום שבעה עשר בתמוז",
         "מוצאי צום שבעה עשר בתמוז",
         "תשעה באב",
@@ -324,6 +330,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["שמיני עצרת"] = True
             if hd_py.day == 23:
                 attrs["שמחת תורה"] = True
+            if hd_py.day == 24:
+                attrs["אסרו חג סוכות"] = True
                 
         # 1. Decide which Hebrew day we search for chametz:
         #    Normally on 14 Nisan, except when 15 Nisan (first Seder) is Saturday night,
@@ -369,6 +377,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["שביעי של פסח"] = True
             if hd_py.day == 22:
                 attrs["אחרון של פסח"] = True
+            if hd_py.day == 23:
+                attrs["אסרו חג פסח"] = True
 
         # Shavuot & Erev at dawn (month 3)
         if hd_py.month == 3:
@@ -380,10 +390,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_py.day == 7:
                 attrs["שבועות ב׳"] = True
                 attrs["שבועות א׳ וב׳"] = True
+            if hd_py.day == 8:
+                attrs["אסרו חג שבועות"] = True
 
         # Purim & Shushan Purim & Ta'anit Esther (month 12 or 13)
         if hd_py.month in (12, 13):
-            if hd_py.day == 13:
+            if hd_py.day == 13 and now >= dawn:
                 attrs["תענית אסתר"] = True
             if hd_py.day == 14:
                 attrs["פורים"] = True
@@ -404,16 +416,27 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Lag BaOmer (month 2)
         if hd_py.month == 2 and hd_py.day == 18:
             attrs["ל\"ג בעומר"] = True
-
-        # Fast days
-        if hd_py.month == 7 and hd_py.day == 3:
+            
+        # ─── Fast days ───
+        # (only after dawn/alos for all except Tish'a B'Av and its deferred Sunday)
+        if hd_py.month == 7 and hd_py.day == 3 and now >= dawn:
             attrs["צום גדליה"] = True
-        if hd_py.month == 10 and hd_py.day == 10:
+        if hd_py.month == 10 and hd_py.day == 10 and now >= dawn:
             attrs["צום עשרה בטבת"] = True
-        if hd_py.month == 4 and hd_py.day == 17:
+        if hd_py.month == 4 and hd_py.day == 17 and now >= dawn:
             attrs["צום שבעה עשר בתמוז"] = True
-        if hd_py.month == 5 and hd_py.day == 9:
+
+        # Tish'a B'Av on 9 Av uses the candle‐lighting start_time you already compute
+        if hd_py.month == 5 and hd_py.day == 9 and now >= start_time:
             attrs["תשעה באב"] = True
+
+        # Deferred Tish'a B'Av (10 Av on Sunday) likewise
+        if hd_py.month == 5 and hd_py.day == 10:
+            nine_av = PHebrewDate(hd_py.year, 5, 9)
+            if nine_av.to_pydate().weekday() == 5 and now >= start_time:
+                attrs["תשעה באב נדחה"] = True
+
+
             
             
         # ─── Erev Tisha B’Av (8 Av), from alos until sunset+offset ───
