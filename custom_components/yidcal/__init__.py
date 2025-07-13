@@ -29,6 +29,12 @@ async def resolve_location_from_coordinates(hass, latitude, longitude):
         # snap to the exact Monroe center
         return "Kiryas Joel", "NY", 41.34204, -74.16792, hass.config.time_zone
 
+    # Hard-code Monsey NY
+    # if the HA-configured coords fall inside a rough Monsey bounding box…
+    if 41.05 <= latitude <= 41.17 and -74.15 <= longitude <= -73.99:
+        # snap to the exact Monsey center
+        return "Monsey", "NY", 41.11121, -74.06848, hass.config.time_zone
+
     try:
         # 1) Reverse-lookup borough
         def blocking_lookup():
