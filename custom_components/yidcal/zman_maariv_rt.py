@@ -60,14 +60,25 @@ class ZmanMaarivRTSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # target = sunset + 72 min
         target = sunset + timedelta(minutes=72)
 
-        # debug attrs
-        self._attr_extra_state_attributes = {
-            #"sunset":       sunset.isoformat(),
-            "maarive_rt_with_seconds":   target.isoformat(),
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # ceil to minute if there's any seconds
         target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
         self._attr_native_value = target.astimezone(timezone.utc)
         
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+
+        # debug attrs
+        self._attr_extra_state_attributes = {
+            #"sunset":       sunset.isoformat(),
+            "maarive_rt_with_seconds":   full_iso,
+            "maarive_rt_simple":  human,
+        }
