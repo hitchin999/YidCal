@@ -21,6 +21,10 @@ from .zman_sensors import get_geo
 from .const import DOMAIN
 
 
+def round_ceil(dt: datetime.datetime) -> datetime.datetime:
+    """Always round up to the next minute, dropping any seconds."""
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
 
 
 """
@@ -268,11 +272,11 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self.entity_id = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
 
-        self._candle = candle_offset
+        self._candle  = candle_offset
         self._havdalah = havdalah_offset
 
         cfg = hass.data[DOMAIN]["config"]
-        self._tz = ZoneInfo(cfg["tzname"])
+        self._tz  = ZoneInfo(cfg["tzname"])
         self._geo: ZmanimCalendar | None = None
         self._state = False
         self._attr_extra_state_attributes: dict[str, bool | str] = {}
@@ -285,7 +289,7 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             self._state = (last.state == "on")
         # load geo once
         self._geo = await get_geo(self.hass)
-        # initial calc
+        # initial calculation
         await self.async_update()
         # poll every minute
         self._register_interval(
@@ -299,45 +303,81 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         return self._state
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
-        now = (now or datetime.datetime.now(self._tz)).astimezone(self._tz)
-        today = now.date()
+        now       = (now or datetime.datetime.now(self._tz)).astimezone(self._tz)
+        today     = now.date()
         yesterday = today - timedelta(days=1)
-        
-        # raw detection
-        raw_shabbos = (yesterday.weekday() == 5)
-        raw_holiday = HDateInfo(today, diaspora=True).is_yom_tov
+
+        # ── Raw “should be motzi” detection ─────────────────
+        raw_shabbos = (today.weekday() == 5)
+        raw_holiday = HDateInfo(yesterday, diaspora=True).is_yom_tov
 
         if not self._geo:
+            # no geo → off, but still expose "now"
             self._state = False
+            self._attr_extra_state_attributes = {"now": now.isoformat()}
             return
 
-        # compute yesterday's sunset
-        cal_prev = ZmanimCalendar(geo_location=self._geo, date=yesterday)
+        # compute yesterday’s sunset
+        cal_prev    = ZmanimCalendar(geo_location=self._geo, date=yesterday)
         sunset_prev = cal_prev.sunset().astimezone(self._tz)
 
-        # window: havdalah → 2 AM today
-        start = sunset_prev + timedelta(minutes=self._havdalah)
-        end = datetime.datetime.combine(today, time(2, 0), tzinfo=self._tz)
-
+        # motzi window: ceil-rounded havdalah → 2 AM next day
+        start_raw = sunset_prev + timedelta(minutes=self._havdalah)
+        start     = round_ceil(start_raw)
+        end       = datetime.datetime.combine(today, time(2, 0), tzinfo=self._tz)
         in_window = (start <= now < end)
+
+        # final on/off
         self._state = in_window and (raw_shabbos or raw_holiday)
 
-
-
-        # blocking: e.g. a raw shabbos motzi that coincides with a Yom Tov today
-        is_yomtov_today = HDateInfo(today, diaspora=True).is_yom_tov
+        # blocking flags
+        is_yomtov_today  = HDateInfo(today, diaspora=True).is_yom_tov
         is_shabbos_today = (today.weekday() == 5)
 
+        # ── Build attributes ────────────────────────────────
         attrs: dict[str, bool | str] = {
-            "now": now.isoformat(),
-            "is_motzi_shabbos": raw_shabbos,
-            "is_motzi_yomtov": raw_holiday,
+            "now":                 now.isoformat(),
+            #"window_start":        start.isoformat(),
+            #"window_end":          end.isoformat(),
+            "is_motzi_shabbos":    raw_shabbos and in_window,
+            "is_motzi_yomtov":     raw_holiday and in_window,
             "blocked_motzi_shabbos": raw_shabbos and is_yomtov_today,
-            "blocked_motzi_yomtov": raw_holiday and is_shabbos_today,
+            "blocked_motzi_yomtov":  raw_holiday and is_shabbos_today,
         }
-        if in_window:
-            attrs["window_start"] = start.isoformat()
-            attrs["window_end"] = end.isoformat()
+
+        # ── Next window look-ahead (skip overlap) ──────────
+        next_start = next_end = None
+        for i in range(32):
+            d    = today + timedelta(days=i)
+            hd_d = HDateInfo(d, diaspora=True)
+            is_sh  = (d.weekday() == 5)
+            is_hol = hd_d.is_yom_tov
+
+            # only pure Shabbos-motzi or pure YomTov-motzi
+            raw_msh = is_sh  and not is_hol
+            raw_mhol = is_hol and not is_sh
+            if not (raw_msh or raw_mhol):
+                continue
+
+            cal_d     = ZmanimCalendar(geo_location=self._geo, date=d)
+            sunset_d  = cal_d.sunset().astimezone(self._tz)
+            raw_start = sunset_d + timedelta(minutes=self._havdalah)
+            raw_end   = datetime.datetime.combine(
+                            d + timedelta(days=1),
+                            time(2, 0),
+                            tzinfo=self._tz,
+                        )
+
+            # skip if *today’s* motzi already passed
+            if d == today and now >= raw_end:
+                continue
+
+            next_start = round_ceil(raw_start)
+            next_end   = raw_end
+            break
+
+        # always expose the next window (there’s always a next Shabbos-motzi)
+        attrs["next_motzi_window_start"] = next_start.isoformat()
+        attrs["next_motzi_window_end"]   = next_end.isoformat()
 
         self._attr_extra_state_attributes = attrs
-        
