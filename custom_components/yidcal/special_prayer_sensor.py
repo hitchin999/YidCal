@@ -7,7 +7,8 @@ Defines a single YidCal sensor that aggregates multiple prayer insertions with c
 - ‘יעלה ויבוא’ on Rosh Chodesh (after dawn)
 - ‘אתה יצרת’ on Shabbat that is Rosh Chodesh (dawn→sunset)
 - ‘על הניסים’ on Chanukah or Purim
-- ‘ענינו’ on any fast day (excluding YK) during Mincha window (half‐day+30m→havdala)
+- ‘ענינו’ on any fast day (excluding YK) from dawn until sunset+havdala
+- ‘נחם’ on Tish'a B'Av from chatzos (halachic midday) until sunset+havdala
 Phrases joined with hyphens.
 """
 from __future__ import annotations
@@ -72,7 +73,6 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         sunset = sun_times["sunset"]
         havdala = sunset + timedelta(minutes=self._havdalah)
         hal_mid = dawn + (sunset - dawn) / 2
-        mincha = hal_mid + timedelta(minutes=30)
 
         # Hebrew date
         hd = PHebrewDate.from_pydate(today)
@@ -81,15 +81,19 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         insertions: list[str] = []
 
         # 1) Rain blessing continuous window
-        rain_start = (m == "תשרי" and (day > 22 or (day == 22 and now >= dawn))) or \
-                     (m in ["חשון","כסלו","טבת","שבט","אדר","אדר א","אדר ב"]) or \
-                     (m == "ניסן" and (day < 15 or (day == 15 and now < dawn)))
+        rain_start = (
+            (m == "תשרי" and (day > 22 or (day == 22 and now >= dawn)))
+            or m in ["חשון","כסלו","טבת","שבט","אדר","אדר א","אדר ב"]
+            or (m == "ניסן" and (day < 15 or (day == 15 and now < dawn)))
+        )
         insertions.append("מוריד הגשם" if rain_start and now >= dawn else "מוריד הטל")
 
         # 2) Tal U’Matar continuous window
-        tal_start = (m == "כסלו" and (day > 5 or (day == 5 and now >= havdala))) or \
-                    (m in ["טבת","שבט","אדר","אדר א","אדר ב"]) or \
-                    (m == "ניסן" and day < 15)
+        tal_start = (
+            (m == "כסלו" and (day > 5 or (day == 5 and now >= havdala)))
+            or m in ["טבת","שבט","אדר","אדר א","אדר ב"]
+            or (m == "ניסן" and day < 15)
+        )
         insertions.append("ותן טל ומטר לברכה" if tal_start and now >= havdala else "ותן ברכה")
 
         # 3) Holiday insertions
@@ -105,11 +109,15 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         if attrs.get("חנוכה") or attrs.get("פורים"):
             insertions.append("על הניסים")
 
-        # Fast days during Mincha
-        if mincha <= now <= havdala:
-            for key, val in attrs.items():
-                if val and not "כיפור" in key and (key.startswith("צום") or key.startswith("תענית") or key in ["תשעה באב","תשעה באב נדחה"]):
-                    insertions.append("ענינו")
-                    break
+        # 4) Fast days: ענינו from dawn until sunset+havdala
+        fast_keys = [k for k, v in attrs.items() if v and not "כיפור" in k and (
+            k.startswith("צום") or k.startswith("תענית") or k in ["תשעה באב","תשעה באב נדחה"]
+        )]
+        if fast_keys and now >= dawn and now <= havdala:
+            insertions.append("ענינו")
+
+        # 5) Tish'a B'Av נחם from chatzos until sunset+havdala
+        if attrs.get("תשעה באב") and now >= hal_mid and now <= havdala:
+            insertions.append("נחם")
 
         return " - ".join(insertions)
