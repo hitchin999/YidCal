@@ -60,8 +60,8 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self.hass = hass
         # offsets and diaspora flag read from global config
         config = hass.data[DOMAIN]["config"]
-        self._candle = config.get("candle", candle_offset)
-        self._havdalah = config.get("havdala", havdalah_offset)
+        self._candle  = config.get("candlelighting_offset", candle_offset)
+        self._havdalah = config.get("havdalah_offset",     havdalah_offset)
         self._diaspora = config.get("diaspora", True)
         self._tz = ZoneInfo(config.get("tzname", hass.config.time_zone))
         self._geo: GeoLocation | None = None
@@ -130,13 +130,8 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         s_eve = cal_eve.sunset().astimezone(self._tz)
         target = s_eve - timedelta(minutes=self._candle)
 
-        # 6) extra attributes
-        self._attr_extra_state_attributes = {
-            "zman_erev_with_seconds": target.strftime("%-I:%M:%S %p"),
-            "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "latitude": self._geo.latitude,
-            "longitude": self._geo.longitude,
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # 7) round half-up at 30s
         if target.second >= 30:
@@ -145,7 +140,23 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # 8) set native value in UTC
         self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
 
+        # 6) extra attributes
+        self._attr_extra_state_attributes = {
+            "zman_erev_with_seconds": full_iso,
+            "zman_erev_simple":  human,
+            "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "latitude": self._geo.latitude,
+            "longitude": self._geo.longitude,
+        }
 
 class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
     """Next havdalah (“Zman Motzi”) for Shabbos or Yom Tov close."""
@@ -166,8 +177,8 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         config = hass.data[DOMAIN]["config"]
-        self._candle = config.get("candle", candle_offset)
-        self._havdalah = config.get("havdala", havdalah_offset)
+        self._candle  = config.get("candlelighting_offset", candle_offset)
+        self._havdalah = config.get("havdalah_offset",    havdalah_offset)
         self._diaspora = config.get("diaspora", True)
         self._tz = ZoneInfo(config.get("tzname", hass.config.time_zone))
         self._geo: GeoLocation | None = None
@@ -226,16 +237,28 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         s_final = cal_final.sunset().astimezone(self._tz)
         target = s_final + timedelta(minutes=self._havdalah)
 
-        self._attr_extra_state_attributes = {
-            "zman_motzi_with_seconds": target.strftime("%-I:%M:%S %p"),
-            "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "latitude": self._geo.latitude,
-            "longitude": self._geo.longitude,
-        }
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
 
         # ceil to minute if there's any seconds
         target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
         
         self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+        
+        self._attr_extra_state_attributes = {
+            "zman_motzi_with_seconds": full_iso,
+            "zman_motzi_simple":  human,
+            "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "latitude": self._geo.latitude,
+            "longitude": self._geo.longitude,
+        }
 
 # no async_setup_entry here—these sensors are registered from sensor.py
