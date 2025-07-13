@@ -99,6 +99,6 @@ class ChatzosHayomSensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":     sunset.isoformat(),
             #"nightfall":  nightfall.isoformat(),
             #"hour_len":   str(hour_td),
-            "chatzos_hayom_with_Seconds": full_iso,
+            "chatzos_hayom_with_seconds": full_iso,
             "chatzos_hayom_simple":  human,
         }
