@@ -99,6 +99,6 @@ class MinchaKetanaSensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":     sunset.isoformat(),
             #"nightfall":  nightfall.isoformat(),
             #"hour_len":   str(hour_td),
-            "mincha_ketane_with_seconds": full_iso,
-            "mincha_ketane_simple":  human,
+            "mincha_ketana_with_seconds": full_iso,
+            "mincha_ketana_simple":  human,
         }
