@@ -106,10 +106,32 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # compute candle-lighting threshold for today
         candle = sunset_today - timedelta(minutes=self._candle_offset)
 
-        # holiday and fast detection
-        hd_py = PHebrewDate.from_pydate(today)
+        # holiday name (only Yom Tov)
+        hd_py    = PHebrewDate.from_pydate(today)
         hol_name = hd_py.holiday(hebrew=True) or ""
-        is_fast = hol_name in FAST_DAYS
+
+        # ─── manual fast-day detection ───
+        # (all except 9 Av & deferred start at dawn; 9/10 Av & YK by candle-lighting)
+        is_fast = False
+        # Gedalia — 3 Tishrei
+        if hd_py.month == 7 and hd_py.day == 3 and now >= dawn:
+            is_fast = True
+        # 10 Tevet
+        elif hd_py.month == 10 and hd_py.day == 10 and now >= dawn:
+            is_fast = True
+        # 17 Tammuz
+        elif hd_py.month == 4 and hd_py.day == 17 and now >= dawn:
+            is_fast = True
+        # Ta’anit Esther — 13 Adar
+        elif hd_py.month in (12, 13) and hd_py.day == 13 and now >= dawn:
+            is_fast = True
+        # Yom Kippur, Tish’a B’Av & deferred
+        elif hol_name in {"יום הכיפורים", "תשעה באב", "תשעה באב נדחה"}:
+            
+            # use candle-lighting from yesterday
+            tb_start = sunset_yest - timedelta(minutes=self._candle_offset)
+            if now >= tb_start:
+                is_fast = True
 
         hd_today = HDateInfo(today, diaspora=True)
         is_yomtov_today = hd_today.is_yom_tov
