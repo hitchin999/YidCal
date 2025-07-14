@@ -114,7 +114,7 @@ class _BaseChumetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":      sunset.isoformat(),
             #"nightfall":   nightfall.isoformat(),
             #"hour_len_s":  hour_len.total_seconds(),  # seconds per sha'ah
-            "sof_zman_chumetz_with_seconds":  raw.isoformat(),
+            "Sof_Zman_Chumetz_With_Seconds":  raw.isoformat(),
         }
 
         # floor to the minute (any seconds 0–59)
@@ -152,7 +152,7 @@ class SofZmanAchilasChumetzSensor(_BaseChumetzSensor):
 
         # 4. merge it into the existing attributes
         attrs = {**(self._attr_extra_state_attributes or {})}
-        attrs["sof_zman_achilas_chumetz_simple"] = human
+        attrs["Sof_Zman_Achilas_Chumetz_Simple"] = human
         self._attr_extra_state_attributes = attrs
 
 
@@ -185,5 +185,5 @@ class SofZmanSriefesChumetzSensor(_BaseChumetzSensor):
 
         # 4. merge it into the existing attributes
         attrs = {**(self._attr_extra_state_attributes or {})}
-        attrs["sof_zman_sriefes_chumetz_simple"] = human
+        attrs["Sof_Zman_Sriefes_Chumetz_Simple"] = human
         self._attr_extra_state_attributes = attrs
