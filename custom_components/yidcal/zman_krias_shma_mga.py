@@ -97,6 +97,6 @@ class SofZmanKriasShmaMGASensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":     sunset.isoformat(),
             #"nightfall":  nightfall.isoformat(),
             #"hour_len":   str(hour_td),
-            "krias_shma_mga_with_seconds": full_iso,
-            "krias_shma_mga_simple":  human,
+            "Krias_Shma_MGA_With_Seconds": full_iso,
+            "Krias_Shma_MGA_Simple":  human,
         }
