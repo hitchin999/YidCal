@@ -336,13 +336,13 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         # ── Build attributes ────────────────────────────────
         attrs: dict[str, bool | str] = {
-            "now":                 now.isoformat(),
-            #"window_start":        start.isoformat(),
-            #"window_end":          end.isoformat(),
-            "is_motzi_shabbos":    raw_shabbos and in_window,
-            "is_motzi_yomtov":     raw_holiday and in_window,
-            "blocked_motzi_shabbos": raw_shabbos and is_yomtov_today,
-            "blocked_motzi_yomtov":  raw_holiday and is_shabbos_today,
+            "Now":                 now.isoformat(),
+            #"Window_Start":        start.isoformat(),
+            #"Window_End":          end.isoformat(),
+            "Is_Motzi_Shabbos":    raw_shabbos and in_window,
+            "Is_Motzi_Yom_Tov":     raw_holiday and in_window,
+            "Blocked_Motzi_Shabbos": raw_shabbos and is_yomtov_today,
+            "Blocked_Motzi_Yom_Tov":  raw_holiday and is_shabbos_today,
         }
 
         # ── Next window look-ahead (skip overlap) ──────────
@@ -377,7 +377,7 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             break
 
         # always expose the next window (there’s always a next Shabbos-motzi)
-        attrs["next_motzi_window_start"] = next_start.isoformat()
-        attrs["next_motzi_window_end"]   = next_end.isoformat()
+        attrs["Next_Motzi_Window_Start"] = next_start.isoformat()
+        attrs["Next_Motzi_Window_End"]   = next_end.isoformat()
 
         self._attr_extra_state_attributes = attrs
