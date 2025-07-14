@@ -294,19 +294,19 @@ class MoladSensor(YidCalDevice, SensorEntity):
         molad_month_name = ENG2HEB.get(english_month, english_month)
 
         self._attr_extra_state_attributes = {
-            "day": day_yd,
-            "hours": h,
-            "minutes": mi,
-            "time_of_day": tod,
-            "chalakim": chal,
-            "friendly": state,
-            #"rosh_chodesh_midnight": rc_mid,
-            "rosh_chodesh_nightfall": rc_night,
-            "rosh_chodesh": rc_text,
-            "rosh_chodesh_days": rc_days,
-            "is_shabbos_mevorchim": details.is_shabbos_mevorchim,
-            "is_upcoming_shabbos_mevorchim": details.is_upcoming_shabbos_mevorchim,
-            "month_name": molad_month_name,  # now a string, not a method
+            "Day": day_yd,
+            "Hours": h,
+            "Minutes": mi,
+            "Time_Of_Day": tod,
+            "Chalakim": chal,
+            "Friendly": state,
+            #"Rosh_Chodesh_Midnight": rc_mid,
+            "Rosh_Chodesh_Nightfall": rc_night,
+            "Rosh_Chodesh": rc_text,
+            "Rosh_Chodesh_Days": rc_days,
+            "Is_Shabbos_Mevorchim": details.is_shabbos_mevorchim,
+            "Is_Upcoming_Shabbos_Mevorchim": details.is_upcoming_shabbos_mevorchim,
+            "Month_Name": molad_month_name,  # now a string, not a method
         }
 
 
@@ -629,8 +629,8 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
 
         main = self.hass.states.get("sensor.yidcal_molad")
         attr = main.attributes if main else {}
-        nf_list = attr.get("rosh_chodesh_nightfall") or []
-        month = attr.get("month_name", "")
+        nf_list = attr.get("Rosh_Chodesh_Nightfall") or []
+        month = attr.get("Month_Name", "")
 
         # Convert strings → datetime
         nf_datetimes: list[datetime] = [
@@ -668,4 +668,4 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
     @property
     def available(self) -> bool:
         main = self.hass.states.get("sensor.yidcal_molad")
-        return bool(main and main.attributes.get("rosh_chodesh_nightfall"))
+        return bool(main and main.attributes.get("Rosh_Chodesh_Nightfall"))
