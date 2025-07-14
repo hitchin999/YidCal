@@ -104,9 +104,9 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         # Build attributes
         attrs: dict[str, str] = {
-            "next_holiday": next_name,
-            "date": next_date.isoformat() if next_date else "",
-            "next_on": next_on_time.isoformat() if next_on_time else "",
+            "Next_Holiday": next_name,
+            "Date": next_date.isoformat() if next_date else "",
+            "Next_On": next_on_time.isoformat() if next_on_time else "",
         }
 
         # Apply state and attributes
