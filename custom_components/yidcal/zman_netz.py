@@ -79,6 +79,6 @@ class NetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
         
         # Debug attrs
         self._attr_extra_state_attributes = {
-            "netz_with_seconds": full_iso,
-            "netz_simple":  human,
+            "Netz_With_Seconds": full_iso,
+            "Netz_Simple":  human,
         }
