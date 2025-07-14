@@ -65,13 +65,13 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._state = ""
         # initialize attrs
         self._attr_extra_state_attributes = {
-            "any_other_day": False,
-            "erev": False,
-            "motzi": False,
-            "shabbos": False,
-            "yom_tov": False,
-            "shabbos_and_yom_tov": False,
-            "fast_day": False,
+            "Any_Other_Day": False,
+            "Erev": False,
+            "Motzi": False,
+            "Shabbos": False,
+            "Yom_Tov": False,
+            "Shabbos_And_Yom_Tov": False,
+            "Fast_Day": False,
             "possible_states": POSSIBLE_STATES,
         }
 
@@ -181,13 +181,13 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # write state + attrs
         self._state = state
         self._attr_extra_state_attributes = {
-            "any_other_day": (state == "Any Other Day"),
-            "erev": in_erev,
-            "motzi": in_motzi,
-            "shabbos": in_shabbos_window,
-            "yom_tov": in_yomtov_window,
-            "shabbos_and_yom_tov": in_shabbos_and_yomtov,
-            "fast_day": in_fast_window,
+            "Any_Other_Day": (state == "Any Other Day"),
+            "Erev": in_erev,
+            "Motzi": in_motzi,
+            "Shabbos": in_shabbos_window,
+            "Yom_Tov": in_yomtov_window,
+            "Shabbos_And_Yom_Tov": in_shabbos_and_yomtov,
+            "Fast_Day": in_fast_window,
             "possible_states": POSSIBLE_STATES,
         }
 
