@@ -92,8 +92,8 @@ class ZmanTalisTefilinSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # expose extra attributes for debugging
         self._attr_extra_state_attributes = {
             #"sunrise": sunrise.isoformat(),
-            "alos_with_seconds": alos_time.isoformat(),
-            "tallis_with_seconds": full_iso,
-            "tallis_simple":  human,
-            "offset_minutes": self._offset,
+            "Alos_With_Seconds": alos_time.isoformat(),
+            "Tallis_With_Seconds": full_iso,
+            "Tallis_Simple":  human,
+            "Offset_Minutes": self._offset,
         }
