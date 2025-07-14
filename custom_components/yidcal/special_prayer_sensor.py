@@ -97,7 +97,8 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         insertions.append("ותן טל ומטר לברכה" if tal_start and now >= havdala else "ותן ברכה")
 
         # 3) Holiday insertions
-        attrs = (self.hass.states.get(HOLIDAY_SENSOR) or {}).attributes
+        state = self.hass.states.get(HOLIDAY_SENSOR)
+        attrs = state.attributes if state else {}
 
         # Rosh Chodesh
         if attrs.get("ראש חודש") and now >= dawn:
