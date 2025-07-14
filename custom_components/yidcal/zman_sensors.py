@@ -151,11 +151,11 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # 6) extra attributes
         self._attr_extra_state_attributes = {
-            "zman_erev_with_seconds": full_iso,
-            "zman_erev_simple":  human,
-            "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "latitude": self._geo.latitude,
-            "longitude": self._geo.longitude,
+            "Zman_Erev_With_Seconds": full_iso,
+            "Zman_Erev_Simple":  human,
+            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude": self._geo.latitude,
+            "Longitude": self._geo.longitude,
         }
 
 class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
@@ -254,11 +254,11 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         human = f"{hour}:{minute:02d} {ampm}"
         
         self._attr_extra_state_attributes = {
-            "zman_motzi_with_seconds": full_iso,
-            "zman_motzi_simple":  human,
-            "city": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "latitude": self._geo.latitude,
-            "longitude": self._geo.longitude,
+            "Zman_Motzi_With_Seconds": full_iso,
+            "Zman_Motzi_Simple":  human,
+            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude": self._geo.latitude,
+            "Longitude": self._geo.longitude,
         }
 
 # no async_setup_entry here—these sensors are registered from sensor.py
