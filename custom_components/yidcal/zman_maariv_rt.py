@@ -79,6 +79,6 @@ class ZmanMaarivRTSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # debug attrs
         self._attr_extra_state_attributes = {
             #"sunset":       sunset.isoformat(),
-            "maariv_rt_with_seconds":   full_iso,
-            "maariv_rt_simple":  human,
+            "Maariv_RT_With_Seconds":   full_iso,
+            "Maariv_RT_Simple":  human,
         }
