@@ -80,8 +80,8 @@ class AlosSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
            # expose for debugging
         self._attr_extra_state_attributes = {
-            #"sunrise":  sunrise.isoformat(),
-            "alos_with_seconds": full_iso,
-            "alos_simple": human,
+            #"Sunrise":  sunrise.isoformat(),
+            "Alos_With_Seconds": full_iso,
+            "Alos_Simple": human,
         }
 
