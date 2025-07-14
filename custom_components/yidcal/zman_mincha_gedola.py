@@ -99,6 +99,6 @@ class MinchaGedolaSensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":     sunset.isoformat(),
             #"nightfall":  nightfall.isoformat(),
             #"hour_len":   str(hour_td),
-            "mincha_gedola_with_seconds": full_iso,
-            "mincha_gedola_simple":  human,
+            "Mincha_Gedola_With_Seconds": full_iso,
+            "Mincha_Gedola_Simple":  human,
         }
