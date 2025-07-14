@@ -94,11 +94,11 @@ class ChatzosHayomSensor(YidCalDevice, RestoreEntity, SensorEntity):
         
         # 6) optional debug attrs
         self._attr_extra_state_attributes = {
-            #"dawn":       dawn.isoformat(),
-            #"sunrise":    sunrise.isoformat(),
-            #"sunset":     sunset.isoformat(),
-            #"nightfall":  nightfall.isoformat(),
-            #"hour_len":   str(hour_td),
-            "chatzos_hayom_with_seconds": full_iso,
-            "chatzos_hayom_simple":  human,
+            #"Dawn":       dawn.isoformat(),
+            #"Sunrise":    sunrise.isoformat(),
+            #"Sunset":     sunset.isoformat(),
+            #"Nightfall":  nightfall.isoformat(),
+            #"Hour_Len":   str(hour_td),
+            "Chatzos_Hayom_With_Seconds": full_iso,
+            "Chatzos_Hayom_Simple":  human,
         }
