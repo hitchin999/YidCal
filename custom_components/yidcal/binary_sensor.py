@@ -302,18 +302,18 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         # build attributes
         attrs: dict[str, str | bool] = {
-            "now": now.isoformat(),
-            "is_erev_shabbos": is_erev_shabbos,
-            "is_erev_holiday": is_erev_holiday,
-            "blocked_erev_shabbos": blocked_shabbos,
-            "blocked_erev_holiday": blocked_holiday,
-            "is_yomtov_today": is_yomtov_today,
-            "is_shabbos_today": is_shabbos_today,
+            "Now": now.isoformat(),
+            "Is_Erev_Shabbos": is_erev_shabbos,
+            "Is_Erev_Holiday": is_erev_holiday,
+            "Blocked_Erev_Shabbos": blocked_shabbos,
+            "Blocked_Erev_Holiday": blocked_holiday,
+            "Is_Yom_Tov_Today": is_yomtov_today,
+            "Is_Shabbos_Today": is_shabbos_today,
         }
         if next_start and next_end:
             attrs.update({
-                "next_erev_window_start": next_start.isoformat(),
-                "next_erev_window_end": next_end.isoformat(),
+                "Next_Erev_Window_Start": next_start.isoformat(),
+                "Next_Erev_Window_End": next_end.isoformat(),
             })
         self._attr_extra_state_attributes = attrs
 
@@ -406,15 +406,15 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         erev_attrs = erev.attributes if erev else {}
 
         self._attr_extra_state_attributes = {
-            "now": now.isoformat(),
-            "festival_name": festival_name if (festival_name == "שבת" and in_window) or festival_name != "שבת" else None,
-            "is_erev_holiday": erev_attrs.get("is_erev_holiday", False),
-            "is_erev_shabbos": erev_attrs.get("is_erev_shabbos", False),
-            "is_yomtov": is_yomtov,
-            "is_shabbos": (festival_name == "שבת" and in_window),
-            "window_start": window_start.isoformat(),
-            "window_end": window_end.isoformat(),
-            "in_window": in_window,
+            "Now": now.isoformat(),
+            "Festival_Name": festival_name if (festival_name == "שבת" and in_window) or festival_name != "שבת" else None,
+            "Is_Erev_Holiday": erev_attrs.get("is_erev_holiday", False),
+            "Is_Erev_Shabbos": erev_attrs.get("is_erev_shabbos", False),
+            "Is_Yom_Tov": is_yomtov,
+            "Is_Shabbos": (festival_name == "שבת" and in_window),
+            "Window_Start": window_start.isoformat(),
+            "Window_End": window_end.isoformat(),
+            "In_Window": in_window,
         }
 
 
