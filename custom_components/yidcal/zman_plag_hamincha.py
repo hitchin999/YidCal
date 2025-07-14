@@ -99,6 +99,6 @@ class PlagHaMinchaSensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":     sunset.isoformat(),
             #"nightfall":  nightfall.isoformat(),
             #"hour_len":   str(hour_td),
-            "plag_hamincha_with_seconds": full_iso,
-            "plag_hamincha_simple":  human,
+            "Plag_Hamincha_With_Seconds": full_iso,
+            "Plag_Hamincha_Simple":  human,
         }
