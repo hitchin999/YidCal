@@ -91,6 +91,6 @@ class SofZmanTefilahMGASensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunset":      sunset.isoformat(),
             #"nightfall":   nightfall.isoformat(),
             #"hour_len":    str(hour_td),
-            "tefila_mga_with_seconds":  full_iso,
-            "tefila_mga_simple":  human,
+            "Tefila_MGA_With_Seconds":  full_iso,
+            "Tefila_MGA_Simple":  human,
         }
