@@ -77,6 +77,6 @@ class ShkiaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         
         # expose for debugging
         self._attr_extra_state_attributes = {
-            "shkia_with_seconds": shkia.isoformat(),
-            "shkia_simple":  human,
+            "Shkia_With_Seconds": shkia.isoformat(),
+            "Shkia_Simple":  human,
         }
