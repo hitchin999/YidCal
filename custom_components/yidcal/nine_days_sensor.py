@@ -105,6 +105,6 @@ class NineDaysSensor(YidCalDevice, BinarySensorEntity):
         """Expose the window start/end as ISO-format timestamps."""
         attrs: dict[str, str] = {}
         if self._window_start and self._window_end:
-            attrs["window_start"] = self._window_start.isoformat()
-            attrs["window_end"]   = self._window_end.isoformat()
+            attrs["Window_Start"] = self._window_start.isoformat()
+            attrs["Window_End"]   = self._window_end.isoformat()
         return attrs
