@@ -95,10 +95,10 @@ class ChatzosHaLailaSensor(YidCalDevice, RestoreEntity, SensorEntity):
         
         # 5) expose debug attrs
         self._attr_extra_state_attributes = {
-            #"night_start": night_start.isoformat(),
-            #"dawn_next":   dawn_next.isoformat(),
-            #"hour_len":    str(hour_td),
-            "chatzos_haleila_with_seconds":  full_iso,
-            "chatzos_haleila_simple":  human,
+            #"Night_Start": night_start.isoformat(),
+            #"Dawn_Next":   dawn_next.isoformat(),
+            #"Hour_Len":    str(hour_td),
+            "Chatzos_Haleila_With_Seconds":  full_iso,
+            "Chatzos_Haleila_Simple":  human,
             
         }
