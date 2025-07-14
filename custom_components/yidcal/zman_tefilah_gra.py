@@ -93,6 +93,6 @@ class SofZmanTefilahGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
             #"sunrise":     dawn.isoformat(),
             #"sunset":      nightfall.isoformat(),
             #"hour_len":    str(hour_td),
-            "tefila_gra_with_seconds":  full_iso,
-            "tefila_gra_simple":  human,
+            "Tefila_GRA_With_Seconds":  full_iso,
+            "Tefila_GRA_Simple":  human,
         }
