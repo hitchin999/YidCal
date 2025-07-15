@@ -210,27 +210,40 @@ class YidCalHelper:
         
     def is_upcoming_shabbos_mevorchim(self, today: datetime.date) -> bool:
         """
-        Return True if the next Saturday after 'today' is Shabbos Mevorchim.
-        Skips Rosh Chodesh Tishrei (we don’t announce it).
+        Return True if the *next* Shabbat after 'today' is a Mevorchim Shabbat.
+        Special‑case: when Rosh Chodesh is a single day that falls on Shabbat,
+        Mevorchim is observed on the *previous* Shabbat.
+        Skips Rosh Chodesh Tishrei.
         """
-        wd = today.weekday()  # 0=Monday … 5=Saturday
+        # 1) Find the date of the *next* Shabbat
+        wd = today.weekday()  # 0=Mon … 5=Sat
         if wd == 5:
-            next_sat = today + datetime.timedelta(days=7)
+            next_shabbat = today + timedelta(days=7)
         else:
             days_to_sat = (5 - wd) % 7
-            next_sat = today + datetime.timedelta(days=days_to_sat)
+            next_shabbat = today + timedelta(days=days_to_sat)
 
-        # Check if Shabbos Mevorchim applies
-        if not self.is_shabbos_mevorchim(next_sat):
-            return False
+        # 2) Quick exit if that Shabbat itself is not an actual Mevorchim
+        #    (this covers the "multi‑day RC falls on Shabbat" case)
+        if self.is_shabbos_mevorchim(next_shabbat):
+            # but skip pure-Tishrei RC:
+            rc = self.get_rosh_chodesh_days(next_shabbat)
+            if rc.month.upper() != "TISHREI":
+                return True
 
-        # Check if the month being blessed is Tishrei — skip it
-        rc = self.get_rosh_chodesh_days(next_sat)
-        if rc.month == "TISHREI":
-            return False
+        # 3) Now handle the *one‑day* RC‑on‑Shabbat case:
+        #    if RC has exactly one gdate and it *is* Saturday,
+        #    then Mevorchim is the week *before* that RC.
+        rc = self.get_rosh_chodesh_days(next_shabbat)
+        gdays = rc.gdays
+        if len(gdays) == 1 and gdays[0].weekday() == 5:
+            # the true RC‑Shabbat:
+            rc_shabbat = gdays[0]
+            mevorchim_shabbat = rc_shabbat - timedelta(days=7)
+            if next_shabbat == mevorchim_shabbat:
+                return True
 
-        return True
-
+        return False
 
 
     def get_actual_molad(self, today: datetime.date) -> Molad:
