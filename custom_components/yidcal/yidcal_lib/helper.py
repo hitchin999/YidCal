@@ -10,6 +10,7 @@ Requires:
 import datetime
 import logging
 from datetime import timedelta
+
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
 
 _LOGGER = logging.getLogger(__name__)
@@ -263,6 +264,7 @@ class YidCalHelper:
 
         return False
 
+
     def get_actual_molad(self, today: datetime.date) -> Molad:
         """
         Compute the molad for the Hebrew month containing 'today' if Hebrew-day < 3,
@@ -355,3 +357,4 @@ def int_to_hebrew(num: int) -> str:
     if len(result) > 1:
         return f"{result[:-1]}\u05F4{result[-1]}"
     return f"{result}\u05F3"
+    
