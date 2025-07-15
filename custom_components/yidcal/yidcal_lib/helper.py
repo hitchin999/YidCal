@@ -9,7 +9,7 @@ Requires:
 
 import datetime
 import logging
-
+from datetime import timedelta
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
 
 _LOGGER = logging.getLogger(__name__)
