@@ -7,9 +7,12 @@ Requires:
     pip install pyluach
 """
 
-import datetime
 import logging
-from datetime import timedelta
+import datetime
+from datetime import datetime, timezone, timedelta, date
+from zoneinfo import ZoneInfo
+
+
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
 
@@ -185,7 +188,7 @@ class YidCalHelper:
         rc_date = rc.gdays[0]
         wd_rc = rc_date.weekday()  # Monday=0 … Saturday=5
         days_back = (wd_rc - 5) % 7
-        sat_date = rc_date - datetime.timedelta(days=days_back)
+        sat_date = rc_date - timedelta(days=days_back)
 
         # Convert that Saturday → pyluach Hebrew-day
         hd_sat = PHebrewDate.from_pydate(sat_date)
@@ -239,7 +242,7 @@ class YidCalHelper:
         # 1) figure out the date of the *next* Shabbat
         wd = today.weekday()  # Monday=0 … Saturday=5
         days_to_sat = 7 if wd == 5 else (5 - wd) % 7
-        next_shabbat = today + datetime.timedelta(days=days_to_sat)
+        next_shabbat = today + timedelta(days=days_to_sat)
 
         # 2) compute Rosh Chodesh for that Shabbat
         rc = self.get_rosh_chodesh_days(next_shabbat)
@@ -251,7 +254,7 @@ class YidCalHelper:
         # the two-day RC runs Shabbos & Sunday,
         # then the blessing is the week *before* that Shabbat
         if rc.days and rc.days[0] == "Shabbos":
-            mevorchim_shabbat = rc.gdays[0] - datetime.timedelta(days=7)
+            mevorchim_shabbat = rc.gdays[0] - timedelta(days=7)
             if next_shabbat == mevorchim_shabbat:
                 return True
 
@@ -301,17 +304,44 @@ class YidCalHelper:
         pm = PMonth(target_year, target_month)
         ann = pm.molad_announcement()  # dict: {"weekday":1..7, "hour":0..23, "minutes":…, "parts":…}
 
-        wd = ann["weekday"]   # 1=Sunday … 7=Shabbos
-        h24 = ann["hour"]
-        mins = ann["minutes"]
-        parts = ann["parts"]
+        # 1) Find the Gregorian date of that molad:
+        #    start at the 1st of the Hebrew month…
+        first_of_month = PHebrewDate(target_year, target_month, 1).to_pydate()
+        #    map pyluach’s weekday (1=Sun…7=Shabbos) → Python’s (Mon=0…Sun=6)
+        molad_py_wd = (ann["weekday"] + 5) % 7
+        #    figure out how many days from the 1st to hit that weekday
+        delta = (molad_py_wd - first_of_month.weekday()) % 7
+        molad_date = first_of_month + timedelta(days=delta)
+        
+        # 1) Build a naive datetime in Jerusalem standard time (UTC+2)
+        local = datetime(
+            molad_date.year,
+            molad_date.month,
+            molad_date.day,
+            ann["hour"],
+            ann["minutes"],
+        )
 
+        # 2) Attach the Jerusalem tz so we can ask for DST
+        local = local.replace(tzinfo=ZoneInfo("Asia/Jerusalem"))
+
+        # 3) If DST is in effect (dst() == 1h), bump the clock by that offset
+        dst_offset = local.dst() or timedelta(0)
+        jerusalem = local + dst_offset
+
+
+        # 4) Pull out hour/minute/parts and build your Molad
+        h24 = jerusalem.hour
+        mins = jerusalem.minute
+        parts = ann["parts"]
+        wd = jerusalem.weekday()  # Monday=0…Saturday=5
         ampm = "am" if h24 < 12 else "pm"
         h12 = h24 % 12 or 12
-        day_name = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Shabbos"][wd - 1]
+        day_name = ["Monday","Tuesday","Wednesday","Thursday","Friday","Shabbos","Sunday"][wd]
         friendly = f"{day_name}, {h12}:{mins:02d} {ampm} and {parts} chalakim"
 
         return Molad(day_name, h12, mins, ampm, parts, friendly)
+
 
     def get_molad(self, today: datetime.date) -> MoladDetails:
         """
