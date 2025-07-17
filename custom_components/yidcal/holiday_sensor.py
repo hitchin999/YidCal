@@ -66,6 +66,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "אסרו חג סוכות",
         "ערב חנוכה",
         "חנוכה",
+        "זאת חנוכה",
         "שובבים",
         "שובבים ת\"ת",
         "צום עשרה בטבת",
@@ -87,6 +88,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "אחרון של פסח",
         "מוצאי פסח",
         "אסרו חג פסח",
+        "פסח שני",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
@@ -129,6 +131,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "אסרו חג סוכות",
         "ערב חנוכה",
         "חנוכה",
+        "זאת חנוכה",
         "צום עשרה בטבת",
         "ט\"ו בשבט",
         "תענית אסתר",
@@ -146,6 +149,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "אחרון של פסח",
         "מוצאי פסח",
         "אסרו חג פסח",
+        "פסח שני",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
@@ -389,21 +393,35 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["פורים"] = True
             if hd_py.day == 15:
                 attrs["שושן פורים"] = True
-
-        # Chanukah & Erev at dawn (month 9)
+                
+        # Chanukah & Erev at dawn (Kislev 9) and Zot Chanukah (Tevet 10)
         if hd_py.month == 9:
+            # Erev Chanukah
             if hd_py.day == 24 and now >= dawn:
                 attrs["ערב חנוכה"] = True
-            if (25 <= hd_py.day <= 30) or hd_py.day <= 2:
+            # Days 1–6 of Chanukah
+            if 25 <= hd_py.day <= 30:
                 attrs["חנוכה"] = True
+
+        elif hd_py.month == 10:
+            # Days 7–8 of Chanukah
+            if hd_py.day == 1:
+                attrs["חנוכה"] = True
+            if hd_py.day == 2:
+                attrs["חנוכה"] = True
+                # Day 8: Zot Chanukah
+                attrs["זאת חנוכה"] = True
 
         # Tu BiShvat (month 11)
         if hd_py.month == 11 and hd_py.day == 15:
             attrs["ט\"ו בשבט"] = True
 
-        # Lag BaOmer (month 2)
-        if hd_py.month == 2 and hd_py.day == 18:
-            attrs["ל\"ג בעומר"] = True
+        # Pesach Sheini & Lag BaOmer (month 2)
+        if hd_py.month == 2:
+            if hd_py.day == 14:
+                attrs["פסח שני"] = True
+            if hd_py.day == 18:
+                attrs["ל\"ג בעומר"] = True
             
         # ─── 5) FASTS: only between dawn and end_time ────────────────────────────
         # 17 Tammuz
