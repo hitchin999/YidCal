@@ -62,6 +62,7 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         "אחרון של פסח",
         "מוצאי פסח",
         "אסרו חג פסח",
+        "פסח שני",
         "ל\"ג בעומר",
         "ערב שבועות",
         "שבועות א׳",
