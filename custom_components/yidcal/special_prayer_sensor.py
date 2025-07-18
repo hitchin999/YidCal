@@ -110,15 +110,19 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         if attrs.get("חנוכה") or attrs.get("פורים"):
             insertions.append("על הניסים")
 
-        # 4) Fast days: ענינו from dawn until sunset+havdala
-        fast_keys = [k for k, v in attrs.items() if v and not "כיפור" in k and (
-            k.startswith("צום") or k.startswith("תענית") or k in ["תשעה באב","תשעה באב נדחה"]
-        )]
-        if fast_keys and now >= dawn and now <= havdala:
-            insertions.append("ענינו")
-
-        # 5) Tish'a B'Av נחם from chatzos until sunset+havdala
-        if attrs.get("תשעה באב") and now >= hal_mid and now <= havdala:
-            insertions.append("נחם")
+        # 4) Fast / Tisha B’Av windows
+        is_tisha = (hd.month == 5 and hd.day == 9)
+        is_fast = any(
+            v and not "כיפור" in k and (k.startswith("צום") or k.startswith("תענית"))
+            for k, v in attrs.items()
+        )
+        # Tisha B’Av: נחם from chatzos → havdala
+        if is_tisha:
+            if now >= hal_mid and now <= havdala:
+                insertions.append("נחם")
+        # Other fasts: ענינו from dawn → havdala
+        elif is_fast:
+            if now >= dawn and now <= havdala:
+                insertions.append("ענינו")
 
         return " - ".join(insertions)
