@@ -86,7 +86,7 @@ ENG2HEB = {
     "Tishrei": "תשרי",
     "Cheshvan":"חשון",
     "Kislev":  "כסלו",
-    "Tevet":   "טבת",
+    "Teves":   "טבת",
     "Shvat":   "שבט",
     "Adar":    "אדר",     # when it’s a 12-month year
     "Adar I":  "אדר א",   # leap year month 12
@@ -286,12 +286,8 @@ class MoladSensor(YidCalDevice, SensorEntity):
             except ValueError:
                 target_year, target_month = hd.year + 1, 1
 
-        # 2) Grab pyluach’s English‐string (CALL month_name())
-        english_month = PHebrewDate(target_year, target_month, 1).month_name()
-        #     e.g. "Av", "Adar", "Adar I", or "Adar II"
-
-        # 3) Translate to Hebrew
-        molad_month_name = ENG2HEB.get(english_month, english_month)
+        # Compute the Hebrew‐month name directly (e.g. "אב", "טבת", etc.)
+        molad_month_name = PHebrewDate(target_year, target_month, 1).month_name(True)
 
         self._attr_extra_state_attributes = {
             "Day": day_yd,
