@@ -1,5 +1,6 @@
 from __future__ import annotations
 import datetime
+from datetime import time
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 from .device import YidCalDevice
@@ -8,7 +9,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_interval
 
-from .device import YidCalDevice
 from .const import DOMAIN
 from . import DEFAULT_DAY_LABEL_LANGUAGE
 from homeassistant.const import STATE_UNKNOWN
@@ -21,60 +21,6 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
     It will *not* show motzei for 17 Tammuz (Shi’vah Usor b’Tammuz) or Tisha B’av.
     """
     _attr_name = "Full Display"
-
-    # ONLY show these holidays
-    ALLOWED_HOLIDAYS: set[str] = {
-        "א׳ סליחות",
-        "ערב ראש השנה",
-        "ראש השנה א׳",
-        "ראש השנה ב׳",
-        "מוצאי ראש השנה",
-        "צום גדליה",
-        "שלוש עשרה מדות",
-        "ערב יום כיפור",
-        "יום הכיפורים",
-        "מוצאי יום הכיפורים",
-        "ערב סוכות",
-        "סוכות א׳",
-        "סוכות ב׳",
-        "א׳ דחול המועד סוכות",
-        "ב׳ דחול המועד סוכות",
-        "ג׳ דחול המועד סוכות",
-        "ד׳ דחול המועד סוכות",
-        "הושענא רבה",
-        "שמיני עצרת",
-        "שמחת תורה",
-        "מוצאי סוכות",
-        "אסרו חג סוכות",
-        "ערב חנוכה",
-        "חנוכה",
-        "צום עשרה בטבת",
-        "ט\"ו בשבט",
-        "תענית אסתר",
-        "פורים",
-        "שושן פורים",
-        "ליל בדיקת חמץ",
-        "ערב פסח",
-        "פסח א׳",
-        "פסח ב׳",
-        "חול המועד פסח",
-        "שביעי של פסח",
-        "אחרון של פסח",
-        "מוצאי פסח",
-        "אסרו חג פסח",
-        "פסח שני",
-        "ל\"ג בעומר",
-        "ערב שבועות",
-        "שבועות א׳",
-        "שבועות ב׳",
-        "מוצאי שבועות",
-        "אסרו חג שבועות",
-        "צום שבעה עשר בתמוז",
-        "מוצאי צום שבעה עשר בתמוז",
-        "תשעה באב",
-        "תשעה באב נדחה",
-        "מוצאי תשעה באב",
-    }
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
@@ -119,18 +65,12 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
             st = parsha.state.strip().lower()
             if st and st != "none":
                 text += f" {parsha.state}"
-
-        # 3) Holiday via yidcal_holiday attrs
+                
+        # 3) Holiday — just show the single state from sensor.yidcal_holiday
         hol = self.hass.states.get("sensor.yidcal_holiday")
-        picked = None
-        if hol:
-            for name, val in hol.attributes.items():
-                if val is True and name in self.ALLOWED_HOLIDAYS:
-                    picked = name
-                    break
-        if picked:
-            text += f" - {picked}"
-            
+        if hol and hol.state and hol.state not in (None, "", STATE_UNKNOWN):
+            text += f" - {hol.state}"
+
         # 4) Rosh Chodesh
         rosh = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
         if rosh and rosh.state != "Not Rosh Chodesh Today":
@@ -142,6 +82,7 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
             wd, hr = now.weekday(), now.hour
             if (wd == 4 and hr >= 13) or wd == 5:
                 text += f" ~ {special.state}"
+                
         # 6) Optional “today’s date”
         if self._include_date:
             date_ent = self.hass.states.get("sensor.yidcal_date")
