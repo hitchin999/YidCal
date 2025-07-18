@@ -276,39 +276,38 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if self.hass is None:
             return
 
-        # 1) Dates & sun times
+        # 1) Base time, location, and holiday_date computation
         tz = ZoneInfo(self.hass.config.time_zone)
         now = now or datetime.datetime.now(tz)
         actual_date = now.date()
-        wd = now.weekday()
-
         loc = LocationInfo(
             name="home", region="", timezone=self.hass.config.time_zone,
             latitude=self.hass.config.latitude, longitude=self.hass.config.longitude
         )
-        z_actual = sun(loc.observer, date=actual_date, tzinfo=tz)
-        sunrise      = z_actual["sunrise"]
-        dawn         = sunrise - timedelta(minutes=72)
-        today_sunset = z_actual["sunset"]
-        
-        # sunset of the day before (for candle-lighting starts)
-        z_yesterday = sun(loc.observer, date=actual_date - timedelta(days=1), tzinfo=tz)
-        yesterday_sunset = z_yesterday["sunset"]
-
-        # bump holiday_date past candle-lighting, but leave actual_date alone
-        if now >= today_sunset - timedelta(minutes=self._candle_offset):
+        # Civil sunset/dawn for today
+        z_civil    = sun(loc.observer, date=actual_date, tzinfo=tz)
+        dawn       = z_civil["sunrise"] - timedelta(minutes=72)
+        candle_cut = z_civil["sunset"] - timedelta(minutes=self._candle_offset)
+        # If after candle‑lighting, we consider the *next* Hebrew day
+        if now >= candle_cut:
             holiday_date = actual_date + timedelta(days=1)
         else:
             holiday_date = actual_date
+        # Fetch the day‑before and holiday_date sunsets
+        z_prev        = sun(loc.observer, date=holiday_date - timedelta(days=1), tzinfo=tz)
+        z_holoday     = sun(loc.observer, date=holiday_date,              tzinfo=tz)
+        prev_sunset   = z_prev["sunset"]
+        today_sunset  = z_holoday["sunset"]
 
-        # 2) Pre-calc named windows
+        # 2) Pre-calc *all* named windows based on holiday_date
         candle_candle_start, candle_candle_end = (
-            yesterday_sunset - timedelta(minutes=self._candle_offset),
-            today_sunset     - timedelta(minutes=self._candle_offset),
+            prev_sunset - timedelta(minutes=self._candle_offset),
+            today_sunset - timedelta(minutes=self._candle_offset),
         )
+
         candle_havdalah_start, candle_havdalah_end = (
-            yesterday_sunset - timedelta(minutes=self._candle_offset),
-            today_sunset     + timedelta(minutes=self._havdalah_offset),
+            prev_sunset - timedelta(minutes=self._candle_offset),
+            today_sunset + timedelta(minutes=self._havdalah_offset),
         )
         alos_havdalah_start, alos_havdalah_end = (
             dawn,
@@ -319,43 +318,44 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             today_sunset - timedelta(minutes=self._candle_offset),
         )
         candle_alos_start, candle_alos_end = (
-            yesterday_sunset - timedelta(minutes=self._candle_offset),
+            prev_sunset - timedelta(minutes=self._candle_offset),
             dawn,
         )
         havdalah_havdalah_start, havdalah_havdalah_end = (
-            yesterday_sunset + timedelta(minutes=self._havdalah_offset),
-            today_sunset     + timedelta(minutes=self._havdalah_offset),
+            prev_sunset + timedelta(minutes=self._havdalah_offset),
+            today_sunset + timedelta(minutes=self._havdalah_offset),
         )
         havdalah_candle_start, havdalah_candle_end = (
-            yesterday_sunset + timedelta(minutes=self._havdalah_offset),
-            today_sunset     - timedelta(minutes=self._candle_offset),
+            prev_sunset + timedelta(minutes=self._havdalah_offset),
+            today_sunset - timedelta(minutes=self._candle_offset),
         )
-
-        # 3) Hebrew dates
+        
+        # 3) Fast window uses the *same* prev_sunset & today_sunset
+        #    (unify festival & fast windows)
         heb_info   = HDateInfo(holiday_date, diaspora=True)
         hd_py      = PHebrewDate.from_pydate(holiday_date)
         hd_py_fast = PHebrewDate.from_pydate(actual_date)
-        
+
         # leap-year for Shovavim
         year    = hd_py.year
         is_leap = ((year * 7 + 1) % 19) < 7
         
-        # all fasts & yom‐tov end at sunset + havdalah_offset
+        # ─── all fasts & yom‐tov end at *holiday_date* sunset + havdalah_offset
         end_time = today_sunset + timedelta(minutes=self._havdalah_offset)
 
-        # fast‐start: dawn for most, candle‐lighting for YK/Tisha B’Av
-        if (hd_py_fast.month == 7 and hd_py_fast.day == 10) or \
-            (hd_py_fast.month == 5 and hd_py_fast.day in (9,10)):
-            # Yom Kippur & Tisha B’Av start at candle‐lighting
-            start_time_fast = yesterday_sunset - timedelta(minutes=self._candle_offset)
+        # ─── fast‐start: dawn for most, candle‐lighting for YK/Tisha B’Av
+        #       (based on *holiday_date* rather than actual_date)
+        if (hd_py.month == 7 and hd_py.day == 10) or \
+           (hd_py.month == 5 and hd_py.day in (9,10)):
+            # Yom Kippur & Tisha B’Av: start at candle‐lighting of the day before
+            start_time_fast = prev_sunset - timedelta(minutes=self._candle_offset)
         else:
-            # everyone else starts at dawn
+            # everyone else: start at dawn of holiday_date
             start_time_fast = dawn
 
-        # 4) Build raw attrs
+        # 4) Build raw attrs (default no holiday + no countdown)
         attrs = {name: False for name in self.ALL_HOLIDAYS}
         attrs["מען פאַסט אויס און"] = None
-        
         
 
         #Alef Slichos
@@ -513,21 +513,29 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_py.day == 8:
                 attrs["אסרו חג שבועות"] = True
 
-        # Tzom Shiva Usor Betamuz, Tisha Bav & Tisha Bav Nidche
-        if hd_py_fast.month == 4 and hd_py_fast.day == 17: 
-            attrs["צום שבעה עשר בתמוז"] = True
-        if hd_py_fast.month == 5 and hd_py_fast.day == 9:
-            attrs["תשעה באב"] = True
-        # deferred Tisha B'Av if postponed
-        if hd_py_fast.month == 5 and hd_py_fast.day == 10:
-            nine_av = PHebrewDate(hd_py.year, 5, 9)
-            if nine_av.to_pydate().weekday() == 5:
-                attrs["תשעה באב נדחה"] = True
-
         # Rosh Chodesh
         if hd_py.day in (1, 30): attrs["ראש חודש"] = True
 
-        # Countdown
+
+
+        # ─── Tzom Shiva Usor Betamuz (17 Tammuz) ──────────────
+        # dawn → sunset+havdalah
+        if hd_py_fast.month == 4 and hd_py_fast.day == 17 and dawn <= now <= end_time:
+            attrs["צום שבעה עשר בתמוז"] = True
+
+        # ─── Tisha B’av proper (9 Av) ──────────────────────────
+        # candle‑lighting → sunset+havdalah (use holiday_date)
+        if hd_py.month == 5 and hd_py.day == 9 \
+            and start_time_fast <= now <= end_time:
+            attrs["תשעה באב"] = True
+
+        # ─── Deferred Tisha B’av (10 Av if 9 Av was Shabbat) ────
+        # same window (use holiday_date)
+        if hd_py.month == 5 and hd_py.day == 10 \
+            and start_time_fast <= now <= end_time:
+            attrs["תשעה באב נדחה"] = True
+
+        # ─── Countdown for any fast in progress ─────────────────
         FAST_FLAGS = [
             "יום הכיפורים",
             "צום גדליה",
@@ -538,18 +546,15 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             "תשעה באב נדחה",
         ]
         if any(attrs.get(f) for f in FAST_FLAGS):
-            # If now before the fast’s start, count from start_time_fast.
+            # before start → total duration, else remaining until end
             if now < start_time_fast:
-                remaining = int((end_time - start_time_fast).total_seconds())
+                seconds = (end_time - start_time_fast).total_seconds()
             else:
-                remaining = int((end_time - now).total_seconds())
-            remaining = max(0, remaining)
-            h = remaining // 3600
-            m = (remaining % 3600) // 60
+                seconds = (end_time - now).total_seconds()
+            seconds = max(0, int(seconds))
+            h, m = divmod(seconds, 3600)
+            m = m // 60
             attrs["מען פאַסט אויס און"] = f"{h:02d}:{m:02d}"
-        else:
-            attrs["מען פאַסט אויס און"] = None
-
 
         # Filter attrs
         for name, on in list(attrs.items()):
@@ -635,4 +640,3 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         attrs["possible_states"] = self.ALL_HOLIDAYS
         self._attr_native_value = picked
         self._attr_extra_state_attributes = attrs
-
