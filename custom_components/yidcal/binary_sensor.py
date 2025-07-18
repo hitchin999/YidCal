@@ -434,6 +434,8 @@ async def async_setup_entry(
     )
 
     helper = YidCalHelper(hass.config)
+    helper._candle_offset   = candle
+    helper._havdalah_offset = havdalah
     
     entities: list[BinarySensorEntity] = [
         ShabbosMevorchimSensor(hass, helper, candle, havdalah),
