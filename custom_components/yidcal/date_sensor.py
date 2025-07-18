@@ -83,6 +83,13 @@ class DateSensor(YidCalDevice, RestoreEntity, SensorEntity):
             self._schedule_update,
             offset=self._havdalah_offset,
         )
+        # 4) ALSO schedule minute‑by‑minute updates so the state
+        #    flips precisely at the right minute.
+        self._register_interval(
+            self.hass,
+            self._schedule_update,
+            timedelta(minutes=1),
+        )
 
     @property
     def state(self) -> str:
