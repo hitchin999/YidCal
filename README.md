@@ -132,7 +132,7 @@ conditions:
   - condition: state
     entity: sensor.yidcal_holiday
     attribute: מען פאַסט אויס און
-    state_not: ""
+    state_not: " "
 card:
   type: horizontal-stack
   cards:
