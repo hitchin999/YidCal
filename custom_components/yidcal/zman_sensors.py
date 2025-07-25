@@ -1,10 +1,12 @@
 # /config/custom_components/yidcal/zman_sensors.py
+
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
+
+import datetime
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
@@ -13,19 +15,47 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
-# Original hdate import
 from hdate import HDateInfo
+from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
-# New Zmanim imports
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
 from .device import YidCalDevice
 
+# ─── Helper: compute holiday duration via pyluach ───────────────────────────
+
+def get_holiday_duration(pydate: datetime.date) -> int:
+    """
+    Return the number of consecutive Yom Tov days starting at `pydate`,
+    using pyluach to detect the festival name.
+    """
+    hd0 = HDateInfo(pydate, diaspora=True)
+    if not hd0.is_yom_tov:
+        return 0  # not a festival
+
+    # Base holiday name without prefix day ("פסח א׳" → "פסח")
+    base_name = PHebrewDate.from_pydate(pydate).holiday(
+        hebrew=True, prefix_day=False
+    )
+    length = 1
+
+    while True:
+        next_date = pydate + timedelta(days=length)
+        name2 = PHebrewDate.from_pydate(next_date).holiday(
+            hebrew=True, prefix_day=False
+        )
+        if name2 == base_name:
+            length += 1
+        else:
+            break
+
+    return length
+
+# ─── Geo helpers ──────────────────────────────────────────────────────────────
 
 def _create_geo(config) -> GeoLocation:
-    """Helper to build GeoLocation from stored config."""
     return GeoLocation(
         name="YidCal",
         latitude=config["latitude"],
@@ -35,14 +65,12 @@ def _create_geo(config) -> GeoLocation:
     )
 
 async def get_geo(hass: HomeAssistant) -> GeoLocation:
-    """Fetch GeoLocation via executor to avoid blocking."""
     config = hass.data[DOMAIN]["config"]
     return await hass.async_add_executor_job(_create_geo, config)
 
+# ─── Zman Erev Sensor ─────────────────────────────────────────────────────────
 
 class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
-    """Next candle-lighting (“Zman Erev”) for Shabbos or Yom Tov eve."""
-
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:candelabra-fire"
     _attr_name = "Zman Erev"
@@ -58,7 +86,7 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         slug = "zman_erev"
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
-        # offsets and diaspora flag read from global config
+
         config = hass.data[DOMAIN]["config"]
         self._candle  = config.get("candlelighting_offset", candle_offset)
         self._havdalah = config.get("havdalah_offset",     havdalah_offset)
@@ -68,50 +96,41 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # load geo info once
         self._geo = await get_geo(self.hass)
-        # initial calculation
         await self.async_update()
-        # schedule midnight weekly check
-        async_track_time_change(
-            self.hass,
-            self._midnight_check,
-            hour=0, minute=0, second=0,
-        )
-        # minute polling for new window
-        async_track_time_interval(
-            self.hass,
-            self._minutely_update,
-            timedelta(minutes=1),
-        )
+        async_track_time_change(self.hass, self._midnight_check, hour=0, minute=0, second=0)
+        async_track_time_interval(self.hass, self._minutely_update, timedelta(minutes=1))
 
-    async def _midnight_check(self, now: datetime) -> None:
-        # only run weekly on Sunday (weekday=6)
+    async def _midnight_check(self, now: datetime.datetime) -> None:
         if now.weekday() == 6:
             await self.async_update()
 
-    async def _minutely_update(self, now: datetime) -> None:
+    async def _minutely_update(self, now: datetime.datetime) -> None:
         await self.async_update(now)
 
-    async def async_update(self, now: datetime | None = None) -> None:
+    async def async_update(self, now: datetime.datetime | None = None) -> None:
         if not self._geo:
             return
 
-        # 1) current time in local tz
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
 
-        # 2) compute sunset via ZmanimCalendar
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
-        sunset_today = cal_today.sunset().astimezone(self._tz)
-        candle_time = sunset_today - timedelta(minutes=self._candle)
+        z_civil    = {"sunrise": None, "sunset": None}
+        cal_today  = ZmanimCalendar(geo_location=self._geo, date=today)
+        sunrise    = cal_today.sunrise().astimezone(self._tz)
+        sunset     = cal_today.sunset().astimezone(self._tz)
+        dawn       = sunrise - timedelta(minutes=72)
+        candle_cut = sunset - timedelta(minutes=self._candle)
 
-        # 3) choose check_date
-        check_date = today + timedelta(days=1) if now >= candle_time else today
+        # Determine eve date
+        if now >= candle_cut:
+            check_date = today + timedelta(days=1)
+        else:
+            check_date = today
+
         hd = HDateInfo(check_date, diaspora=self._diaspora)
         is_yomtov = hd.is_yom_tov
 
-        # 4) festival span or Shabbos logic
         if is_yomtov:
             start = check_date
             while HDateInfo(start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
@@ -119,48 +138,39 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
             eve_date = start - timedelta(days=1)
         else:
             wd = today.weekday()
-            if wd == 5 and now < (sunset_today + timedelta(minutes=self._havdalah)):
+            if wd == 5 and now < (sunset + timedelta(minutes=self._havdalah)):
                 eve_date = today - timedelta(days=1)
             else:
                 days_to_fri = (4 - wd) % 7
                 eve_date = today + timedelta(days=days_to_fri)
 
-        # 5) compute target candle-lighting time
         cal_eve = ZmanimCalendar(geo_location=self._geo, date=eve_date)
-        s_eve = cal_eve.sunset().astimezone(self._tz)
-        target = s_eve - timedelta(minutes=self._candle)
-
-        # save full‐precision ISO timestamp
+        s_eve   = cal_eve.sunset().astimezone(self._tz)
+        target  = s_eve - timedelta(minutes=self._candle)
         full_iso = target.isoformat()
-
-        # 7) round half-up at 30s
+        # half‑up rounding
         if target.second >= 30:
             target += timedelta(minutes=1)
         target = target.replace(second=0, microsecond=0)
 
-        # 8) set native value in UTC
         self._attr_native_value = target.astimezone(timezone.utc)
-        
-        # now build the human string in your configured tz
-        local_target = target.astimezone(self._tz)
-        # cross‐platform AM/PM formatting without %-I
-        hour = local_target.hour % 12 or 12
-        minute = local_target.minute
-        ampm = "AM" if local_target.hour < 12 else "PM"
+
+        lt = target.astimezone(self._tz)
+        hour, minute = lt.hour % 12 or 12, lt.minute
+        ampm = "AM" if lt.hour < 12 else "PM"
         human = f"{hour}:{minute:02d} {ampm}"
 
-        # 6) extra attributes
         self._attr_extra_state_attributes = {
             "Zman_Erev_With_Seconds": full_iso,
-            "Zman_Erev_Simple":  human,
-            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "Latitude": self._geo.latitude,
-            "Longitude": self._geo.longitude,
+            "Zman_Erev_Simple":       human,
+            "City":                   self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude":               self._geo.latitude,
+            "Longitude":              self._geo.longitude,
         }
 
-class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
-    """Next havdalah (“Zman Motzi”) for Shabbos or Yom Tov close."""
+# ─── Zman Motzi Sensor ────────────────────────────────────────────────────────
 
+class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:liquor"
     _attr_name = "Zman Motzi"
@@ -176,6 +186,7 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         slug = "zman_motzi"
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
+
         config = hass.data[DOMAIN]["config"]
         self._candle  = config.get("candlelighting_offset", candle_offset)
         self._havdalah = config.get("havdalah_offset",    havdalah_offset)
@@ -187,43 +198,39 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        async_track_time_change(
-            self.hass,
-            self._midnight_check,
-            hour=0, minute=0, second=0,
-        )
-        async_track_time_interval(
-            self.hass,
-            self._minutely_update,
-            timedelta(minutes=1),
-        )
+        async_track_time_change(self.hass, self._midnight_check, hour=0, minute=0, second=0)
+        async_track_time_interval(self.hass, self._minutely_update, timedelta(minutes=1))
 
-    async def _midnight_check(self, now: datetime) -> None:
+    async def _midnight_check(self, now: datetime.datetime) -> None:
         if now.weekday() == 6:
             await self.async_update()
 
-    async def _minutely_update(self, now: datetime) -> None:
+    async def _minutely_update(self, now: datetime.datetime) -> None:
         await self.async_update(now)
 
-    async def async_update(self, now: datetime | None = None) -> None:
+    async def async_update(self, now: datetime.datetime | None = None) -> None:
         if not self._geo:
             return
 
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
 
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
+        cal_today    = ZmanimCalendar(geo_location=self._geo, date=today)
         sunset_today = cal_today.sunset().astimezone(self._tz)
-        candle_time = sunset_today - timedelta(minutes=self._candle)
-        check_date = today + timedelta(days=1) if now >= candle_time else today
+        candle_cut   = sunset_today - timedelta(minutes=self._candle)
+
+        # decide which Hebrew day (today or tomorrow) to use
+        check_date = today + timedelta(days=1) if now >= candle_cut else today
         hd = HDateInfo(check_date, diaspora=self._diaspora)
         is_yomtov = hd.is_yom_tov
 
         if is_yomtov:
+            # find the first day of the festival span
             start = check_date
             while HDateInfo(start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
                 start -= timedelta(days=1)
-            end_date = start + timedelta(days=hd.holidays[0].duration)
+            # compute duration via pyluach fallback
+            duration = get_holiday_duration(start)
         else:
             wd = today.weekday()
             if wd == 5 and now < (sunset_today + timedelta(minutes=self._havdalah)):
@@ -231,34 +238,36 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
             else:
                 days_to_fri = (4 - wd) % 7
                 start = today + timedelta(days=days_to_fri)
-            end_date = start + timedelta(days=1)
+            duration = 1
 
+        # figure out which date’s sunset to use for the final havdalah
+        if is_yomtov:
+            # festival: the last *civil* festival day is start + (duration - 1)
+            end_date = start + timedelta(days=duration - 1)
+        else:
+            # weekly Motzi (Shabbos): start + duration lands on Saturday
+            end_date = start + timedelta(days=duration)
+
+        # sunset on the last day of the festival
         cal_final = ZmanimCalendar(geo_location=self._geo, date=end_date)
-        s_final = cal_final.sunset().astimezone(self._tz)
-        target = s_final + timedelta(minutes=self._havdalah)
+        s_final   = cal_final.sunset().astimezone(self._tz)
+        target    = s_final + timedelta(minutes=self._havdalah)
 
-        # save full‐precision ISO timestamp
         full_iso = target.isoformat()
-
-        # ceil to minute if there's any seconds
+        # always ceil to next minute
         target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
-        
+
         self._attr_native_value = target.astimezone(timezone.utc)
-        
-        # now build the human string in your configured tz
-        local_target = target.astimezone(self._tz)
-        # cross‐platform AM/PM formatting without %-I
-        hour = local_target.hour % 12 or 12
-        minute = local_target.minute
-        ampm = "AM" if local_target.hour < 12 else "PM"
+
+        lt = target.astimezone(self._tz)
+        hour, minute = lt.hour % 12 or 12, lt.minute
+        ampm = "AM" if lt.hour < 12 else "PM"
         human = f"{hour}:{minute:02d} {ampm}"
-        
+
         self._attr_extra_state_attributes = {
             "Zman_Motzi_With_Seconds": full_iso,
-            "Zman_Motzi_Simple":  human,
-            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "Latitude": self._geo.latitude,
-            "Longitude": self._geo.longitude,
+            "Zman_Motzi_Simple":       human,
+            "City":                    self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude":                self._geo.latitude,
+            "Longitude":               self._geo.longitude,
         }
-
-# no async_setup_entry here—these sensors are registered from sensor.py
