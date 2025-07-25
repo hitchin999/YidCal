@@ -43,11 +43,22 @@ class MoridGeshemSensor(YidCalDevice, SensorEntity):
         # compute Hebrew date
         hd = PHebrewDate.from_pydate(today)
         day, m = hd.day, hd.month_name(hebrew=True)
-        # define start/end
-        start = (m == "תשרי" and (day > 22 or (day == 22 and now >= dawn))) or \
-                (m in ["חשון","כסלו","טבת","שבט","אדר","אדר א","אדר ב"]) or \
-                (m == "ניסן" and (day < 15 or (day == 15 and now < dawn)))
-        return "מוריד הגשם" if start and now >= dawn else "מוריד הטל"
+        # Define start and end for boundaries
+        is_start_day = (m == "תשרי" and day == 22)
+        is_end_day = (m == "ניסן" and day == 15)
+        # Adjusted in_window for middle days only (Tishrei 23+ through Nisan 14)
+        in_middle = (m == "תשרי" and day > 22) or \
+                    (m in ["חשון", "כסלו", "טבת", "שבט", "אדר", "אדר א", "אדר ב"]) or \
+                    (m == "ניסן" and day < 15)
+        # Logic for continuous window
+        if is_start_day:
+            return "מוריד הגשם" if now >= dawn else "מוריד הטל"
+        elif is_end_day:
+            return "מוריד הגשם" if now < dawn else "מוריד הטל"
+        elif in_middle:
+            return "מוריד הגשם"
+        else:
+            return "מוריד הטל"
 
 class TalUMatarSensor(YidCalDevice, SensorEntity):
     """Tal U'Matar sensor: continuous window at havdala."""
@@ -66,7 +77,7 @@ class TalUMatarSensor(YidCalDevice, SensorEntity):
     def native_value(self) -> str:
         now = dt_now()
         today = now.date()
-        # calculate havdala
+        # Calculate havdala (unchanged)
         tz = ZoneInfo(self.hass.config.time_zone)
         loc = LocationInfo(
             name="home", region="", timezone=self.hass.config.time_zone,
@@ -74,14 +85,22 @@ class TalUMatarSensor(YidCalDevice, SensorEntity):
         )
         sun_times = sun(loc.observer, date=today, tzinfo=tz)
         havdala_time = sun_times["sunset"] + timedelta(minutes=self._havdalah_offset)
-        # compute Hebrew date
+        # Compute Hebrew date (unchanged)
         hd = PHebrewDate.from_pydate(today)
         day, m = hd.day, hd.month_name(hebrew=True)
-        # determine in-window (Kislev 5+ through Nisan 14)
-        in_window = (m == "כסלו" and day >= 5) or \
-                    (m in ["טבת","שבט","אדר","אדר א","אדר ב"]) or \
+        # Define start and end for boundaries
+        is_start_day = (m == "כסלו" and day == 5)
+        is_end_day = (m == "ניסן" and day == 15)
+        # Adjusted in_window for middle days only (Kislev 6+ through Nisan 14)
+        in_middle = (m == "כסלו" and day > 5) or \
+                    (m in ["טבת", "שבט", "אדר", "אדר א", "אדר ב"]) or \
                     (m == "ניסן" and day < 15)
-        # return based on window and time
-        if now >= havdala_time and in_window:
+        # Logic for continuous window
+        if is_start_day:
+            return "ותן טל ומטר לברכה" if now >= havdala_time else "ותן ברכה"
+        elif is_end_day:
+            return "ותן טל ומטר לברכה" if now < havdala_time else "ותן ברכה"
+        elif in_middle:
             return "ותן טל ומטר לברכה"
-        return "ותן ברכה"
+        else:
+            return "ותן ברכה"
