@@ -34,6 +34,9 @@ class TehilimDailySensor(YidCalDevice, SensorEntity):
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass      = hass
 
+        self._state = None
+        self.update()
+
         async_track_time_change(
             hass, self._handle_midnight, hour=0, minute=0, second=1
         )
@@ -71,6 +74,9 @@ class TehilimDailySensor(YidCalDevice, SensorEntity):
             # skip past Hoshana Rabah (21 Tishrei)
             hd = PHebrewDate.from_pydate(check)
             if hd.month == 7 and hd.day == 21:
+                continue
+            # skip past Yom Tov
+            if hd.festival(include_working_days=False) is not None:
                 continue
 
             valid_days += 1
