@@ -351,73 +351,73 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
 
     async def async_update(self, now: datetime | None = None) -> None:
+        """Turn on from candle‑lighting Day 1 through havdalah on last day."""
         now = dt_util.now().astimezone(self._tz)
         today = now.date()
-
         if not self._geo:
             return
 
-        # compute raw window start/end
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
-        s_eve = cal_today.sunset().astimezone(self._tz)  # eve‐sunset for today
-        # for multi‐day YT you'd compute start_date… but this is your original logic
-        sunset_today = s_eve  # reused for brevity
-        candle_time = sunset_today - timedelta(minutes=self._candle)
+        festival_name = None
+        raw_start = raw_end = None
 
-        # festival detection (unchanged from original)…
-        check_date = today + timedelta(days=1) if now >= candle_time else today
-        hd = HDateInfo(check_date, diaspora=self._diaspora)
-        is_yomtov = hd.is_yom_tov
+        # 1) Scan upcoming Yom Tov clusters (including tonight’s upcoming start)
+        for delta in range(-1, 32):
+            d = today + timedelta(days=delta)
+            hd = HDateInfo(d, diaspora=self._diaspora)
+            # only consider the start‐day of any festival cluster
+            if not hd.is_yom_tov or HDateInfo(d - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                continue
 
-        if is_yomtov:
-            start_date = check_date
-            while HDateInfo(start_date - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                start_date -= timedelta(days=1)
-            end_date = check_date
-            while HDateInfo(end_date + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                end_date += timedelta(days=1)
-            info = HDateInfo(start_date, diaspora=self._diaspora)
-            festival_name = str(info.holidays[0])
-        else:
-            wd = today.weekday()
-            if wd == 5 and now < (sunset_today + timedelta(minutes=self._havdalah)):
-                start_date = today - timedelta(days=1)
-            else:
-                days_to_friday = (4 - wd) % 7
-                start_date = today + timedelta(days=days_to_friday)
-            end_date = start_date + timedelta(days=1)
+            # find the end of this contiguous festival
+            end_d = d
+            while HDateInfo(end_d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                end_d += timedelta(days=1)
+
+            # raw window: sunset(prev day)–candle → sunset(end_d)+havdalah
+            cal_prev   = ZmanimCalendar(geo_location=self._geo, date=d - timedelta(days=1))
+            start_dt   = cal_prev.sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
+
+            cal_end    = ZmanimCalendar(geo_location=self._geo, date=end_d)
+            end_dt     = cal_end.sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
+
+            # pick the very first cluster whose end is still in the future
+            if end_dt > now:
+                festival_name = str(hd.holidays[0])
+                raw_start     = start_dt
+                raw_end       = end_dt
+                break
+
+        # 2) If no Yom Tov found, fall back to this week’s Shabbos
+        if raw_start is None:
+            wd      = today.weekday()
+            friday  = today - timedelta(days=(wd - 4) % 7)
+            saturday = friday + timedelta(days=1)
+
+            cal_f   = ZmanimCalendar(geo_location=self._geo, date=friday)
+            raw_start = cal_f.sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
+
+            cal_s   = ZmanimCalendar(geo_location=self._geo, date=saturday)
+            raw_end   = cal_s.sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
+
             festival_name = "שבת"
 
-        # recompute eve/final for full window
-        cal_eve = ZmanimCalendar(geo_location=self._geo, date=(start_date - timedelta(days=1) if is_yomtov else start_date))
-        s_eve = cal_eve.sunset().astimezone(self._tz)
-        cal_final = ZmanimCalendar(geo_location=self._geo, date=end_date)
-        s_final = cal_final.sunset().astimezone(self._tz)
-
-        raw_start = s_eve - timedelta(minutes=self._candle)
-        raw_end = s_final + timedelta(minutes=self._havdalah)
-
-        # rounding per your request
+        # 3) Round thresholds and decide state
         window_start = round_half_up(raw_start)
-        window_end = round_ceil(raw_end)
-
-        in_window = window_start <= now < window_end
+        window_end   = round_ceil(raw_end)
+        in_window    = (window_start <= now < window_end)
 
         self._attr_is_on = in_window
-        erev = self.hass.states.get("binary_sensor.yidcal_erev")
-        erev_attrs = erev.attributes if erev else {}
-
         self._attr_extra_state_attributes = {
-            "Now": now.isoformat(),
-            "Festival_Name": festival_name if (festival_name == "שבת" and in_window) or festival_name != "שבת" else None,
-            "Is_Erev_Holiday": erev_attrs.get("is_erev_holiday", False),
-            "Is_Erev_Shabbos": erev_attrs.get("is_erev_shabbos", False),
-            "Is_Yom_Tov": is_yomtov,
-            "Is_Shabbos": (festival_name == "שבת" and in_window),
-            "Window_Start": window_start.isoformat(),
-            "Window_End": window_end.isoformat(),
-            "In_Window": in_window,
+            "Now":            now.isoformat(),
+            "Festival_Name":  festival_name,
+            "Window_Start":   window_start.isoformat(),
+            "Window_End":     window_end.isoformat(),
+            "In_Window":      in_window,
+            "Is_Yom_Tov":     (festival_name != "שבת"),
+            "Is_Shabbos":     (festival_name == "שבת"),
         }
+
+
 
 
 async def async_setup_entry(
