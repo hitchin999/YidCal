@@ -11,6 +11,8 @@ import logging
 import datetime
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
+from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
+
 
 
 
@@ -159,17 +161,19 @@ class YidCalHelper:
             
         hd1_next = PHebrewDate(hy_next, nm, 1)
 
-        # Exclude 1 Tishrei
-        if not (nm == 7 and hd1_next.day == 1):
-            g1_next = hd1_next.to_pydate()
-            dayname_1 = self.get_day_of_week(g1_next)
-            days.append(dayname_1)
-            gdays.append(g1_next)
-
-
+        # always include 1st of next month (so days[] is never empty)
+        g1_next = hd1_next.to_pydate()
+        dayname_1 = self.get_day_of_week(g1_next)
+        days.append(dayname_1)
+        gdays.append(g1_next)
 
         month_name = hd.month_name()  # English, e.g. "Av"
-        text = " & ".join(days) if len(days) == 2 else days[0]
+        if   len(days) == 2:
+            text = " & ".join(days)
+        elif len(days) == 1:
+            text = days[0]
+        else:
+            text = ""
         return RoshChodesh(month_name, text, days, gdays)
 
     def get_shabbos_mevorchim_hebrew_day_of_month(self, today: datetime.date) -> int | None:
@@ -267,96 +271,72 @@ class YidCalHelper:
 
         return False
 
-
     def get_actual_molad(self, today: datetime.date) -> Molad:
         """
-        Compute the molad for the Hebrew month containing 'today' if Hebrew-day < 3,
-        otherwise compute for the next Hebrew month.
-
-        Returns a Molad object with:
-          .day      = English weekday (e.g. "Friday")
-          .hours    = hours in 12h format (1–12)
-          .minutes  = minutes (0–59)
-          .am_or_pm = "am" or "pm"
-          .chalakim = parts (integer)
-          .friendly = textual string like "Friday, 10:42 am and 5 chalakim"
+        Compute the exact molad for the Hebrew month containing `today`
+        (if day<3) or for the *next* Hebrew month (if day≥3), using pyluach’s
+        built‑in molad_announcement().
         """
+        # 1) Pick the target year/month
         hd = PHebrewDate.from_pydate(today)
-        hy, hm, hd_day = hd.year, hd.month, hd.day
-
-        # Choose current vs. next month:
-        if hd_day < 3:
-            target_year = hy
-            target_month = hm
+        if hd.day < 3:
+            hy, hm = hd.year, hd.month
         else:
-            # Next month (roll into next Hebrew year if needed)
-            nm = hm + 1
-            hy_next = hy
+            # roll to next month (and year if needed)
+            hy, hm = hd.year, hd.month + 1
             try:
-                PMonth(hy, nm)
+                PHebrewDate(hy, hm, 1)
             except ValueError:
-                nm = 1
-                hy_next += 1
-            target_year = hy_next
-            target_month = nm
+                hy += 1
+                hm = 1
 
-        # Now ask pyluach’s Month(...) for molad_announcement:
-        pm = PMonth(target_year, target_month)
-        ann = pm.molad_announcement()  # dict: {"weekday":1..7, "hour":0..23, "minutes":…, "parts":…}
+        # 2) Ask pyluach for its announcement
+        pm = PMonth(hy, hm)
+        ann = pm.molad_announcement()
+        # ann is dict: {"weekday":1..7, "hour":0..23, "minutes":0..59, "parts":0..1079}
 
-        # 1) Find the Gregorian date of that molad:
-        #    start at the 1st of the Hebrew month…
-        first_of_month = PHebrewDate(target_year, target_month, 1).to_pydate()
-        #    map pyluach’s weekday (1=Sun…7=Shabbos) → Python’s (Mon=0…Sun=6)
-        molad_py_wd = (ann["weekday"] + 5) % 7
-        #    figure out how many days from the 1st to hit that weekday
-        delta = (molad_py_wd - first_of_month.weekday()) % 7
-        molad_date = first_of_month + timedelta(days=delta)
-        
-        # 1) Build a naive datetime in Jerusalem standard time (UTC+2)
+        # 3) Convert pyluach’s weekday (1=Sunday…7=Saturday) → Python’s (Mon=0…Sun=6)
+        weekday_py = (ann["weekday"] + 5) % 7
+
+        # 4) Find the calendar date of that weekday in the molad-week
+        first_of_month = PHebrewDate(hy, hm, 1).to_pydate()
+        # how many days from the first to get to that weekday?
+        delta_days = (weekday_py - first_of_month.weekday()) % 7
+        molad_date = first_of_month + timedelta(days=delta_days)
+
+        # 5) Build a tz‑aware datetime in Jerusalem time
         local = datetime(
             molad_date.year,
             molad_date.month,
             molad_date.day,
             ann["hour"],
             ann["minutes"],
+            tzinfo=ZoneInfo("Asia/Jerusalem")
         )
+        # Account for DST
+        local += local.dst() or timedelta(0)
 
-        # 2) Attach the Jerusalem tz so we can ask for DST
-        local = local.replace(tzinfo=ZoneInfo("Asia/Jerusalem"))
+        # 6) Format into 12‑hour + chalakim
+        h24 = local.hour
+        minute = local.minute
+        parts  = ann["parts"]
+        ampm   = "am" if h24 < 12 else "pm"
+        h12    = h24 % 12 or 12
+        dayname = ["Monday","Tuesday","Wednesday","Thursday","Friday","Shabbos","Sunday"][local.weekday()]
+        friendly = f"{dayname}, {h12}:{minute:02d} {ampm} and {parts} chalakim"
 
-        # 3) If DST is in effect (dst() == 1h), bump the clock by that offset
-        dst_offset = local.dst() or timedelta(0)
-        jerusalem = local + dst_offset
-
-
-        # 4) Pull out hour/minute/parts and build your Molad
-        h24 = jerusalem.hour
-        mins = jerusalem.minute
-        parts = ann["parts"]
-        wd = jerusalem.weekday()  # Monday=0…Saturday=5
-        ampm = "am" if h24 < 12 else "pm"
-        h12 = h24 % 12 or 12
-        day_name = ["Monday","Tuesday","Wednesday","Thursday","Friday","Shabbos","Sunday"][wd]
-        friendly = f"{day_name}, {h12}:{mins:02d} {ampm} and {parts} chalakim"
-
-        return Molad(day_name, h12, mins, ampm, parts, friendly)
+        return Molad(dayname, h12, minute, ampm, parts, friendly)
 
 
     def get_molad(self, today: datetime.date) -> MoladDetails:
         """
-        Return a MoladDetails object combining:
-          - Molad for (today) via get_actual_molad(today)
-          - is_shabbos_mevorchim(today)
-          - is_upcoming_shabbos_mevorchim(today)
-          - Rosh Chodesh via get_rosh_chodesh_days(today)
+        Package up your Molad + Mevorchim + RoshChodesh into one object.
         """
-        m = self.get_actual_molad(today)
-        ism = self.is_shabbos_mevorchim(today)
-        isu = self.is_upcoming_shabbos_mevorchim(today)
-        rc = self.get_rosh_chodesh_days(today)
+        m    = self.get_actual_molad(today)
+        ism  = self.is_shabbos_mevorchim(today)
+        isu  = self.is_upcoming_shabbos_mevorchim(today)
+        rc   = self.get_rosh_chodesh_days(today)
         return MoladDetails(m, ism, isu, rc)
-
 
 def int_to_hebrew(num: int) -> str:
     """
