@@ -1,5 +1,3 @@
-# /config/custom_components/yidcal/tehilim_daily_sensor.py
-
 from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
@@ -53,55 +51,58 @@ class TehilimDailySensor(YidCalDevice, SensorEntity):
 
         today = dt_util.now().date()
 
-        # — skip today if Shabbos/Yomtov
-        if self.hass.states.is_state("binary_sensor.yidcal_no_melucha", "on"):
-            return
+        # Check if we should skip today
+        is_skip = self.hass.states.is_state("binary_sensor.yidcal_no_melucha", "on")
 
-        # — skip if today is Hoshana Rabah
         hol = self.hass.states.get("sensor.yidcal_holiday")
         if hol and hol.attributes.get("hoshana_raba", False):
-            return
+            is_skip = True
 
-        # 1) count valid days since reference (skip historical Shabbos & H.R.)
-        delta_days = (today - REFERENCE_DATE).days
-        valid_days = 0
-        for d in range(delta_days + 1):
-            check = REFERENCE_DATE + timedelta(days=d)
-
-            # skip past Shabbos
-            if check.weekday() == 5:
-                continue
-            # skip past Hoshana Rabah (21 Tishrei)
-            hd = PHebrewDate.from_pydate(check)
-            if hd.month == 7 and hd.day == 21:
-                continue
-            # skip past Yom Tov
-            if hd.festival(include_working_days=False) is not None:
-                continue
-
-            valid_days += 1
-
-        # 2) figure out which 5-chapter block is “today”
-        idx      = (REFERENCE_INDEX + valid_days - 1) % CYCLE_LENGTH
-        start_ch = idx * BLOCK_SIZE + 1
-        end_ch   = min(start_ch + BLOCK_SIZE - 1, CHAPTER_COUNT)
-
-        # helper to strip any geresh/gershayim
+        # Helper to strip any geresh/gershayim
         def clean(s: str) -> str:
             return s.replace("׳", "").replace("״", "")
 
-        # our state string, e.g. "א - ה"
-        today_label = f"{clean(int_to_hebrew(start_ch))} - {clean(int_to_hebrew(end_ch))}"
-        self._state = today_label
-
-        # 3) build every possible block label, and mark it true only if it matches today
+        # Build the attributes dict with all False initially
         attrs: dict[str, bool] = {}
         for i in range(CYCLE_LENGTH):
             s = i * BLOCK_SIZE + 1
             e = min(s + BLOCK_SIZE - 1, CHAPTER_COUNT)
             lbl = f"{clean(int_to_hebrew(s))} - {clean(int_to_hebrew(e))}"
-            attrs[lbl] = (lbl == today_label)
+            attrs[lbl] = False
+
+        if is_skip:
+            self._state = ""
+        else:
+            # 1) count valid days since reference (skip historical Shabbos & H.R.)
+            delta_days = (today - REFERENCE_DATE).days
+            valid_days = 0
+            for d in range(delta_days + 1):
+                check = REFERENCE_DATE + timedelta(days=d)
+
+                # skip past Shabbos
+                if check.weekday() == 5:
+                    continue
+                # skip past Hoshana Rabah (21 Tishrei)
+                hd = PHebrewDate.from_pydate(check)
+                if hd.month == 7 and hd.day == 21:
+                    continue
+                # skip past Yom Tov
+                if hd.festival(include_working_days=False) is not None:
+                    continue
+
+                valid_days += 1
+
+            # 2) figure out which 5-chapter block is “today”
+            idx      = (REFERENCE_INDEX + valid_days - 1) % CYCLE_LENGTH
+            start_ch = idx * BLOCK_SIZE + 1
+            end_ch   = min(start_ch + BLOCK_SIZE - 1, CHAPTER_COUNT)
+
+            # our state string, e.g. "א - ה"
+            today_label = f"{clean(int_to_hebrew(start_ch))} - {clean(int_to_hebrew(end_ch))}"
+            self._state = today_label
+
+            # Mark the today's block as True
+            attrs[today_label] = True
 
         # 4) set _attr_extra_state_attributes to our new boolean map
         self._attr_extra_state_attributes = attrs
-        
