@@ -246,7 +246,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         super().__init__()
         slug = "holiday"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id = f"binary_sensor.yidcal_{slug}"
+        self.entity_id = f"sensor.yidcal_{slug}"
 
         self.hass = hass
         self._candle_offset = candle_offset
@@ -337,11 +337,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         hd_py_fast = PHebrewDate.from_pydate(actual_date)
         havdalah_date = actual_date + timedelta(days=1) if now >= havdalah_cut else actual_date
         hd_havdalah = PHebrewDate.from_pydate(havdalah_date)
-        # Special case: Check if today is bedikat chametz day for proper window calculation
-        tomorrow = actual_date + timedelta(days=1)
-        hd_tomorrow = PHebrewDate.from_pydate(tomorrow)
-        bedikat_day = 13 if (hd_tomorrow.month == 1 and hd_tomorrow.day == 15 and tomorrow.weekday() == 6) else 14
+        # Special case for Bedikat Chametz (deferred to 13 Nisan if Erev Pesach on Shabbat)
+        hd_erev_pesach = PHebrewDate(hd_py.year, 1, 14)
+        erev_greg = hd_erev_pesach.to_pydate()
+        bedikat_day = 13 if erev_greg.weekday() == 5 else 14
         is_bedikat_day = (hd_py.month == 1 and hd_py.day == bedikat_day)
+        #_LOGGER.debug(f"Bedikat: prev_sunset={prev_sunset}, dawn={dawn}, now={now}, is_bedikat_day={is_bedikat_day}")
 
         # Debug Hebrew date
         #_LOGGER.debug(f"Current time: {now}, Hebrew date (hd_py): {hd_py.month}/{hd_py.day}, "
@@ -364,23 +365,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             dawn,
             festival_sunset - timedelta(minutes=self._candle_offset),
         )
-        if is_bedikat_day:
-            # For bedikat chametz: from candle lighting today until dawn tomorrow
-            tomorrow_cal = ZmanimCalendar(geo_location=geo, date=tomorrow)
-            tomorrow_dawn = tomorrow_cal.sunrise().astimezone(tz) - timedelta(minutes=72)
-            if tomorrow_dawn.second >= 30:
-                tomorrow_dawn += timedelta(minutes=1)
-            tomorrow_dawn = tomorrow_dawn.replace(second=0, microsecond=0)
-            candle_alos_start, candle_alos_end = (
-                actual_sunset - timedelta(minutes=self._candle_offset),
-                tomorrow_dawn,
-            )
-        else:
-            # Default candle_alos window
-            candle_alos_start, candle_alos_end = (
-                prev_sunset - timedelta(minutes=self._candle_offset),
-                dawn,
-            )
+        candle_alos_start, candle_alos_end = (
+            prev_sunset - timedelta(minutes=self._candle_offset),
+            dawn,
+        )
         shabbat_second = festival_date.weekday() == 5
         if shabbat_second:
             havdalah_havdalah_start = prev_sunset - timedelta(minutes=self._candle_offset)
@@ -476,42 +464,42 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_fest.month == 7 and hd_fest.day == 16 or hd_havdalah.month == 7 and hd_havdalah.day == 16:
                 attrs["סוכות ב׳"] = True
                 attrs["סוכות א׳ וב׳"] = True
-            if hd_py.day == 17:
+            if hd_fest.day == 17:
                 attrs["א׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
-            if hd_py.day == 18:
+            if hd_fest.day == 18:
                 attrs["ב׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
-            if hd_py.day == 19:
+            if hd_fest.day == 19:
                 attrs["ג׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
-            if hd_py.day == 20:
+            if hd_fest.day == 20:
                 attrs["ד׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
-            if hd_py.day == 21:
+            if hd_fest.day == 21:
                 attrs["הושענא רבה"] = True
             if hd_py.day == 22:
                 attrs["שמיני עצרת"] = True
-            if hd_py.day == 23:
+            if hd_fest.day == 23:
                 attrs["שמחת תורה"] = True
-            if hd_py.day == 24:
+            if hd_fest.day == 24:
                 attrs["אסרו חג סוכות"] = True
 
         # Chanukah & Erev at dawn (Kislev 9) and Zot Chanukah (Tevet 10)
-        if hd_py.month == 9:
-            if hd_py.day == 24:
+        if hd_fest.month == 9:
+            if hd_fest.day == 24:
                 attrs["ערב חנוכה"] = True
-            if 25 <= hd_py.day <= 30:
+            if 25 <= hd_fest.day <= 30:
                 attrs["חנוכה"] = True
-        elif hd_py.month == 10:
-            if hd_py.day == 1:
+        elif hd_fest.month == 10:
+            if hd_fest.day == 1:
                 attrs["חנוכה"] = True
-            if hd_py.day == 2:
+            if hd_fest.day == 2:
                 attrs["חנוכה"] = True
                 attrs["זאת חנוכה"] = True
 
         # Shovavim
-        parsha = (getparsha_string(hd_py) or "").upper()
+        parsha = (getparsha_string(hd_fest) or "").upper()
         #_LOGGER.debug(f"Current parsha: {parsha}")
         shov_base = ["SHEMOS", "VA'EIRA", "BO", "BESHALACH", "YISRO", "MISHPATIM"]
         shov_ext = shov_base + ["TERUMAH", "TETZAVEH"]
@@ -523,22 +511,21 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["צום עשרה בטבת"] = True
 
         # Tu BiShvat
-        if hd_py.month == 11 and hd_py.day == 15:
+        if hd_fest.month == 11 and hd_fest.day == 15:
             attrs["ט\"ו בשבט"] = True
 
         # Purim
-        if hd_py.month in (12, 13):
-            if hd_py.day == 13 and dawn <= now <= end_time:
+        if hd_fest.month in (12, 13):
+            if hd_fest.day == 13 and dawn <= now <= end_time:
                 attrs["תענית אסתר"] = True
-            if hd_py.day == 14:
+            if hd_fest.day == 14:
                 attrs["פורים"] = True
-            if hd_py.day == 15:
+            if hd_fest.day == 15:
                 attrs["שושן פורים"] = True
 
         # Bedikat Chametz
         if is_bedikat_day:
-            # Use the same time window as calculated for candle_alos above
-            if actual_sunset <= now < tomorrow_dawn:
+            if prev_sunset <= now < dawn:
                 attrs["ליל בדיקת חמץ"] = True
 
         # Pesach & Erev
@@ -551,30 +538,30 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_fest.month == 1 and hd_fest.day == 16 or hd_havdalah.month == 1 and hd_havdalah.day == 16:
                 attrs["פסח ב׳"] = True
                 attrs["פסח א׳ וב׳"] = True
-            if hd_py.day == 17:
+            if hd_fest.day == 17:
                 attrs["א׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
-            if hd_py.day == 18:
+            if hd_fest.day == 18:
                 attrs["ב׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
-            if hd_py.day == 19:
+            if hd_fest.day == 19:
                 attrs["ג׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
-            if hd_py.day == 20:
+            if hd_fest.day == 20:
                 attrs["ד׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
             if hd_py.day == 21:
                 attrs["שביעי של פסח"] = True
-            if hd_py.day == 22:
+            if hd_fest.day == 22:
                 attrs["אחרון של פסח"] = True
-            if hd_py.day == 23:
+            if hd_fest.day == 23:
                 attrs["אסרו חג פסח"] = True
 
         # Pesach Sheini & Lag BaOmer
-        if hd_py.month == 2:
-            if hd_py.day == 14:
+        if hd_fest.month == 2:
+            if hd_fest.day == 14:
                 attrs["פסח שני"] = True
-            if hd_py.day == 18:
+            if hd_fest.day == 18:
                 attrs["ל\"ג בעומר"] = True
 
         # Shavuot & Erev
@@ -587,11 +574,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_fest.month == 3 and hd_fest.day == 7 or hd_havdalah.month == 3 and hd_havdalah.day == 7:
                 attrs["שבועות ב׳"] = True
                 attrs["שבועות א׳ וב׳"] = True
-            if hd_py.day == 8:
+            if hd_fest.day == 8:
                 attrs["אסרו חג שבועות"] = True
 
         # Rosh Chodesh (but not on Rosh Hashanah, Tishrei 1)
-        if hd_py.day in (1, 30) and not (hd_py.month == 7 and hd_py.day == 1):
+        if hd_fest.day in (1, 30) and not (hd_fest.month == 7 and hd_fest.day == 1):
             attrs["ראש חודש"] = True
 
         # Tzom Shiva Usor Betamuz
