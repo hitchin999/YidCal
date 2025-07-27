@@ -26,6 +26,7 @@ class SpecialShabbosSensor(YidCalDevice, SensorEntity):
         "שבת חזון",
         "שבת נחמו",
         "שבת חזק",
+        "שבת ראש חודש",
         "פורים משולש",
     ]
 
