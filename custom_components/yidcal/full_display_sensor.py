@@ -13,6 +13,10 @@ from .const import DOMAIN
 from . import DEFAULT_DAY_LABEL_LANGUAGE
 from homeassistant.const import STATE_UNKNOWN
 
+from zmanim.zmanim_calendar import ZmanimCalendar
+from zmanim.util.geo_location import GeoLocation
+from .zman_sensors import get_geo
+
 
 class FullDisplaySensor(YidCalDevice, SensorEntity):
     """
@@ -35,10 +39,13 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         cfg = hass.data[DOMAIN]["config"]
         self._day_label_language = cfg.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE)
         self._include_date      = cfg.get("include_date", False)
+        self._geo: GeoLocation | None = None
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
 
     async def async_added_to_hass(self) -> None:
         """Register initial update and start once-per-minute polling."""
         await super().async_added_to_hass()
+        self._geo = await get_geo(self.hass)
         await self.async_update()
         self._register_interval(
             self.hass,
@@ -51,7 +58,7 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         return self._state
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
-        tz = ZoneInfo(self.hass.config.time_zone)
+        tz = self._tz
         now = now or datetime.datetime.now(tz)
 
         # 1) Day label (Yiddish or Hebrew per user choice)
@@ -61,27 +68,38 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
 
         # 2) Parsha
         parsha = self.hass.states.get("sensor.yidcal_parsha")
-        if parsha:
-            st = parsha.state.strip().lower()
-            if st and st != "none":
-                text += f" {parsha.state}"
+        if parsha and parsha.state.strip():
+            text += f" {parsha.state}"
                 
         # 3) Holiday — just show the single state from sensor.yidcal_holiday
         hol = self.hass.states.get("sensor.yidcal_holiday")
         if hol and hol.state and hol.state not in (None, "", STATE_UNKNOWN):
             text += f" - {hol.state}"
 
+        # 5) Special Shabbos (after Fri-13:00 or any Sat)
+        special = self.hass.states.get("sensor.yidcal_special_shabbos")
+        show_special = False
+        if special and special.state not in ("No data", ""):
+            wd, hr = now.weekday(), now.hour
+            if wd == 4 and hr >= 13:
+                show_special = True
+            elif wd == 5 and self._geo:
+                today = now.date()
+                cal = ZmanimCalendar(geo_location=self._geo, date=today)
+                sunset = cal.sunset()
+                if sunset:
+                    sunset = sunset.astimezone(tz)
+                    havdalah = sunset + timedelta(minutes=72)
+                    if now < havdalah:
+                        show_special = True
+            if show_special:
+                text += f" ~ {special.state}"
+
         # 4) Rosh Chodesh
         rosh = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
         if rosh and rosh.state != "Not Rosh Chodesh Today":
-            text += f" ~ {rosh.state}"
-
-        # 5) Special Shabbos (after Fri-13:00 or any Sat)
-        special = self.hass.states.get("sensor.yidcal_special_shabbos")
-        if special and special.state not in ("No data", ""):
-            wd, hr = now.weekday(), now.hour
-            if (wd == 4 and hr >= 13) or wd == 5:
-                text += f" ~ {special.state}"
+            if not (show_special and "שבת ראש חודש" in special.state):
+                text += f" ~ {rosh.state}"
                 
         # 6) Optional “today’s date”
         if self._include_date:
