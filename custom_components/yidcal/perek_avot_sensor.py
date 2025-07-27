@@ -61,8 +61,8 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
 
         today_hd = pdates.HebrewDate.from_pydate(today_py)
 
-        # 1) Pesach – 15 ניסן of this Hebrew year
-        pesach_hd = pdates.HebrewDate(today_hd.year, 1, 15)
+        # 1) Pesach – last day (22 ניסן for diaspora) of this Hebrew year
+        pesach_hd = pdates.HebrewDate(today_hd.year, 1, 22)
         pesach_py = pesach_hd.to_pydate()
 
         # 2) First Shabbat after Pesach
@@ -93,8 +93,8 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
                 n1, n2 = pairs[2 - dist_end]
                 state = f"פרק {int_to_hebrew(n1)}‑{int_to_hebrew(n2)}"
             else:
-                # Normal single‑chapter cycle, shifted one week forward
-                chap = ((idx - 1) % 6) + 1
+                # Normal single‑chapter cycle
+                chap = (idx % 6) + 1
                 state = f"פרק {int_to_hebrew(chap)}"
         else:
             state = "נישט אין די צייט פון פרקי אבות"
