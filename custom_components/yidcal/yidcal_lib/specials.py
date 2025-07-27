@@ -71,6 +71,11 @@ def get_special_shabbos_name(today: date = None) -> str:
         (hebrewcal.Year(Y).leap and shabbat_heb.month == 13 and shabbat_heb.day == 15)):
         events.append("פורים משולש")
 
+    # Add check for שבת ראש חודש
+    month_length = 30 if dates.HebrewDate(shabbat_heb.year, shabbat_heb.month, 30).day == 30 else 29
+    if shabbat_heb.day == 1 or (shabbat_heb.day == 30 and month_length == 30):
+        events.append("שבת ראש חודש")
+
     if shabbat_heb.month == 13 or (shabbat_heb.month == 12 and not hebrewcal.Year(shabbat_heb.year).leap):
         next_month_num = 1
         next_month_year = shabbat_heb.year + 1
