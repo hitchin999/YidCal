@@ -52,7 +52,7 @@ class ParshaSensor(YidCalDevice, SensorEntity):
 
     @property
     def state(self) -> str:
-        return self._state or "none"
+        return self._state or ""
 
     async def _update_state(self) -> None:
         """Recompute which Parsha applies based on the upcoming Shabbat."""
@@ -72,7 +72,7 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             combined = heb.replace(", ", "-")
             self._state = f"פרשת {combined}"
         else:
-            self._state = "none"
+            self._state = ""
 
         # Write to Home Assistant
         self.async_write_ha_state()
