@@ -124,7 +124,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 
 ---
 
-## Lovelace Example For Fast Timers
+## Lovelace Example For Fast In/Out Countdown Timers
 
 ````yaml
 type: conditional
