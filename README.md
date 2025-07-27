@@ -124,31 +124,41 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 
 ---
 
-## Lovelace Examples
+## Lovelace Example For Fast Timers
 
 ````yaml
 type: conditional
 conditions:
-  - condition: state
-    entity: sensor.yidcal_holiday
-    attribute: מען פאַסט אויס און
-    state_not: " "
+  - condition: or
+    conditions:
+      - condition: state
+        entity: sensor.yidcal_holiday
+        attribute: מען פאַסט אַן און
+        state_not: ""
+      - condition: state
+        entity: sensor.yidcal_holiday
+        attribute: מען פאַסט אויס און
+        state_not: ""
 card:
   type: horizontal-stack
   cards:
     - type: markdown
       content: >
-        {% set hhmm = state_attr('sensor.yidcal_holiday', 'מען פאַסט אויס און')
-        %}
+        {% set start = state_attr('sensor.yidcal_holiday', 'מען פאַסט אַן און') %}
+        {% set end = state_attr('sensor.yidcal_holiday', 'מען פאַסט אויס און') %}
 
-        {% if hhmm %}
-
+        {% if start %}
+        <center>
+          <b><font size="2">מען פאַסט אַן און</font></b><br><br>
+          <ha-icon icon="mdi:clock-start" style="width:24px;height:24px;"></ha-icon><br><br>
+          <b><font size="5">{{ start }}</font></b>
+        </center>
+        {% elif end %}
         <center>
           <b><font size="2">מען פאַסט אויס און</font></b><br><br>
           <ha-icon icon="mdi:clock-end" style="width:24px;height:24px;"></ha-icon><br><br>
-          <b><font size="5">{{ hhmm }}</font></b>
+          <b><font size="5">{{ end }}</font></b>
         </center>
-
         {% endif %}
       text_only: true
 ````
