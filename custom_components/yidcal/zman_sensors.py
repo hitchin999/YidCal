@@ -98,15 +98,10 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        async_track_time_change(self.hass, self._midnight_check, hour=0, minute=0, second=0)
-        async_track_time_interval(self.hass, self._minutely_update, timedelta(minutes=1))
+        async_track_time_change(self.hass, self._midnight_update, hour=0, minute=0, second=0)
 
-    async def _midnight_check(self, now: datetime.datetime) -> None:
-        if now.weekday() == 6:
-            await self.async_update()
-
-    async def _minutely_update(self, now: datetime.datetime) -> None:
-        await self.async_update(now)
+    async def _midnight_update(self, now: datetime.datetime) -> None:
+        await self.async_update()
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         if not self._geo:
@@ -198,15 +193,10 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        async_track_time_change(self.hass, self._midnight_check, hour=0, minute=0, second=0)
-        async_track_time_interval(self.hass, self._minutely_update, timedelta(minutes=1))
+        async_track_time_change(self.hass, self._midnight_update, hour=0, minute=0, second=0)
 
-    async def _midnight_check(self, now: datetime.datetime) -> None:
-        if now.weekday() == 6:
-            await self.async_update()
-
-    async def _minutely_update(self, now: datetime.datetime) -> None:
-        await self.async_update(now)
+    async def _midnight_update(self, now: datetime.datetime) -> None:
+        await self.async_update()
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         if not self._geo:
