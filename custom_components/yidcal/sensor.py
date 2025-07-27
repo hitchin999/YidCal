@@ -288,6 +288,15 @@ class MoladSensor(YidCalDevice, SensorEntity):
 
         # Compute the Hebrew‐month name directly (e.g. "אב", "טבת", etc.)
         molad_month_name = PHebrewDate(target_year, target_month, 1).month_name(True)
+        
+        # ───────────────────────────────────────────────────────
+        # 4) Add Full_Molad attribute
+        # ───────────────────────────────────────────────────────
+        # Use the original day (not motzei-adjusted) and always include time of day
+        original_day_yd = DAY_MAPPING.get(m.day, m.day)
+        molad_part = f"{original_day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {h}"
+        rc_text_yd = rc_days[0] if len(rc_days) == 1 else " און ".join(rc_days)
+        full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part} - ראש חודש, {rc_text_yd}"
 
         self._attr_extra_state_attributes = {
             "Day": day_yd,
@@ -303,6 +312,7 @@ class MoladSensor(YidCalDevice, SensorEntity):
             "Is_Shabbos_Mevorchim": details.is_shabbos_mevorchim,
             "Is_Upcoming_Shabbos_Mevorchim": details.is_upcoming_shabbos_mevorchim,
             "Month_Name": molad_month_name,  # now a string, not a method
+            "Full_Molad": full_molad,
         }
 
 
