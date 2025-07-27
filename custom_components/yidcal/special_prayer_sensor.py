@@ -74,9 +74,9 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         havdala = sunset + timedelta(minutes=self._havdalah)
         hal_mid = dawn + (sunset - dawn) / 2
 
-        # Hebrew date, adjusting for after sunset
+        # Hebrew date, adjusting for after havdala
         hd = PHebrewDate.from_pydate(today)
-        if now >= sunset:
+        if now >= havdala:
             hd += 1
         day, m = hd.day, hd.month_name(hebrew=True)
 
@@ -103,43 +103,18 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         attrs = state.attributes if state else {}
 
         # Rosh Chodesh
-        # יעלה ויבוא is active from previous day's havdalah until today's havdalah
-        rosh_chodesh = attrs.get("ראש חודש")
-        active = False
-        
-        # Main case: Holiday sensor indicates Rosh Chodesh and we haven't passed havdalah yet
-        if rosh_chodesh and now <= havdala:
-            active = True
-        
-        # Edge case: After sunset but before havdalah on Rosh Chodesh day
-        # The holiday sensor might have already switched to tomorrow's state
-        elif now > sunset and now <= havdala:
-            # Check if today's Hebrew date indicates Rosh Chodesh (1st or 30th)
-            if hd.day == 1 or (hd.day == 30 and hd.month_length() == 30):
-                active = True
-        
-        # Edge case: Before dawn - need to check if we're still in yesterday's Rosh Chodesh window
-        elif now < dawn:
-            # Calculate yesterday's havdalah time
-            yesterday = today - timedelta(days=1)
-            yesterday_sun = sun(loc.observer, date=yesterday, tzinfo=tz)
-            yesterday_havdala = yesterday_sun["sunset"] + timedelta(minutes=self._havdalah)
-            
-            # If we're after yesterday's havdalah and today is Rosh Chodesh day 1 or 30
-            if now >= yesterday_havdala and (hd.day == 1 or (hd.day == 30 and hd.month_length() == 30)):
-                active = True
-        
-        if active:
+        is_rosh_chodesh = (hd.day == 1 or (hd.day == 30 and hd.month_length() == 30))
+        if is_rosh_chodesh:
             insertions.append("יעלה ויבוא")
             # אתה יצרת only on Shabbat during daytime on actual Rosh Chodesh
-            if now.weekday() == 5 and now < sunset and rosh_chodesh:
+            if now.weekday() == 5 and dawn <= now < sunset and is_rosh_chodesh:
                 insertions.append("אתה יצרת")
 
         # Chanukah or Purim
         if attrs.get("חנוכה") or attrs.get("פורים"):
             insertions.append("על הניסים")
 
-        # 4) Fast / Tisha B'Av windows
+        # 4) Fast / Tish'a B'Av windows
         is_tisha = (hd.month == 5 and hd.day == 9)
         is_fast = any(
             v and not "כיפור" in k and (k.startswith("צום") or k.startswith("תענית"))
