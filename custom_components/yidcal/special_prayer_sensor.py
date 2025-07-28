@@ -120,13 +120,14 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             v and not "כיפור" in k and (k.startswith("צום") or k.startswith("תענית"))
             for k, v in attrs.items()
         )
-        # Tisha B'Av: נחם from chatzos → havdala
+        # Tisha B'Av: נחם and עננו from chatzos (halachic midday) → havdala
         if is_tisha:
             if now >= hal_mid and now <= havdala:
                 insertions.append("נחם")
-        # Other fasts: ענינו from dawn → havdala
+                insertions.append("עננו")
+        # Other fasts: עננו from dawn → havdala
         elif is_fast:
             if now >= dawn and now <= havdala:
-                insertions.append("ענינו")
+                insertions.append("עננו")
 
         return " - ".join(insertions)
