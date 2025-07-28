@@ -388,13 +388,20 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         year = hd_py.year
         is_leap = ((year * 7 + 1) % 19) < 7
 
+        #Tzom Gedalye Deferred
+        h_year = year if hd_py.month >= 7 else year + 1
+        gedaliah_day = 3
+        tishrei_3_greg = PHebrewDate(h_year, 7, 3).to_pydate()
+        if tishrei_3_greg.weekday() == 5:
+            gedaliah_day = 4
+
         # ─── Fast start/end times
         # Default for regular fasts
         start_time_fast = dawn
         end_time = actual_sunset + timedelta(minutes=self._havdalah_offset)
 
         # Force default for minor fasts to prevent extension
-        if (hd_py_fast.month == 7 and hd_py_fast.day == 3) or \
+        if (hd_py_fast.month == 7 and hd_py_fast.day == gedaliah_day) or \
            (hd_py_fast.month == 10 and hd_py_fast.day == 10) or \
            (hd_py_fast.month == 4 and hd_py_fast.day == 17) or \
            (hd_py.month in (12, 13) and hd_py.day == 13):
@@ -442,7 +449,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["ראש השנה ב׳"] = True
             attrs["ראש השנה א׳ וב׳"] = True
         # Tzom Gedaliah
-        if hd_py_fast.month == 7 and hd_py_fast.day == 3 and dawn <= now <= end_time:
+        if hd_py_fast.month == 7 and hd_py_fast.day == gedaliah_day and dawn <= now <= end_time:
             attrs["צום גדליה"] = True
 
         if hd_py.month == 7 and ((hd_py.day == 8 and wd_py in [0, 1, 3]) or (hd_py.day == 6 and wd_py == 3)):
@@ -601,7 +608,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # ─── Countdown for fast starts in (6 hours before fast)
         is_fast_day = (
-            (hd_py_fast.month == 7 and hd_py_fast.day == 3) or  # Tzom Gedaliah
+            (hd_py_fast.month == 7 and hd_py_fast.day == gedaliah_day) or  # Tzom Gedaliah
             (hd_py.month == 7 and hd_py.day == 10) or          # Yom Kippur
             (hd_py_fast.month == 10 and hd_py_fast.day == 10) or  # Tzom Tevet
             (hd_py_fast.month == 4 and hd_py_fast.day == 17) or  # 17 Tammuz
@@ -623,7 +630,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Fix for pre-fast countdown on evening before minor dawn-start fasts
         minor_fast_dates = [
-            (7, 3),   # Tzom Gedaliah
+            (7, gedaliah_day),   # Tzom Gedaliah
             (10, 10), # Tzom Tevet
             (4, 17),  # 17 Tammuz
             (13 if is_leap else 12, 13),  # Ta'anit Esther
