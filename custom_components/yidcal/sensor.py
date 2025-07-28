@@ -242,7 +242,7 @@ class MoladSensor(YidCalDevice, SensorEntity):
         )
 
         motzei = False
-        if m.day == "Shabbos":
+        if m.day == "Shabbos" and m.date == now_local.date():
             sd = sun(loc.observer, date=now_local.date(), tzinfo=tz)
             motzei_start = sd["sunset"] + timedelta(minutes=self._havdalah_offset)
             next_mid = (now_local.replace(hour=0, minute=0) + timedelta(days=1)).replace(tzinfo=tz)
