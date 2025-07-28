@@ -96,7 +96,7 @@ ENG2HEB = {
 
 
 TIME_OF_DAY = {
-    "am": lambda h: "פארטאגס" if h < 6 else "צופרי",
+    "am": lambda h: "פארטאגס" if h < 6 else "צופרי" if h < 9 else "פארמיטאג",
     "pm": lambda h: "נאכמיטאג" if h < 6 else "ביינאכט",
 }
 
@@ -227,7 +227,7 @@ class MoladSensor(YidCalDevice, SensorEntity):
         tod = TIME_OF_DAY[m.am_or_pm](h)
         chal = m.chalakim
         chal_txt = "חלק" if chal == 1 else "חלקים"
-        hh12 = h % 12 or 12
+
 
         tz = ZoneInfo(self.hass.config.time_zone)
         if now:
@@ -240,23 +240,38 @@ class MoladSensor(YidCalDevice, SensorEntity):
             longitude=self.hass.config.longitude,
             timezone=self.hass.config.time_zone,
         )
+        
+        # Check if molad time is during motzei Shabbos (after havdalah) till Sunday 4am
+        is_special = False
+        jer_tz = ZoneInfo("Asia/Jerusalem")
+        jer_loc = LocationInfo(
+            latitude=31.7683,
+            longitude=35.2137,
+            timezone="Asia/Jerusalem",
+        )
+        sd = sun(jer_loc.observer, date=m.date, tzinfo=jer_tz)
+        hav_end = sd["sunset"] + timedelta(minutes=self._havdalah_offset)
+        if m.day == "Shabbos" and m.dt >= hav_end:
+            is_special = True
+        elif m.day == "Sunday":
+            # before Sunday 4 AM local Jerusalem
+            four_am = datetime(
+                m.date.year, m.date.month, m.date.day,
+                4, 0,
+                tzinfo=jer_tz
+            )
+            if m.dt < four_am:
+                is_special = True
 
-        motzei = False
-        if m.day == "Shabbos" and m.date == now_local.date():
-            sd = sun(loc.observer, date=now_local.date(), tzinfo=tz)
-            motzei_start = sd["sunset"] + timedelta(minutes=self._havdalah_offset)
-            next_mid = (now_local.replace(hour=0, minute=0) + timedelta(days=1)).replace(tzinfo=tz)
-            motzei = motzei_start <= now_local < next_mid
 
-        if motzei:
-            day_yd = 'מוצש"ק'
+        hh12 = h
+        day_yd = 'מוצש"ק' if is_special else DAY_MAPPING.get(m.day, m.day)
+        tod = TIME_OF_DAY[m.am_or_pm](h)
+        if is_special:
             state = f"מולד {day_yd}, {mi} מינוט און {chal} {chal_txt} נאך {hh12}"
         else:
-            day_yd = DAY_MAPPING.get(m.day, m.day)
             state = f"מולד {day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {hh12}"
-
         self._attr_native_value = state
-
         # ───────────────────────────────────────────────────────
         # 2) Rosh Chodesh attributes (unchanged)
         # ───────────────────────────────────────────────────────
@@ -294,7 +309,10 @@ class MoladSensor(YidCalDevice, SensorEntity):
         # ───────────────────────────────────────────────────────
         # Use the original day (not motzei-adjusted) and always include time of day
         original_day_yd = DAY_MAPPING.get(m.day, m.day)
-        molad_part = f"{original_day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {h}"
+        if is_special:
+            molad_part = f"מוצש\"ק, {mi} מינוט און {chal} {chal_txt} נאך {h}"
+        else:
+            molad_part = f"{original_day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {h}"
         rc_text_yd = rc_days[0] if len(rc_days) == 1 else " און ".join(rc_days)
         full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part} - ראש חודש, {rc_text_yd}"
 
@@ -302,7 +320,7 @@ class MoladSensor(YidCalDevice, SensorEntity):
             "Day": day_yd,
             "Hours": h,
             "Minutes": mi,
-            "Time_Of_Day": tod,
+            "Time_Of_Day": "" if is_special else tod,
             "Chalakim": chal,
             "Friendly": state,
             #"Rosh_Chodesh_Midnight": rc_mid,
@@ -561,19 +579,6 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     @property
     def icon(self) -> str:
         return "mdi:star-outline"
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-
-        # 1) Initial state
-        await self.async_update()
-
-        # 2) Poll every hour on the event loop
-        async_track_time_interval(
-            self.hass,
-            self.async_update,
-            timedelta(hours=1),
-        )
 
 class RoshChodeshToday(YidCalDevice, SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
