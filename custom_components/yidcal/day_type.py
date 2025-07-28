@@ -107,14 +107,28 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     def _check_is_fast(self, hd: PHebrewDate) -> bool:
-        if hd.month == 7 and hd.day == 3:
+        # Tzom Gedaliah
+        if hd.month == 7 and hd.day == 3 and hd.weekday() != 7:
             return True
-        if hd.month == 10 and hd.day == 10:
+        if hd.month == 7 and hd.day == 4 and hd.weekday() == 1 and PHebrewDate(hd.year, 7, 3).weekday() == 7:
             return True
-        if hd.month == 4 and hd.day == 17:
+        # Asara B'Tevet
+        if hd.month == 10 and hd.day == 10 and hd.weekday() != 7:
             return True
-        if hd.month in (12, 13) and hd.day == 13:
+        if hd.month == 10 and hd.day == 11 and hd.weekday() == 1 and PHebrewDate(hd.year, 10, 10).weekday() == 7:
             return True
+        # Shiv'a Asar B'Tammuz
+        if hd.month == 4 and hd.day == 17 and hd.weekday() != 7:
+            return True
+        if hd.month == 4 and hd.day == 18 and hd.weekday() == 1 and PHebrewDate(hd.year, 4, 17).weekday() == 7:
+            return True
+        # Ta'anit Esther (advanced to Thursday if on Shabbat)
+        adar_month = 13 if ((hd.year * 7 + 1) % 19) < 7 else 12
+        if hd.month == adar_month and hd.day == 13 and hd.weekday() != 7:
+            return True
+        if hd.month == adar_month and hd.day == 11 and hd.weekday() == 5 and PHebrewDate(hd.year, adar_month, 13).weekday() == 7:
+            return True
+        # Tisha B'Av (already handled in original code, but included for completeness)
         if hd.month == 5 and hd.day == 9 and hd.weekday() != 7:
             return True
         if hd.month == 5 and hd.day == 10 and hd.weekday() == 1 and PHebrewDate(hd.year, 5, 9).weekday() == 7:
@@ -122,7 +136,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         return False
 
     def _is_minor_fast(self, hd: PHebrewDate) -> bool:
-        return self._check_is_fast(hd) and hd.month != 5
+        return self._check_is_fast(hd) and hd.month != 5  # Excludes Tisha B'Av (Av/5)
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         tz = ZoneInfo(self.hass.config.time_zone)
