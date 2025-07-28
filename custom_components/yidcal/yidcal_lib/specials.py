@@ -77,6 +77,8 @@ def get_special_shabbos_name(today: date = None) -> str:
         if shabbat_heb.day == 1 or (shabbat_heb.day == 30 and month_length == 30):
             events.append("שבת ראש חודש")
 
+    # Updated check for מברכים חודש [month]
+    # First, determine next month
     if shabbat_heb.month == 13 or (shabbat_heb.month == 12 and not hebrewcal.Year(shabbat_heb.year).leap):
         next_month_num = 1
         next_month_year = shabbat_heb.year + 1
@@ -84,22 +86,48 @@ def get_special_shabbos_name(today: date = None) -> str:
         next_month_num = shabbat_heb.month + 1
         next_month_year = shabbat_heb.year
 
-    next_rc_date = dates.HebrewDate(next_month_year, next_month_num, 1).to_pydate()
-    delta_days = (next_rc_date - shabbat_date).days
-    if 1 <= delta_days <= 7 and next_month_num != 7:
-        if next_month_num == 12:
-            month_name = "אדר א׳" if hebrewcal.Year(next_month_year).leap else "אדר"
-        elif next_month_num == 13:
-            month_name = "אדר ב׳"
-        else:
-            month_names = {
-                1: "ניסן",  2: "אייר",   3: "סיון",
-                4: "תמוז",  5: "אב",    6: "אלול",
-                7: "תשרי",  8: "חשון", 9: "כסלו",
-                10: "טבת", 11: "שבט"
-            }
-            month_name = month_names.get(next_month_num, "")
-        if month_name:
-            events.append(f"מברכים חודש {month_name}")
+    # Skip for Tishrei
+    if next_month_num == 7:
+        pass
+    else:
+        # Compute RC days for the upcoming month
+        rc_gdays = []
+        # Check if current month has 30 days (for possible 30th as RC)
+        current_length = 30 if dates.HebrewDate(shabbat_heb.year, shabbat_heb.month, 30).day == 30 else 29
+        if current_length == 30:
+            rc_30 = dates.HebrewDate(shabbat_heb.year, shabbat_heb.month, 30).to_pydate()
+            rc_gdays.append(rc_30)
+        # Always add 1st of next month
+        rc_1 = dates.HebrewDate(next_month_year, next_month_num, 1).to_pydate()
+        rc_gdays.append(rc_1)
+
+        # Earliest RC date
+        first_rc = min(rc_gdays)
+        first_wd = first_rc.weekday()  # Monday=0 ... Sunday=6
+
+        # Compute Mevorchim date
+        if first_wd == 5:  # Special case: first RC on Shabbat
+            mevorchim_date = first_rc - timedelta(days=7)
+        else:  # Default: most recent Shabbat on or before first RC
+            days_back = (first_wd - 5) % 7
+            mevorchim_date = first_rc - timedelta(days=days_back)
+
+        # Add if this Shabbat is Mevorchim
+        if shabbat_date == mevorchim_date:
+            # Determine month name
+            if next_month_num == 12:
+                month_name = "אדר א׳" if hebrewcal.Year(next_month_year).leap else "אדר"
+            elif next_month_num == 13:
+                month_name = "אדר ב׳"
+            else:
+                month_names = {
+                    1: "ניסן",  2: "אייר",   3: "סיון",
+                    4: "תמוז",  5: "אב",    6: "אלול",
+                    7: "תשרי",  8: "חשון", 9: "כסלו",
+                    10: "טבת", 11: "שבט"
+                }
+                month_name = month_names.get(next_month_num, "")
+            if month_name:
+                events.append(f"מברכים חודש {month_name}")
 
     return "-".join(events) if events else ""
