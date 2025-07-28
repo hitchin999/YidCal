@@ -37,13 +37,14 @@ def is_shabbat(gdate: datetime.date) -> bool:
 
 
 class Molad:
-    def __init__(self, day: str, hours: int, minutes: int, am_or_pm: str, chalakim: int, friendly: str):
-        self.day = day                # e.g. "Friday" or "Shabbos"
-        self.hours = hours            # in 12-hour format (1–12)
+    def __init__(self, day: str, hours: int, minutes: int, am_or_pm: str, chalakim: int, friendly: str, date: date):
+        self.day = day
+        self.hours = hours
         self.minutes = minutes
-        self.am_or_pm = am_or_pm      # "am" or "pm"
-        self.chalakim = chalakim      # parts
-        self.friendly = friendly      # e.g. "Friday, 10:42 am and 5 chalakim"
+        self.am_or_pm = am_or_pm
+        self.chalakim = chalakim
+        self.friendly = friendly
+        self.date = date
 
 
 class RoshChodesh:
@@ -287,8 +288,7 @@ class YidCalHelper:
             try:
                 PHebrewDate(hy, hm, 1)
             except ValueError:
-                hy += 1
-                hm = 1
+                hm = 1  # Roll to Nissan (1), but keep same year
 
         # 2) Ask pyluach for its announcement
         pm = PMonth(hy, hm)
@@ -303,6 +303,8 @@ class YidCalHelper:
         # how many days from the first to get to that weekday?
         delta_days = (weekday_py - first_of_month.weekday()) % 7
         molad_date = first_of_month + timedelta(days=delta_days)
+        if molad_date > first_of_month:
+            molad_date -= timedelta(days=7)
 
         # 5) Build a tz‑aware datetime in Jerusalem time
         local = datetime(
@@ -316,7 +318,7 @@ class YidCalHelper:
         # Account for DST
         local += local.dst() or timedelta(0)
 
-        # 6) Format into 12‑hour + chalakim
+        # 6) Format into 12‑hour + chalakim (use Jerusalem local, no user TZ conversion)
         h24 = local.hour
         minute = local.minute
         parts  = ann["parts"]
@@ -325,8 +327,7 @@ class YidCalHelper:
         dayname = ["Monday","Tuesday","Wednesday","Thursday","Friday","Shabbos","Sunday"][local.weekday()]
         friendly = f"{dayname}, {h12}:{minute:02d} {ampm} and {parts} chalakim"
 
-        return Molad(dayname, h12, minute, ampm, parts, friendly)
-
+        return Molad(dayname, h12, minute, ampm, parts, friendly, molad_date)
 
     def get_molad(self, today: datetime.date) -> MoladDetails:
         """
