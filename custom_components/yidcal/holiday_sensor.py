@@ -313,7 +313,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             detect_date = actual_date
 
         wd_py = wd if detect_date == actual_date else (wd + 1) % 7
-
+        # Sunset rolling for sunset-start events
+        sunset_cut = actual_sunset
+        sunset_detect_date = actual_date + timedelta(days=1) if now >= sunset_cut else actual_date
+        hd_sunset = PHebrewDate.from_pydate(sunset_detect_date)
+        wd_sunset = wd if sunset_detect_date == actual_date else (wd + 1) % 7
         # Anchor sunsets around festival_date
         cal_fest = ZmanimCalendar(geo_location=geo, date=festival_date)
         prev_cal = ZmanimCalendar(geo_location=geo, date=festival_date - timedelta(days=1))
@@ -394,6 +398,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         tishrei_3_greg = PHebrewDate(h_year, 7, 3).to_pydate()
         if tishrei_3_greg.weekday() == 5:
             gedaliah_day = 4
+
+        av9_greg = PHebrewDate(hd_fest.year, 5, 9).to_pydate()
+        is_tisha_on_shabbat = av9_greg.weekday() == 5
 
         # ─── Fast start/end times
         # Default for regular fasts
@@ -592,17 +599,18 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_py_fast.month == 4 and hd_py_fast.day == 17 and dawn <= now <= end_time:
             attrs["צום שבעה עשר בתמוז"] = True
 
-        # Fixed: Erev Tisha B’Av (unchanged)
-        if hd_py.month == 5 and hd_py.day == 8 and now < actual_sunset:
+        # Fixed: Erev Tisha B’Av with extension to sunset and deferred handling
+        if (hd_sunset.month == 5 and hd_sunset.day == 8 and not is_tisha_on_shabbat) or \
+           (hd_sunset.month == 5 and hd_sunset.day == 9 and is_tisha_on_shabbat):
             attrs["ערב תשעה באב"] = True
 
-        # Fixed: Tisha B’Av proper - use hd_fest to prevent early drop-off
-        if (hd_py.month == 5 and hd_py.day == 9) or (hd_py.month == 5 and hd_py.day == 8 and now >= actual_sunset) or (hd_fest.month == 5 and hd_fest.day == 9):
+        # Fixed: Tisha B’Av proper - use hd_sunset to prevent early turn-on
+        if (hd_sunset.month == 5 and hd_sunset.day == 9) or (hd_fest.month == 5 and hd_fest.day == 9):
             attrs["תשעה באב"] = True
             attrs["ערב תשעה באב"] = False  # Unset Erev after fast starts
 
-        # Fixed: Deferred Tisha B’Av - correct wd to 6 (Sunday)
-        if hd_fest.month == 5 and hd_fest.day == 10 and wd_fest == 6 and start_time_fast <= now <= end_time:
+        # Fixed: Deferred Tisha B’Av - use hd_sunset to prevent late turn-on
+        if hd_sunset.month == 5 and hd_sunset.day == 10 and wd_sunset == 6 and start_time_fast <= now <= end_time:
             attrs["תשעה באב נדחה"] = True
             attrs["תשעה באב"] = False
 
