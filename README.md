@@ -59,6 +59,7 @@ A custom Home Assistant integration that provides:
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
 * **Nine Days** (`binary_sensor.yidcal_nine_days`) - turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
 * **Day Type** (`binary_sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day.)
+* **Yurtzeit Sensor** (`sensor.yidcal_yurtzeit`) - Displays today's yurtzeits (flipping at sunset + havdalah_offset), with attributes for each yurtzeit name.
   
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
 
