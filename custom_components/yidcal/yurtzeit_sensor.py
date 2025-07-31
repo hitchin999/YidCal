@@ -36,6 +36,8 @@ from .yidcal_lib.helper import int_to_hebrew
 
 from .device import YidCalDevice
 
+from .const import DOMAIN  
+ 
 _LOGGER = logging.getLogger(__name__)
 
 month_map = {
@@ -59,20 +61,22 @@ month_map = {
 }
 
 class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
-    """Today's Yurtzeits, flipping at sunset + havdalah_offset."""
+    """Today's Yurtzeits, flipping at sunset + user-set havdalah_offset."""
 
     _attr_name = "Yurtzeit"
     _attr_icon = "mdi:candle"
     _attr_should_poll = False
 
-    def __init__(self, hass: HomeAssistant, havdalah_offset: int, custom_yurtzeits: list[dict] = None, muted_yurtzeits: list[dict] = None) -> None:
+    def __init__(self, hass: HomeAssistant, custom_yurtzeits: list[dict] = None, muted_yurtzeits: list[dict] = None) -> None:
         #_LOGGER.debug("Initializing YurtzeitSensor")
         super().__init__()
         slug = "yurtzeit"
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
-        self._havdalah_offset = timedelta(minutes=havdalah_offset)
+        # Fetch havdalah_offset from config
+        config = hass.data[DOMAIN]["config"]
+        self._havdalah_offset = timedelta(minutes=config.get("havdalah_offset", 72))  # Default 72 if not set
         self._tz = ZoneInfo(hass.config.time_zone)
         self._loc = LocationInfo(
             latitude=hass.config.latitude,
