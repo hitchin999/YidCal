@@ -57,6 +57,7 @@ from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
 from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
+from .yurtzeit_sensor import YurtzeitSensor
 from .zman_chumetz import (
     SofZmanAchilasChumetzSensor,
     SofZmanSriefesChumetzSensor,
@@ -114,7 +115,7 @@ async def async_setup_entry(
     opts = hass.data[DOMAIN][entry.entry_id]
     candle_offset = opts.get("candlelighting_offset", 15)
     havdalah_offset = opts.get("havdalah_offset", 72)
-
+    custom_yurtzeits = opts.get("custom_yurtzeits", [])
     # Prepare helpers
     sfirah_helper = SfirahHelper(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
@@ -157,6 +158,7 @@ async def async_setup_entry(
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
         IshpizinSensor(hass, havdalah_offset),
         DayTypeSensor(hass, candle_offset, havdalah_offset),
+        YurtzeitSensor(hass, havdalah_offset, custom_yurtzeits),
     ], update_before_add=True)
 
 
