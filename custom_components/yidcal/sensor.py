@@ -158,7 +158,7 @@ async def async_setup_entry(
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
         IshpizinSensor(hass, havdalah_offset),
         DayTypeSensor(hass, candle_offset, havdalah_offset),
-        YurtzeitSensor(hass, havdalah_offset, custom_yurtzeits),
+        YurtzeitSensor(hass, havdalah_offset,),
     ], update_before_add=True)
 
 
