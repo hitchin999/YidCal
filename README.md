@@ -116,12 +116,12 @@ Upon installation or restart, the integration automatically creates a `/config/y
    - Comment out lines with `#` to ignore them (samples are commented by default).
 
 3. **Muted Yurtzeits (Hide Names)**:
-   - Format: Full exact name (one per line, no date needed).
+   - Format: Full **exact** name (one per line, no date needed).
    - Copy the exact name from the sensor attributes or GitHub JSON.
    - Example:
      ```
-     רבי חיים בן רבי משה (בן עטר) זי"ע [האור החיים הק'] תק"ג ומנו"כ בהה"ז
-     רבי אריה ליב בן רבי אשר (גינצבורג) זי"ע [שאגת אריה] תקמ"ח ומנו"כ במץ
+     רבי פלוני בן רבי אלמוני זי"ע [מחבר ספר דוגמא] תש"א
+     רבי דוגמא בן רבי משל זי"ע תרצ"ב
      ```
    - Muted names are hidden globally (from both GitHub and custom lists).
    - Comment out lines with `#` to ignore them.
