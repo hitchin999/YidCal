@@ -115,7 +115,6 @@ async def async_setup_entry(
     opts = hass.data[DOMAIN][entry.entry_id]
     candle_offset = opts.get("candlelighting_offset", 15)
     havdalah_offset = opts.get("havdalah_offset", 72)
-    custom_yurtzeits = opts.get("custom_yurtzeits", [])
     # Prepare helpers
     sfirah_helper = SfirahHelper(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
