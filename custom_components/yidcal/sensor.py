@@ -57,12 +57,16 @@ from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
 from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
-from .yurtzeit_sensor import YurtzeitSensor
+from .yurtzeit_sensor import (
+    YurtzeitSensor,
+    YurtzeitWeeklySensor,
+)
 from .zman_chumetz import (
     SofZmanAchilasChumetzSensor,
     SofZmanSriefesChumetzSensor,
 )
 from .const import DOMAIN
+from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,7 +123,7 @@ async def async_setup_entry(
     sfirah_helper = SfirahHelper(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
 
-    async_add_entities([
+    sensors = [
         MoladSensor(hass, yidcal_helper, candle_offset, havdalah_offset),
         DayLabelYiddishSensor(hass, candle_offset, havdalah_offset),
         SpecialShabbosSensor(),
@@ -158,7 +162,12 @@ async def async_setup_entry(
         IshpizinSensor(hass, havdalah_offset),
         DayTypeSensor(hass, candle_offset, havdalah_offset),
         YurtzeitSensor(hass, havdalah_offset,),
-    ], update_before_add=True)
+    ]
+
+    if opts.get(CONF_ENABLE_WEEKLY_YURTZEIT, True):
+        sensors.append(YurtzeitWeeklySensor(hass, havdalah_offset,))
+
+    async_add_entities(sensors, update_before_add=True)
 
 
 
