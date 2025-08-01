@@ -63,8 +63,8 @@ def _is_chol_hamoed(pydate: datetime.date) -> bool:
     try:
         name_with = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=True)
         name_no = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=False)
-        _LOGGER.debug(f"Festival with work for {pydate}: {name_with}")
-        _LOGGER.debug(f"Festival no work for {pydate}: {name_no}")
+        #_LOGGER.debug(f"Festival with work for {pydate}: {name_with}")
+        #_LOGGER.debug(f"Festival no work for {pydate}: {name_no}")
         return bool(name_with and not name_no and name_with in ["פסח", "סוכות"])
     except Exception:
         return False
