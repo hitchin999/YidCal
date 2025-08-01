@@ -1,3 +1,4 @@
+#/config/custom_components/yidcal/yurtzeit_sensor.py
 from __future__ import annotations
 
 import logging
@@ -21,7 +22,7 @@ from pyluach.hebrewcal import Year, HebrewDate as PHebrewDate
 from .yidcal_lib.helper import int_to_hebrew
 from .device import YidCalDevice
 from .const import DOMAIN  
- 
+
 _LOGGER = logging.getLogger(__name__)
 
 month_map = {
@@ -40,8 +41,17 @@ month_map = {
     "טבת": 10,
     "שבט": 11,
     "אדר": 12,
+    "אדר א": 12,
     "אדר א'": 12,
+    "אדר א״": 12,
+    "אדר ב": 13,
     "אדר ב'": 13,
+    "אדר ב״": 13,
+}
+
+hebrew_digits = {
+    'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9,
+    'י': 10, 'כ': 20, 'ל': 30, 'מ': 40, 'נ': 50, 'ס': 60, 'ע': 70, 'פ': 80, 'צ': 90,
 }
 
 class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
@@ -56,7 +66,6 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         hass: HomeAssistant,
         havdalah_offset: int,
     ) -> None:
-        #_LOGGER.debug("Initializing YurtzeitSensor")
         super().__init__()
         slug = "yurtzeit"
         self._attr_unique_id = f"yidcal_{slug}"
@@ -77,9 +86,10 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._state: str | None = None
         self._attributes: dict = {}
         self._yurtzeits: dict[tuple[int, int], list[dict]] = {}  # (month, day): list of {'text': str}
+        self._custom_yurtzeits: dict[tuple[int, int], list[dict]] = {}
+        self._muted_yurtzeits: set[str] = set()
 
     async def async_added_to_hass(self) -> None:
-        #_LOGGER.debug("YurtzeitSensor added to HA, starting setup")
         start_time = time.time()
         await super().async_added_to_hass()
         
@@ -88,13 +98,14 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         if last:
             self._state = last.state
             self._attributes = last.attributes or {}
-            #_LOGGER.debug("Restored previous state")
             
         # Fetch Yurtzeits once on startup
         await self._fetch_yurtzeits()
         
+        # Load custom and muted files
+        await self._load_custom_and_muted()
+        
         # Immediate calculation
-        #_LOGGER.debug("Performing initial state update")
         await self._update_state()
         
         # Schedule sunset + offset update
@@ -103,7 +114,6 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
             self._schedule_update,
             offset=self._havdalah_offset,
         )
-        #_LOGGER.debug("Scheduled sunset update")
         
         # Minute-by-minute updates for precise flip
         self._register_interval(
@@ -111,20 +121,16 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
             self._schedule_update,
             timedelta(minutes=1),
         )
-        #_LOGGER.debug("Scheduled minute-by-minute update")
         
         total_time = time.time() - start_time
-        #_LOGGER.debug(f"YurtzeitSensor setup completed in {total_time:.2f} seconds")
 
     def _schedule_update(self, *_args) -> None:
-        #_LOGGER.debug("Scheduling state update")
         self.hass.loop.call_soon_threadsafe(
             lambda: self.hass.async_create_task(self._update_state())
         )
 
     async def _fetch_yurtzeits(self) -> None:
         """Fetch Yurtzeits from GitHub-hosted JSON."""
-        #_LOGGER.debug("Fetching Yurtzeits from GitHub")
         start_time = time.time()
         cache_file = self.hass.config.path('yurtzeit_cache.json')
         refetch = True
@@ -142,13 +148,12 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                                 month_day = tuple(map(int, k.split('_')))
                                 valid_data[month_day] = v
                             except (ValueError, TypeError):
-                                _LOGGER.warning(f"Skipping invalid cache key: {k}")
+                                pass
                         return valid_data
                     self._yurtzeits = await self.hass.async_add_executor_job(load_cache)
-                    #_LOGGER.debug("Loaded Yurtzeits from cache")
                     refetch = False
                 except json.JSONDecodeError:
-                    _LOGGER.error(f"Corrupted cache file {cache_file}, forcing refetch")
+                    pass
                     
         if refetch:
             github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache.json"
@@ -156,7 +161,6 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(github_url, timeout=10) as response:
                         if response.status != 200:
-                            _LOGGER.warning(f"Failed to fetch from GitHub: {response.status}")
                             return
                         text = await response.text()
                         data = json.loads(text)
@@ -167,7 +171,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                         month_day = tuple(map(int, k.split('_')))
                         valid_data[month_day] = v
                     except (ValueError, TypeError):
-                        _LOGGER.warning(f"Skipping invalid key: {k}")
+                        pass
                         
                 self._yurtzeits = valid_data
                 
@@ -176,12 +180,81 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                         json.dump(data, f, ensure_ascii=False, indent=4)
                         
                 await self.hass.async_add_executor_job(save_cache)
-                #_LOGGER.debug("Fetched and saved Yurtzeits from GitHub")
             except Exception as e:
-                _LOGGER.error(f"Error fetching from GitHub: {e}")
+                pass
                 
         total_time = time.time() - start_time
-        #_LOGGER.debug(f"Completed Yurtzeit fetch in {total_time:.2f} seconds")
+
+    async def _load_custom_and_muted(self) -> None:
+        def load_files():
+            folder = self.hass.config.path('yidcal')
+            custom_path = os.path.join(folder, 'custom_yahrtzeits.txt')
+            muted_path = os.path.join(folder, 'muted_yahrtzeits.txt')
+            
+            def parse_custom(file_path):
+                data = {}
+                if not os.path.exists(file_path):
+                    return data
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        if ':' not in line:
+                            continue
+                        date_str, name = line.split(':', 1)
+                        date_str = date_str.strip()
+                        name = name.strip()
+                        parsed = self._parse_hebrew_date(date_str)
+                        if parsed is None:
+                            continue
+                        m, d = parsed
+                        if (m, d) not in data:
+                            data[(m, d)] = []
+                        data[(m, d)].append({'text': name})
+                return data
+            
+            def parse_muted(file_path):
+                data = set()
+                if not os.path.exists(file_path):
+                    return data
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        data.add(line)
+                return data
+            
+            custom_data = parse_custom(custom_path)
+            muted_data = parse_muted(muted_path)
+            return custom_data, muted_data
+        
+        custom, muted = await self.hass.async_add_executor_job(load_files)
+        self._custom_yurtzeits = custom
+        self._muted_yurtzeits = muted
+
+    def _parse_hebrew_date(self, date_str: str) -> tuple[int, int] | None:
+        date_str = date_str.replace('״', '"').replace('’', "'").replace('׳', "'").replace('״', '"')
+        parts = date_str.split()
+        if len(parts) < 2:
+            return None
+        day_str = parts[0].strip('"\'')
+        month_str = ' '.join(parts[1:]).strip()
+        
+        # Parse day
+        day = 0
+        for char in day_str:
+            day += hebrew_digits.get(char, 0)
+        if day < 1 or day > 30:
+            return None
+        
+        # Parse month
+        month = month_map.get(month_str)
+        if month is None:
+            return None
+        
+        return month, day
 
     @property
     def state(self) -> str:
@@ -193,7 +266,6 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     async def _update_state(self) -> None:
         """Recompute Yurtzeits based on current Hebrew date."""
-        #_LOGGER.debug("Updating Yurtzeit state")
         now = datetime.now(self._tz)
         s = sun(self._loc.observer, date=now.date(), tzinfo=self._tz)
         switch_time = s["sunset"] + self._havdalah_offset
@@ -204,8 +276,11 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         lookup_month = 12 if heb.month in [12, 13] else heb.month
         key = (lookup_month, heb.day)
         
-        fetched_entries = self._yurtzeits.get(key, [])
-        todays = [e['text'] for e in fetched_entries]  # Use all entries
+        github_entries = self._yurtzeits.get(key, [])
+        custom_entries = self._custom_yurtzeits.get(key, [])
+        fetched_entries = github_entries + custom_entries
+        
+        todays = [e['text'] for e in fetched_entries if e['text'] not in self._muted_yurtzeits]
         
         if todays:
             heb_day = int_to_hebrew(heb.day)
@@ -225,4 +300,3 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._attributes = attrs
         
         self.async_write_ha_state()
-        #_LOGGER.debug(f"Updated state to: {self._state} with {len(todays)} entries")
