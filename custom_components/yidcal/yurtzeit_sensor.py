@@ -132,7 +132,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
     async def _fetch_yurtzeits(self) -> None:
         """Fetch Yurtzeits from GitHub-hosted JSON."""
         start_time = time.time()
-        cache_file = self.hass.config.path('yurtzeit_cache.json')
+        cache_file = self.hass.config.path('yidcal-data', 'yurtzeit_cache.json')
         refetch = True
         
         if os.path.exists(cache_file):
@@ -176,6 +176,9 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 self._yurtzeits = valid_data
                 
                 def save_cache():
+                    cache_dir = self.hass.config.path('yidcal-data')
+                    if not os.path.exists(cache_dir):
+                        os.makedirs(cache_dir, mode=0o755)
                     with open(cache_file, 'w', encoding='utf-8') as f:
                         json.dump(data, f, ensure_ascii=False, indent=4)
                         
@@ -187,7 +190,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     async def _load_custom_and_muted(self) -> None:
         def load_files():
-            folder = self.hass.config.path('yidcal')
+            folder = self.hass.config.path('yidcal-data')
             custom_path = os.path.join(folder, 'custom_yahrtzeits.txt')
             muted_path = os.path.join(folder, 'muted_yahrtzeits.txt')
             
