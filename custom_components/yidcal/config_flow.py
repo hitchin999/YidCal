@@ -12,11 +12,9 @@ DEFAULT_TALLIS_TEFILIN_OFFSET = 22  # minutes after Alos
 CONF_INCLUDE_DATE = "include_date"
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 
-
-
 # New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
-
+CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"
 
 class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for YidCal."""
@@ -56,6 +54,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
+                    vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=False): bool,
                 }
             )
             return self.async_show_form(step_id="user", data_schema=schema)
@@ -69,6 +68,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "day_label_language": user_input["day_label_language"],
             CONF_INCLUDE_DATE:        user_input[CONF_INCLUDE_DATE],
             CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
+            CONF_ENABLE_WEEKLY_YURTZEIT: user_input.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
         }
         return self.async_create_entry(title="YidCal", data=data)
 
@@ -117,6 +117,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_INCLUDE_ATTR_SENSORS,
             data.get(CONF_INCLUDE_ATTR_SENSORS, True),
         )
+        enable_weekly_default = opts.get(
+            CONF_ENABLE_WEEKLY_YURTZEIT,
+            data.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
+        )
         if user_input is None:
             schema = vol.Schema(
                 {
@@ -145,10 +149,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_INCLUDE_ATTR_SENSORS,
                         default=include_attrs_default,
                     ): bool,
+                    vol.Optional(
+                        CONF_ENABLE_WEEKLY_YURTZEIT,
+                        default=enable_weekly_default,
+                    ): bool,
                 }
             )
             return self.async_show_form(step_id="init", data_schema=schema)
 
         # Save updated options into config_entry.options
         return self.async_create_entry(title="", data=user_input)
-        
