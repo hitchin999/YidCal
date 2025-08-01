@@ -12,6 +12,7 @@ from timezonefinder import TimezoneFinder
 from .const import DOMAIN
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
 from .config_flow import CONF_INCLUDE_DATE
+from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,8 +43,8 @@ MUTED_YAHRTZEITS_SAMPLE = """# YidCal Muted Yahrtzeits
 # Enter exact name as it appears in the yahrzeit list
 #
 # דוגמאות / Examples:
-#רבי חיים בן רבי משה (בן עטר) זי"ע [האור החיים הק'] תק"ג ומנו"כ בהה"ז
-#רבי אריה ליב בן רבי אשר (גינצבורג) זי"ע [שאגת אריה] תקמ"ח ומנו"כ במץ
+#רבי פלוני בן רבי אלמוני זי"ע [מחבר ספר דוגמא] תש"א ומנו"כ בהה"ז
+#רבי ישראל בן רבי אברהם זי"ע [בעל תוספות דוגמא] תק"ס ומנו"כ במץ
 """
 
 async def create_sample_files(hass: HomeAssistant) -> None:
@@ -183,6 +184,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_INCLUDE_DATE,
         initial.get(CONF_INCLUDE_DATE, False),
     )
+    enable_weekly = opts.get(
+        CONF_ENABLE_WEEKLY_YURTZEIT,
+        initial.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
+    )
 
     # Resolve and store geo+tz config
     latitude = hass.config.latitude
@@ -201,6 +206,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "day_label_language": day_label,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE:        include_date,
+        CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
     }
     # Store global config for sensors
     hass.data[DOMAIN]["config"] = {
@@ -216,6 +222,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "day_label_language": day_label,
         "include_date":        include_date,
         "havdalah_offset": havdala,
+        CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -240,9 +247,21 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         "tallis_tefilin_offset",
         initial.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
     )
+    day_label = opts.get(
+        "day_label_language",
+        initial.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
+    )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
         initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
+    )
+    include_date = opts.get(
+        CONF_INCLUDE_DATE,
+        initial.get(CONF_INCLUDE_DATE, False),
+    )
+    enable_weekly = opts.get(
+        CONF_ENABLE_WEEKLY_YURTZEIT,
+        initial.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
     )
 
     hass.data.setdefault(DOMAIN, {})
@@ -250,7 +269,11 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         "strip_nikud": strip,
         "candlelighting_offset": candle,
         "havdalah_offset": havdala,
+        "tallis_tefilin_offset": tallis,
+        "day_label_language": day_label,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
+        CONF_INCLUDE_DATE:        include_date,
+        CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
     }
 
     # Schedule the reload shortly after to apply new options
