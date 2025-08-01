@@ -4,6 +4,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.helpers.event import async_call_later
 import logging
+import os
+from pathlib import Path
 
 from timezonefinder import TimezoneFinder
 
@@ -19,6 +21,60 @@ DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
+
+# Sample content for custom yahrtzeits file
+CUSTOM_YAHRTZEITS_SAMPLE = """# YidCal Custom Yahrtzeits
+# Format: Date: Name
+# 
+# Remove the # from lines you want to use
+#
+# דוגמאות / Examples:
+#ט"ו תמוז: רבי פלוני בן רבי אלמוני זי"ע [מחבר ספר דוגמא] תש"א
+#י"ז תמוז: רבי דוגמא בן רבי משל זי"ע תרצ"ב  
+#ב' אלול: רבי ישראל בן רבי אברהם זי"ע [בעל תוספות דוגמא] תק"ס
+#כ"ה כסלו: רבי יעקב בן רבי יצחק הלוי זי"ע תרפ"ה
+#ג' ניסן: רבי משה בן רבי יוסף זי"ע [מחבר שו"ת דוגמא] תרל"ג
+"""
+
+# Sample content for muted yahrtzeits file  
+MUTED_YAHRTZEITS_SAMPLE = """# YidCal Muted Yahrtzeits
+# List of yahrtzeits to hide
+#
+# Enter exact name as it appears in the yahrzeit list
+#
+# דוגמאות / Examples:
+#רבי חיים בן רבי משה (בן עטר) זי"ע [האור החיים הק'] תק"ג ומנו"כ בהה"ז
+#רבי אריה ליב בן רבי אשר (גינצבורג) זי"ע [שאגת אריה] תקמ"ח ומנו"כ במץ
+"""
+
+async def create_sample_files(hass: HomeAssistant) -> None:
+    """Create sample yahrzeit files if they don't exist."""
+    yidcal_dir = Path(hass.config.path("yidcal"))
+    
+    # Create directory if it doesn't exist
+    if not yidcal_dir.exists():
+        await hass.async_add_executor_job(yidcal_dir.mkdir, 0o755, True)
+        _LOGGER.info("Created YidCal directory at %s", yidcal_dir)
+    
+    # Create custom yahrtzeits sample file
+    custom_file = yidcal_dir / "custom_yahrtzeits.txt"
+    if not custom_file.exists():
+        await hass.async_add_executor_job(
+            custom_file.write_text, 
+            CUSTOM_YAHRTZEITS_SAMPLE, 
+            "utf-8"
+        )
+        _LOGGER.info("Created sample custom yahrtzeits file at %s", custom_file)
+    
+    # Create muted yahrtzeits sample file
+    muted_file = yidcal_dir / "muted_yahrtzeits.txt"
+    if not muted_file.exists():
+        await hass.async_add_executor_job(
+            muted_file.write_text,
+            MUTED_YAHRTZEITS_SAMPLE,
+            "utf-8"
+        )
+        _LOGGER.info("Created sample muted yahrtzeits file at %s", muted_file)
 
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
@@ -77,7 +133,7 @@ async def resolve_location_from_coordinates(hass, latitude, longitude):
         lat, lon = await hass.async_add_executor_job(blocking_forward)
     except Exception as e:
         _LOGGER.warning("Geocoding failed (%s), falling back to HA lat/lon", e)
-        # fallback to Home Assistant’s configured coords
+        # fallback to Home Assistant's configured coords
         city, state = "", ""
         lat, lon = latitude, longitude
 
@@ -96,6 +152,9 @@ async def resolve_location_from_coordinates(hass, latitude, longitude):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up YidCal from a config entry."""
+    # Create sample files before anything else
+    await create_sample_files(hass)
+    
     entry.add_update_listener(_async_update_options)
 
     initial = entry.data or {}
@@ -158,6 +217,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
         "include_date":        include_date,
+        "havdalah_offset": havdala,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
