@@ -13,7 +13,6 @@ from .const import DOMAIN
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
 from .config_flow import CONF_INCLUDE_DATE
 
-
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
@@ -48,13 +47,13 @@ MUTED_YAHRTZEITS_SAMPLE = """# YidCal Muted Yahrtzeits
 """
 
 async def create_sample_files(hass: HomeAssistant) -> None:
-    """Create sample yahrzeit files if they don't exist."""
-    yidcal_dir = Path(hass.config.path("yidcal"))
+    """Create sample yahrtzeit files if they don't exist."""
+    yidcal_dir = Path(hass.config.path("yidcal-data"))
     
     # Create directory if it doesn't exist
     if not yidcal_dir.exists():
         await hass.async_add_executor_job(yidcal_dir.mkdir, 0o755, True)
-        _LOGGER.info("Created YidCal directory at %s", yidcal_dir)
+        _LOGGER.info("Created YidCal data directory at %s", yidcal_dir)
     
     # Create custom yahrtzeits sample file
     custom_file = yidcal_dir / "custom_yahrtzeits.txt"
@@ -149,7 +148,6 @@ async def resolve_location_from_coordinates(hass, latitude, longitude):
 
     return city, state, lat, lon, tzname or "UTC"
 
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up YidCal from a config entry."""
     # Create sample files before anything else
@@ -223,7 +221,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
-
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Called when the user hits Submit on the Options page."""
     # Re-parse options and update hass.data for this entry
@@ -263,14 +260,12 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         lambda now: _delayed_reload(hass, entry.entry_id),
     )
 
-
 def _delayed_reload(hass: HomeAssistant, entry_id: str) -> None:
     """Helper for async_call_later: switch back to the event loop and reload."""
     _LOGGER.debug("YidCal: scheduling reload of entry %s", entry_id)
     hass.loop.call_soon_threadsafe(
         lambda: hass.async_create_task(hass.config_entries.async_reload(entry_id))
     )
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
