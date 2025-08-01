@@ -1,10 +1,10 @@
+# YidCal is a Yiddish Calendar Integration for Home Assistant
+
 [![Total Downloads](https://img.shields.io/github/downloads/hitchin999/YidCal/total.svg?label=Total%20Downloads&style=for-the-badge&color=blue)](https://github.com/hitchin999/YidCal/releases)
 [![Active YidCal Installs][yidcal-badge]][yidcal-analytics]
 
 [yidcal-badge]: https://img.shields.io/badge/dynamic/json?label=Active%20Installs&url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.yidcal.total&style=for-the-badge&color=blue
 [yidcal-analytics]: https://analytics.home-assistant.io/integration/yidcal
-
-# YidCal is a Yiddish Calendar Integration for Home Assistant
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hitchin999&repository=YidCal&category=Integration)
 
@@ -58,7 +58,7 @@ A custom Home Assistant integration that provides:
 * **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
 * **Nine Days** (`binary_sensor.yidcal_nine_days`) - turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
-* **Day Type** (`binary_sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day.)
+* **Day Type** (`binary_sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day, Chol Hamoed, Shabbos & Chol Hamoed)
 * **Yurtzeit Sensor** (`sensor.yidcal_yurtzeit`) - Displays today's yurtzeits (flipping at sunset + havdalah_offset), with attributes for each yurtzeit name.
   
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
@@ -92,6 +92,50 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 
 ---
 
+## Yahrtzeit Customization
+
+The Yahrtzeit sensor (`sensor.yidcal_yurtzeit`) pulls names from a GitHub-hosted JSON file by default. You can add custom names or mute existing ones using text files in your Home Assistant config directory.
+
+Upon installation or restart, the integration automatically creates a `/config/yidcal/` folder with two sample files:
+
+- `custom_yahrtzeits.txt`: For adding your own Yahrtzeit names.
+- `muted_yahrtzeits.txt`: For hiding specific names from the sensor.
+
+### Editing Instructions
+
+1. **Locate the Files**: Use HA's File Editor add-on, SSH, or a file transfer tool (e.g., FileZilla) to access `/config/yidcal/custom_yahrtzeits.txt` and `/config/yidcal/muted_yahrtzeits.txt`.
+
+2. **Custom Yahrtzeits (Add Names)**:
+   - Format: `Hebrew Date: Full Name` (one per line).
+   - Example:
+     ```
+     ט"ו תמוז: רבי פלוני בן רבי אלמוני זי"ע [מחבר ספר דוגמא] תש"א
+     י"ז תמוז: רבי דוגמא בן רבי משל זי"ע תרצ"ב
+     ```
+   - Custom names are **added** to the existing GitHub names for that date.
+   - Comment out lines with `#` to ignore them (samples are commented by default).
+
+3. **Muted Yahrtzeits (Hide Names)**:
+   - Format: Full exact name (one per line, no date needed).
+   - Copy the exact name from the sensor attributes or GitHub JSON.
+   - Example:
+     ```
+     רבי חיים בן רבי משה (בן עטר) זי"ע [האור החיים הק'] תק"ג ומנו"כ בהה"ז
+     רבי אריה ליב בן רבי אשר (גינצבורג) זי"ע [שאגת אריה] תקמ"ח ומנו"כ במץ
+     ```
+   - Muted names are hidden globally (from both GitHub and custom lists).
+   - Comment out lines with `#` to ignore them.
+
+4. **Save and Restart**: After editing, save the files and restart Home Assistant (Configuration > Server Controls > Restart). Changes load only on restart.
+
+5. **Tips**:
+   - Files support Hebrew/UTF-8; use a text editor that handles it well.
+   - Invalid lines (e.g., bad format) are silently skipped.
+   - If files don't exist, restart HA to regenerate samples.
+   - For large lists, edit on your computer and upload (ensure permissions allow writing if needed).
+
+---
+
 ## Requirements
 
 * HA 2023.7+
@@ -111,17 +155,11 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 
 ### HACS (Recommended)
 
-1. Go to **HACS → Integrations → ⋮ → Custom repositories**
-2. Add: `https://github.com/hitchin999/yidcal` (type: Integration)
-3. Install **YidCal**
-4. Restart Home Assistant
+1. Open HACS in Home Assistant.
+2. Search for "YidCal" in the Integrations section.
+3. Install **YidCal**.
+4. Restart Home Assistant.
 5. **Settings → Devices & Services → Add Integration → YidCal**
-
-### Manual
-
-1. Copy `custom_components/yidcal/` to `config/custom_components/`
-2. Restart Home Assistant
-3. Add integration via UI as above
 
 ---
 
