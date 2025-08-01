@@ -14,7 +14,8 @@
           "tallis_tefilin_offset":     "וויפיל מינוט נאכן עלות איז טלית ותפילין",
           "day_label_language":        "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
           "include_date":              "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
-          "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים"
+          "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
+          "enable_weekly_yurtzeit":    "צולייגען די וועכנטליכע יארצייטן סענסאר"
         }
       }
     }
@@ -30,7 +31,8 @@
           "tallis_tefilin_offset":     "וויפיל מינוט נאכן עלות איז טלית ותפילין",
           "day_label_language":        "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
 		  "include_date":              "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
-          "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים"
+          "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
+          "enable_weekly_yurtzeit":    "צולייגען די וועכנטליכע יארצייטן סענסאר"
         }
       }
     }
