@@ -96,14 +96,14 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 
 The Yurtzeit sensor (`sensor.yidcal_yurtzeit`) pulls names from a GitHub-hosted JSON file by default. You can add custom names or mute existing ones using text files in your Home Assistant config directory.
 
-Upon installation or restart, the integration automatically creates a `/config/yidcal/` folder with two sample files:
+Upon installation or restart, the integration automatically creates a `/config/yidcal-data/` folder with two sample files:
 
 - `custom_yahrtzeits.txt`: For adding your own Yurtzeit names.
 - `muted_yahrtzeits.txt`: For hiding specific names from the sensor.
 
 ### Editing Instructions
 
-1. **Locate the Files**: Use HA's File Editor add-on, SSH, or a file transfer tool (e.g., FileZilla) to access `/config/yidcal/custom_yahrtzeits.txt` and `/config/yidcal/muted_yahrtzeits.txt`.
+1. **Locate the Files**: Use HA's File Editor add-on, SSH, or a file transfer tool (e.g., FileZilla) to access `/config/yidcal-data/custom_yahrtzeits.txt` and `/config/yidcal-data/muted_yahrtzeits.txt`.
 
 2. **Custom Yurtzeits (Add Names)**:
    - Format: `Hebrew Date: Full Name` (one per line).
