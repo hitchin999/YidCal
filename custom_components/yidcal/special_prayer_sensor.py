@@ -72,7 +72,7 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
         dawn = sun_times["sunrise"] - timedelta(minutes=72)
         sunset = sun_times["sunset"]
         havdala = sunset + timedelta(minutes=self._havdalah)
-        hal_mid = dawn + (sunset - dawn) / 2
+        hal_mid = sun_times["sunrise"] + (sunset - sun_times["sunrise"]) / 2
 
         # Hebrew date, adjusting for after havdala
         hd = PHebrewDate.from_pydate(today)
@@ -120,11 +120,12 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             v and not "כיפור" in k and (k.startswith("צום") or k.startswith("תענית"))
             for k, v in attrs.items()
         )
-        # Tisha B'Av: נחם and עננו from chatzos (halachic midday) → havdala
+        # Tisha B'Av: נחם from chatzos → havdala, but עננו from dawn → havdala
         if is_tisha:
+            if now >= dawn and now <= havdala:
+                insertions.append("עננו")
             if now >= hal_mid and now <= havdala:
                 insertions.append("נחם")
-                insertions.append("עננו")
         # Other fasts: עננו from dawn → havdala
         elif is_fast:
             if now >= dawn and now <= havdala:
