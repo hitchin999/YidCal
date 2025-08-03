@@ -426,7 +426,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             end_time = tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
         elif hd_fest.month == 5 and (hd_fest.day == 8 and now >= actual_sunset or hd_fest.day == 9):  # Tisha B'Av
             start_time_fast = prev_sunset if hd_fest.day == 9 else actual_sunset
-            end_time = actual_sunset + timedelta(minutes=self._havdalah_offset) if hd_fest.day == 9 else tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
+            end_time = actual_sunset + timedelta(minutes=self._havdalah_offset) if hd_fest.day == 9 and festival_date == actual_date else tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
         elif hd_fest.month == 5 and hd_fest.day == 10 and wd_fest == 6:  # Deferred Tisha B'Av day
             start_time_fast = prev_sunset
             end_time = actual_sunset + timedelta(minutes=self._havdalah_offset) if festival_date == actual_date else tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
