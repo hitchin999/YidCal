@@ -57,6 +57,7 @@ from .tehilim_daily_sensor import TehilimDailySensor
 from .day_label_hebrew import DayLabelHebrewSensor
 from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
+from .zman_tzeis import ZmanTziesSensor
 from .yurtzeit_sensor import (
     YurtzeitSensor,
     YurtzeitWeeklySensor,
@@ -162,6 +163,7 @@ async def async_setup_entry(
         IshpizinSensor(hass, havdalah_offset),
         DayTypeSensor(hass, candle_offset, havdalah_offset),
         YurtzeitSensor(hass, havdalah_offset,),
+        ZmanTziesSensor(hass, havdalah_offset),
     ]
 
     if opts.get(CONF_ENABLE_WEEKLY_YURTZEIT, True):
