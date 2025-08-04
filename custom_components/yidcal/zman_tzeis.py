@@ -1,0 +1,87 @@
+from __future__ import annotations
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+import homeassistant.util.dt as dt_util
+
+from zmanim.zmanim_calendar import ZmanimCalendar
+from zmanim.util.geo_location import GeoLocation
+
+from .const import DOMAIN
+from .device import YidCalDevice
+from .zman_sensors import get_geo
+
+
+class ZmanTziesSensor(YidCalDevice, RestoreEntity, SensorEntity):
+    """Tzies Hakochavim (using Havdalah offset after sunset)."""
+
+    _attr_device_class  = SensorDeviceClass.TIMESTAMP
+    _attr_icon          = "mdi:star"
+    _attr_name          = "Tzies Hakochavim"
+    _attr_unique_id     = "yidcal_tzies_hakochavim"
+
+    def __init__(self, hass: HomeAssistant, havdalah_offset: int) -> None:
+        super().__init__()
+        slug = "tzies_hakochavim"
+        self.entity_id = f"sensor.yidcal_{slug}"
+        self.hass      = hass
+
+        cfg = hass.data[DOMAIN]["config"]
+        self._havdalah = cfg.get("havdalah_offset", havdalah_offset)
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._geo: GeoLocation | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._geo = await get_geo(self.hass)
+        await self.async_update()
+        async_track_time_change(
+            self.hass, self._midnight_update, hour=0, minute=0, second=0
+        )
+
+    async def _midnight_update(self, now: datetime) -> None:
+        await self.async_update()
+
+    async def async_update(self, now: datetime | None = None) -> None:
+        if not self._geo:
+            return
+
+        # local date
+        now_local = (now or dt_util.now()).astimezone(self._tz)
+        today     = now_local.date()
+
+        # geometric sunset
+        cal    = ZmanimCalendar(geo_location=self._geo, date=today)
+        sunset = cal.sunset().astimezone(self._tz)
+
+        # target = sunset + havdalah offset min
+        target = sunset + timedelta(minutes=self._havdalah)
+
+        # save full‐precision ISO timestamp
+        full_iso = target.isoformat()
+
+        # always ceil to next minute
+        target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+        self._attr_native_value = target.astimezone(timezone.utc)
+        
+        # now build the human string in your configured tz
+        local_target = target.astimezone(self._tz)
+        # cross‐platform AM/PM formatting without %-I
+        hour = local_target.hour % 12 or 12
+        minute = local_target.minute
+        ampm = "AM" if local_target.hour < 12 else "PM"
+        human = f"{hour}:{minute:02d} {ampm}"
+
+        # debug attrs
+        self._attr_extra_state_attributes = {
+            "Tzies_Hakochavim_With_Seconds":   full_iso,
+            "Tzies_Hakochavim_Simple":  human,
+            #"City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            #"Latitude": self._geo.latitude,
+            #"Longitude": self._geo.longitude,
+        }
