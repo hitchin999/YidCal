@@ -79,9 +79,10 @@ class ZmanTziesSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # debug attrs
         self._attr_extra_state_attributes = {
-            "Tzies_Hakochavim_With_Seconds":   full_iso,
-            "Tzies_Hakochavim_Simple":  human,
+            "Tzies_With_Seconds":   full_iso,
+            "Tzies_Simple":  human,
             #"City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
             #"Latitude": self._geo.latitude,
             #"Longitude": self._geo.longitude,
+
         }
