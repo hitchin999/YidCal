@@ -49,7 +49,7 @@ A custom Home Assistant integration that provides:
 * **Zman Shkiat HaChamah** (`sensor.yidcal_shkia`) – sunset
 * **Zman Maariv +60m** (`sensor.yidcal_zman_maariv_60`) – 60 min after sunset
 * **Zman Maariv R"T** (`sensor.yidcal_zman_maariv_rt`) – 72 min after sunset
-* **Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset from config flow)
+* **Zman Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset from config flow)
 * **Zman Chatzos Hayom** (`sensor.yidcal_chatzos_hayom`) – midnight of night,
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
