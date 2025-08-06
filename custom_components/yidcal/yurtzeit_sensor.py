@@ -538,9 +538,12 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
         py_date = now.date() + timedelta(days=1) if now >= switch_time else now.date()
         
         # Calculate the start of the current week (Sunday)
-        weekday = py_date.weekday()  # 0 = Monday, ..., 6 = Sunday
+        weekday = py_date.weekday() # 0 = Monday, ..., 6 = Sunday
         days_to_prev_sunday = (weekday + 1) % 7
         week_start_greg = py_date - timedelta(days=days_to_prev_sunday)
+        
+        # Calculate the end of the current week (Saturday)
+        week_end_greg = week_start_greg + timedelta(days=6)
         
         # Compute Hebrew date for the start of the week
         heb_start = PHebrewDate.from_pydate(week_start_greg)
@@ -552,6 +555,17 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
             month_name_start = "אדר ב'"
         else:
             month_name_start = next((k for k, v in month_map.items() if v == heb_start.month), '')
+        
+        # Compute Hebrew date for the end of the week
+        heb_end = PHebrewDate.from_pydate(week_end_greg)
+        is_leap_end = Year(heb_end.year).leap
+        heb_day_end = int_to_hebrew(heb_end.day)
+        if is_leap_end and heb_end.month == 12:
+            month_name_end = "אדר א'"
+        elif is_leap_end and heb_end.month == 13:
+            month_name_end = "אדר ב'"
+        else:
+            month_name_end = next((k for k, v in month_map.items() if v == heb_end.month), '')
         
         attrs = {}
         has_any = False
@@ -580,19 +594,25 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                     month_name = next((k for k, v in month_map.items() if v == heb.month), '')
                 
                 header = f"יארצייטן {day_labels[day_i]} - {heb_day} {month_name}"
-                attrs[header] = ""  # Header key with empty value
+                attrs[header] = "" # Header key with empty value
                 
                 for i, entry in enumerate(entries, start=1):
                     attrs[f'{day_labels[day_i]} יארצייט {i}'] = entry
         
         if has_any:
-            self._state = f"יארצייטן פאר די וואך פון {heb_day_start} {month_name_start}"
+            # Format the state based on whether the week spans two months
+            if heb_start.month == heb_end.month:
+                # Same month - show format: "יארצייטן לשבוע ט' אב - ט"ו אב"
+                self._state = f"יארצייטן לשבוע {heb_day_start} - {heb_day_end} {month_name_start}"
+            else:
+                # Different months - show format: "יארצייטן לשבוע כ"ה אב - ב' אלול"
+                self._state = f"יארצייטן לשבוע {heb_day_start} {month_name_start} - {heb_day_end} {month_name_end}"
         else:
             self._state = "No Weekly Yurtzeit"
         
         self._attributes = attrs
         self.async_write_ha_state()
-
+        
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the sensor platform from a config entry."""
     config = hass.data[DOMAIN]["config"]
