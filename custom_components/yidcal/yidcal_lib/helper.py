@@ -343,15 +343,8 @@ class YidCalHelper:
 def int_to_hebrew(num: int) -> str:
     """
     Convert an integer (1–400+) into Hebrew letters with geresh/gershayim.
-    E.g. 5 → 'ה׳', 15 → 'טו״', 100 → 'ק׳'
+    E.g. 5 → 'ה׳', 15 → 'טו״', 100 → 'ק׳', 115 → 'קט״ו'
     """
-
-    # 15 and 16 are written ט״ו / ט״ז, never י״ה / י״ו
-    if num == 15:
-        return "ט\u05F4ו"
-    if num == 16:
-        return "ט\u05F4ז"
-        
     mapping = [
         (400, "ת"), (300, "ש"), (200, "ר"), (100, "ק"),
         (90,  "צ"),  (80,  "פ"),  (70,  "ע"),  (60,  "ס"),  (50,  "נ"),
@@ -359,13 +352,38 @@ def int_to_hebrew(num: int) -> str:
         (9,   "ט"),  (8,   "ח"),  (7,   "ז"),  (6,   "ו"),  (5,   "ה"),
         (4,   "ד"),  (3,   "ג"),  (2,   "ב"),  (1,   "א"),
     ]
+    
     result = ""
     temp = num
-    for value, letter in mapping:
-        while temp >= value:
-            result += letter
-            temp -= value
-    # add gershayim for multi-letter, geresh for single
+    
+    # Handle numbers ending in 15 or 16 specially
+    # Check if the last two digits are 15 or 16
+    if num % 100 == 15:
+        # Handle hundreds part if exists
+        hundreds = num - 15
+        for value, letter in mapping:
+            while hundreds >= value:
+                result += letter
+                hundreds -= value
+        # Add ט״ו for the 15 part
+        result += "טו"
+    elif num % 100 == 16:
+        # Handle hundreds part if exists
+        hundreds = num - 16
+        for value, letter in mapping:
+            while hundreds >= value:
+                result += letter
+                hundreds -= value
+        # Add ט״ז for the 16 part
+        result += "טז"
+    else:
+        # Normal processing for all other numbers
+        for value, letter in mapping:
+            while temp >= value:
+                result += letter
+                temp -= value
+    
+    # Add gershayim for multi-letter, geresh for single
     if len(result) > 1:
         return f"{result[:-1]}\u05F4{result[-1]}"
     return f"{result}\u05F3"
