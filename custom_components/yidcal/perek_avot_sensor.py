@@ -51,6 +51,34 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         )
         self._register_listener(unsub_minute)
 
+    def _should_skip_shabbat(self, shabbat_date: date, today_hd: pdates.HebrewDate) -> bool:
+        """Check if Pirkei Avot should be skipped on this Shabbat."""
+        
+        shabbat_hd = pdates.HebrewDate.from_pydate(shabbat_date)
+        
+        # 1. Skip if Shavuot falls on Shabbat (6 Sivan)
+        if shabbat_hd.month == 3 and shabbat_hd.day == 6:  # 6 Sivan
+            return True
+        
+        # 2. Skip Shabbat Chazon (Shabbat on or immediately before Tisha B'Av)
+        # Tisha B'Av is 9 Av (month 5, day 9)
+        if shabbat_hd.month == 5:  # Av
+            # If this Shabbat is 9 Av (Tisha B'Av on Shabbat)
+            if shabbat_hd.day == 9:
+                return True
+            # If this Shabbat is between 3-8 Av (the Shabbat before Tisha B'Av)
+            # (Tisha B'Av can't fall on Sunday, so if 9 Av is not Shabbat and 
+            # we're between 3-8, this must be the Shabbat before)
+            if 3 <= shabbat_hd.day <= 8:
+                # Check if 9 Av falls after this Shabbat but before next Shabbat
+                tisha_bav = pdates.HebrewDate(shabbat_hd.year, 5, 9)
+                tisha_bav_py = tisha_bav.to_pydate()
+                # If Tisha B'Av is between Sunday and Friday after this Shabbat
+                if shabbat_date < tisha_bav_py <= shabbat_date + timedelta(days=6):
+                    return True
+        
+        return False
+
     async def _update_state(self, now=None) -> None:
         """Compute which Pirkei Avot chapter will be read on the upcoming Shabbat."""
         today_py = date.today()
@@ -69,7 +97,7 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         offset = (5 - pesach_py.weekday()) % 7 or 7
         first_shabbat = pesach_py + timedelta(days=offset)
 
-        # 3) Last Shabbat *before* Rosh Hashanah (1 תשרי) of next Hebrew year
+        # 3) Last Shabbat *before* Rosh Hashanah (1 תשרי) of next Hebrew year
         rh_hd = pdates.HebrewDate(today_hd.year + 1, 7, 1)
         rh_py = rh_hd.to_pydate()
         prev_day = rh_py - timedelta(days=1)
@@ -80,22 +108,40 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         shabbat_of_week = week_start + timedelta(days=6)
 
         if first_shabbat <= shabbat_of_week <= last_shabbat:
-            # Index of that Shabbat in the cycle (0-based)
-            idx = (shabbat_of_week - first_shabbat).days // 7
-            # Total Shabbats in the window
-            total = ((last_shabbat - first_shabbat).days // 7) + 1
-            # Distance from end: 0=last,1=next-to-last,2=third-to-last
-            dist_end = total - idx - 1
-
-            if dist_end <= 2:
-                # Final three Shabbats: show pairs 1‑2, 3‑4, 5‑6
-                pairs = [(1, 2), (3, 4), (5, 6)]
-                n1, n2 = pairs[2 - dist_end]
-                state = f"פרק {int_to_hebrew(n1)}‑{int_to_hebrew(n2)}"
+            # Check if this Shabbat should be skipped
+            if self._should_skip_shabbat(shabbat_of_week, today_hd):
+                state = "נישט אין די צייט פון פרקי אבות"
             else:
-                # Normal single‑chapter cycle
-                chap = (idx % 6) + 1
-                state = f"פרק {int_to_hebrew(chap)}"
+                # Count valid reading weeks (excluding skipped ones)
+                valid_week_count = 0
+                current_date = first_shabbat
+                
+                while current_date <= shabbat_of_week:
+                    if not self._should_skip_shabbat(current_date, today_hd):
+                        valid_week_count += 1
+                    current_date += timedelta(days=7)
+                
+                # The current week's count is valid_week_count
+                # (we already incremented for the current week if it's valid)
+                
+                # Count valid weeks from current to end
+                valid_remaining = 0
+                check_date = shabbat_of_week
+                while check_date <= last_shabbat:
+                    if not self._should_skip_shabbat(check_date, today_hd):
+                        valid_remaining += 1
+                    check_date += timedelta(days=7)
+                
+                # Check if we're in the final three valid reading weeks
+                if valid_remaining <= 3:
+                    # Final three Shabbats: show pairs 1‑2, 3‑4, 5‑6
+                    pairs = [(1, 2), (3, 4), (5, 6)]
+                    n1, n2 = pairs[3 - valid_remaining]
+                    state = f"פרק {int_to_hebrew(n1)}‑{int_to_hebrew(n2)}"
+                else:
+                    # Normal single‑chapter cycle based on valid week count
+                    chap = ((valid_week_count - 1) % 6) + 1
+                    state = f"פרק {int_to_hebrew(chap)}"
         else:
             state = "נישט אין די צייט פון פרקי אבות"
 
