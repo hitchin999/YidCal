@@ -1,7 +1,8 @@
 from __future__ import annotations
 from datetime import date, timedelta
-from .device import YidCalDevice
+from typing import Optional, Tuple, Union
 
+from .device import YidCalDevice
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
@@ -11,6 +12,8 @@ from .yidcal_lib.helper import int_to_hebrew
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+
+ChapterType = Union[int, Tuple[int, int]]
 
 class PerekAvotSensor(YidCalDevice, SensorEntity):
     """Which פרק of Pirkei Avot is read each week (from Pesach until Rosh Hashanah)."""
@@ -25,14 +28,12 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         self._attr_native_value = "נישט אין די צייט פון פרקי אבות"
+        self._attr_extra_state_attributes = {}
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        await self._update_state()  # immediate
 
-        # 1) Immediate population
-        await self._update_state()
-
-        # 2) DAILY at 00:00:05 → only update on Sunday
         async def _midnight_cb(now):
             if now.weekday() == 6:  # Sunday
                 await self._update_state(now)
@@ -42,7 +43,6 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         )
         self._register_listener(unsub_midnight)
 
-        # 3) DEBUG: every minute so you can observe flips in a simulator
         async def _minute_cb(now):
             await self._update_state(now)
 
@@ -51,99 +51,127 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
         )
         self._register_listener(unsub_minute)
 
-    def _should_skip_shabbat(self, shabbat_date: date, today_hd: pdates.HebrewDate) -> bool:
-        """Check if Pirkei Avot should be skipped on this Shabbat."""
-        
-        shabbat_hd = pdates.HebrewDate.from_pydate(shabbat_date)
-        
-        # 1. Skip if Shavuot falls on Shabbat (6 Sivan)
-        if shabbat_hd.month == 3 and shabbat_hd.day == 6:  # 6 Sivan
-            return True
-        
-        # 2. Skip Shabbat Chazon (Shabbat on or immediately before Tisha B'Av)
-        # Tisha B'Av is 9 Av (month 5, day 9)
-        if shabbat_hd.month == 5:  # Av
-            # If this Shabbat is 9 Av (Tisha B'Av on Shabbat)
-            if shabbat_hd.day == 9:
-                return True
-            # If this Shabbat is between 3-8 Av (the Shabbat before Tisha B'Av)
-            # (Tisha B'Av can't fall on Sunday, so if 9 Av is not Shabbat and 
-            # we're between 3-8, this must be the Shabbat before)
-            if 3 <= shabbat_hd.day <= 8:
-                # Check if 9 Av falls after this Shabbat but before next Shabbat
-                tisha_bav = pdates.HebrewDate(shabbat_hd.year, 5, 9)
-                tisha_bav_py = tisha_bav.to_pydate()
-                # If Tisha B'Av is between Sunday and Friday after this Shabbat
+    # ───────────────── helpers ─────────────────
+
+    def _skip_reason(self, shabbat_date: date) -> Optional[str]:
+        """Return the skip reason string if Avos is skipped this Shabbos, else None."""
+        sh_hd = pdates.HebrewDate.from_pydate(shabbat_date)
+
+        # Shavuos on Shabbos → skip (6 or 7 Sivan in chutz la'aretz)
+        if sh_hd.month == 3 and sh_hd.day in (6, 7):
+            # Format day as Hebrew numeral (e.g., ו׳ / ז׳)
+            day_lbl = int_to_hebrew(sh_hd.day)
+            return f"הדלגה — שבועות ({day_lbl} סיון)"
+
+        # Shabbos Chazon (Shabbos on/just before 9 Av) → skip
+        if sh_hd.month == 5:  # Av
+            if sh_hd.day == 9:
+                return "הדלגה — שבת חזון"
+            if 3 <= sh_hd.day <= 8:
+                # Is 9 Av during the following week?
+                tisha_bav_py = pdates.HebrewDate(sh_hd.year, 5, 9).to_pydate()
                 if shabbat_date < tisha_bav_py <= shabbat_date + timedelta(days=6):
-                    return True
-        
-        return False
+                    return "הדלגה — שבת חזון"
+
+        return None
+
+    @staticmethod
+    def _fmt_date(d: date) -> str:
+        return d.isoformat()
+
+    # ───────────────── core update ─────────────────
 
     async def _update_state(self, now=None) -> None:
-        """Compute which Pirkei Avot chapter will be read on the upcoming Shabbat."""
+        """Compute which Pirkei Avos chapter will be read on the upcoming Shabbos."""
         today_py = date.today()
 
-        # Anchor to the most recent Sunday (Mon=0 … Sun=6)
+        # Most recent Sunday (Mon=0 … Sun=6)
         days_since_sunday = (today_py.weekday() - 6) % 7
         week_start = today_py - timedelta(days=days_since_sunday)
+        shabbat_of_week = week_start + timedelta(days=6)
 
         today_hd = pdates.HebrewDate.from_pydate(today_py)
 
-        # 1) Pesach – last day (22 ניסן for diaspora) of this Hebrew year
-        pesach_hd = pdates.HebrewDate(today_hd.year, 1, 22)
-        pesach_py = pesach_hd.to_pydate()
+        # Last day of Pesach (chutz la'aretz): 22 Nisan -> first Shabbos after
+        pesach_py = pdates.HebrewDate(today_hd.year, 1, 22).to_pydate()
+        offset = (5 - pesach_py.weekday()) % 7 or 7  # Saturday=5; ensure after
+        first_shabbos = pesach_py + timedelta(days=offset)
 
-        # 2) First Shabbat after Pesach
-        offset = (5 - pesach_py.weekday()) % 7 or 7
-        first_shabbat = pesach_py + timedelta(days=offset)
-
-        # 3) Last Shabbat *before* Rosh Hashanah (1 תשרי) of next Hebrew year
-        rh_hd = pdates.HebrewDate(today_hd.year + 1, 7, 1)
-        rh_py = rh_hd.to_pydate()
+        # Last Shabbos before Rosh Hashanah
+        rh_py = pdates.HebrewDate(today_hd.year + 1, 7, 1).to_pydate()
         prev_day = rh_py - timedelta(days=1)
-        days_to_sat = (prev_day.weekday() - 5) % 7    # Saturday = weekday 5
-        last_shabbat = prev_day - timedelta(days=days_to_sat)
+        days_to_sat = (prev_day.weekday() - 5) % 7
+        last_shabbos = prev_day - timedelta(days=days_to_sat)
 
-        # 4) Upcoming Shabbat = Sunday + 6 days
-        shabbat_of_week = week_start + timedelta(days=6)
+        attrs = {
+            "first_shabbos": self._fmt_date(first_shabbos),
+            "last_shabbos": self._fmt_date(last_shabbos),
+            "shabbos_of_week": self._fmt_date(shabbat_of_week),
+            "skipped": False,
+            "skipped_reason": None,
+            #"reading_index": None,
+            #"reading_total": None,
+            #"chapter_label": None,
+            #"chapter_number": None,  # int or [n1, n2]
+        }
 
-        if first_shabbat <= shabbat_of_week <= last_shabbat:
-            # Check if this Shabbat should be skipped
-            if self._should_skip_shabbat(shabbat_of_week, today_hd):
-                state = "נישט אין די צייט פון פרקי אבות"
-            else:
-                # Count valid reading weeks (excluding skipped ones)
-                valid_week_count = 0
-                current_date = first_shabbat
-                
-                while current_date <= shabbat_of_week:
-                    if not self._should_skip_shabbat(current_date, today_hd):
-                        valid_week_count += 1
-                    current_date += timedelta(days=7)
-                
-                # The current week's count is valid_week_count
-                # (we already incremented for the current week if it's valid)
-                
-                # Count valid weeks from current to end
-                valid_remaining = 0
-                check_date = shabbat_of_week
-                while check_date <= last_shabbat:
-                    if not self._should_skip_shabbat(check_date, today_hd):
-                        valid_remaining += 1
-                    check_date += timedelta(days=7)
-                
-                # Check if we're in the final three valid reading weeks
-                if valid_remaining <= 3:
-                    # Final three Shabbats: show pairs 1‑2, 3‑4, 5‑6
-                    pairs = [(1, 2), (3, 4), (5, 6)]
-                    n1, n2 = pairs[3 - valid_remaining]
-                    state = f"פרק {int_to_hebrew(n1)}‑{int_to_hebrew(n2)}"
-                else:
-                    # Normal single‑chapter cycle based on valid week count
-                    chap = ((valid_week_count - 1) % 6) + 1
-                    state = f"פרק {int_to_hebrew(chap)}"
-        else:
+        if not (first_shabbos <= shabbat_of_week <= last_shabbos):
             state = "נישט אין די צייט פון פרקי אבות"
+            self._attr_extra_state_attributes = attrs
+            self._attr_native_value = state
+            self.async_write_ha_state()
+            return
 
-        self._attr_native_value = state
+        # If this Shabbos is a skip, surface the reason and stop.
+        reason = self._skip_reason(shabbat_of_week)
+        if reason:
+            attrs["skipped"] = True
+            attrs["skipped_reason"] = reason
+            state = reason  # user-facing friendly message
+            self._attr_extra_state_attributes = attrs
+            self._attr_native_value = state
+            self.async_write_ha_state()
+            return
+
+        # Count valid reading weeks up to & including this Shabbos
+        valid_week_count = 0
+        d = first_shabbos
+        while d <= shabbat_of_week:
+            if not self._skip_reason(d):
+                valid_week_count += 1
+            d += timedelta(days=7)
+
+        # Count valid reading weeks remaining including this Shabbos
+        valid_remaining = 0
+        d = shabbat_of_week
+        while d <= last_shabbos:
+            if not self._skip_reason(d):
+                valid_remaining += 1
+            d += timedelta(days=7)
+
+        # Final three valid Shabbosim → pairs 1-2, 3-4, 5-6
+        if valid_remaining <= 3 and valid_remaining > 0:
+            pairs = [(1, 2), (3, 4), (5, 6)]
+            n1, n2 = pairs[3 - valid_remaining]
+            chapter: ChapterType = (n1, n2)
+            chapter_label = f"פרק {int_to_hebrew(n1)}-{int_to_hebrew(n2)}"
+        else:
+            n = ((valid_week_count - 1) % 6) + 1
+            chapter = n
+            chapter_label = f"פרק {int_to_hebrew(n)}"
+
+        attrs["reading_index"] = valid_week_count
+        # Compute total reading weeks for the season (for reference)
+        total = 0
+        d = first_shabbos
+        while d <= last_shabbos:
+            if not self._skip_reason(d):
+                total += 1
+            d += timedelta(days=7)
+        attrs["reading_total"] = total
+        attrs["chapter_label"] = chapter_label
+        attrs["chapter_number"] = list(chapter) if isinstance(chapter, tuple) else chapter
+
+        self._attr_extra_state_attributes = attrs
+        self._attr_native_value = chapter_label
         self.async_write_ha_state()
