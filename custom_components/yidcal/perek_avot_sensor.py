@@ -109,10 +109,10 @@ class PerekAvotSensor(YidCalDevice, SensorEntity):
             "shabbos_of_week": self._fmt_date(shabbat_of_week),
             "skipped": False,
             "skipped_reason": None,
-            #"reading_index": None,
-            #"reading_total": None,
-            #"chapter_label": None,
-            #"chapter_number": None,  # int or [n1, n2]
+            "reading_index": None,
+            "reading_total": None,
+            "chapter_label": None,
+            "chapter_number": None,  # int or [n1, n2]
         }
 
         if not (first_shabbos <= shabbat_of_week <= last_shabbos):
