@@ -1,6 +1,4 @@
-#/config/custom_components/yidcal/yurtzeit_sensor.py
 from __future__ import annotations
-
 import logging
 import time
 import json
@@ -8,7 +6,6 @@ import os
 import datetime as dt
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
-
 import aiohttp
 from astral import LocationInfo
 from astral.sun import sun
@@ -20,14 +17,12 @@ from homeassistant.helpers.entity_platform import async_get_current_platform
 from homeassistant.helpers.event import async_track_sunset
 from homeassistant.helpers.restore_state import RestoreEntity
 from pyluach.hebrewcal import Year, HebrewDate as PHebrewDate
-
 from .yidcal_lib.helper import int_to_hebrew
 from .device import YidCalDevice
-from .const import DOMAIN  
+from .const import DOMAIN
 from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
-
+from .config_flow import CONF_YAHRTZEIT_DATABASE  # New
 _LOGGER = logging.getLogger(__name__)
-
 month_map = {
     "ניסן": 1,
     "אייר": 2,
@@ -51,12 +46,10 @@ month_map = {
     "אדר ב'": 13,
     "אדר ב״": 13,
 }
-
 hebrew_digits = {
     'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9,
     'י': 10, 'כ': 20, 'ל': 30, 'מ': 40, 'נ': 50, 'ס': 60, 'ע': 70, 'פ': 80, 'צ': 90,
 }
-
 day_labels = [
     "ליום א'",
     "ליום ב'",
@@ -66,14 +59,11 @@ day_labels = [
     "ליום ו'",
     "לשבת קודש"
 ]
-
 class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
     """Today's Yurtzeits, flipping at sunset + user-set havdalah_offset."""
-
     _attr_name = "Yurtzeit"
     _attr_icon = "mdi:candle"
     _attr_should_poll = False
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -84,12 +74,12 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
-        
+       
         # Fetch havdalah_offset from config with passed value as fallback
         config = hass.data[DOMAIN]["config"]
         self._havdalah = config.get("havdalah_offset", havdalah_offset)
         self._havdalah_offset = timedelta(minutes=self._havdalah)
-        
+       
         self._tz = ZoneInfo(hass.config.time_zone)
         self._loc = LocationInfo(
             latitude=hass.config.latitude,
@@ -98,56 +88,55 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         )
         self._state: str | None = None
         self._attributes: dict = {}
-        self._yurtzeits: dict[tuple[int, int], list[dict]] = {}  # (month, day): list of {'text': str}
+        self._yurtzeits: dict[tuple[int, int], list[dict]] = {} # (month, day): list of {'text': str}
         self._custom_yurtzeits: dict[tuple[int, int], list[dict]] = {}
         self._muted_yurtzeits: set[str] = set()
-
     async def async_added_to_hass(self) -> None:
         start_time = time.time()
         await super().async_added_to_hass()
-        
+       
         # Restore previous state
         last = await self.async_get_last_state()
         if last:
             self._state = last.state
             self._attributes = last.attributes or {}
-            
+           
         # Fetch Yurtzeits once on startup
         await self._fetch_yurtzeits()
-        
+       
         # Load custom and muted files
         await self._load_custom_and_muted()
-        
+       
         # Immediate calculation
         await self._update_state()
-        
+       
         # Schedule sunset + offset update
         self._register_sunset(
             self.hass,
             self._schedule_update,
             offset=self._havdalah_offset,
         )
-        
+       
         # Minute-by-minute updates for precise flip
         self._register_interval(
             self.hass,
             self._schedule_update,
             timedelta(minutes=1),
         )
-        
+       
         total_time = time.time() - start_time
-
     def _schedule_update(self, *_args) -> None:
         self.hass.loop.call_soon_threadsafe(
             lambda: self.hass.async_create_task(self._update_state())
         )
-
     async def _fetch_yurtzeits(self) -> None:
         """Fetch Yurtzeits from GitHub-hosted JSON."""
         start_time = time.time()
-        cache_file = self.hass.config.path('yidcal-data', 'yurtzeit_cache.json')
+        config = self.hass.data[DOMAIN]["config"]
+        database = config.get(CONF_YAHRTZEIT_DATABASE, "standard")  # New
+        cache_file = self.hass.config.path('yidcal-data', f'yahrtzeit_cache_{database}.json')  # New: per-database cache
         refetch = True
-        
+       
         if os.path.exists(cache_file):
             mtime = dt.datetime.fromtimestamp(os.stat(cache_file).st_mtime)
             if (dt.datetime.now() - mtime) < dt.timedelta(days=30):
@@ -167,9 +156,12 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                     refetch = False
                 except json.JSONDecodeError:
                     pass
-                    
+                   
         if refetch:
-            github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache.json"
+            if database == "standard":  # New: select URL based on database
+                github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache.json"
+            else:
+                github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache_satmar.json"  # Adjust to your new file name
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(github_url, timeout=10) as response:
@@ -177,7 +169,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                             return
                         text = await response.text()
                         data = json.loads(text)
-                        
+                       
                 valid_data = {}
                 for k, v in data.items():
                     try:
@@ -185,28 +177,27 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                         valid_data[month_day] = v
                     except (ValueError, TypeError):
                         pass
-                        
+                       
                 self._yurtzeits = valid_data
-                
+               
                 def save_cache():
                     cache_dir = self.hass.config.path('yidcal-data')
                     if not os.path.exists(cache_dir):
                         os.makedirs(cache_dir, mode=0o755)
                     with open(cache_file, 'w', encoding='utf-8') as f:
                         json.dump(data, f, ensure_ascii=False, indent=4)
-                        
+                       
                 await self.hass.async_add_executor_job(save_cache)
             except Exception as e:
                 pass
-                
+               
         total_time = time.time() - start_time
-
     async def _load_custom_and_muted(self) -> None:
         def load_files():
             folder = self.hass.config.path('yidcal-data')
             custom_path = os.path.join(folder, 'custom_yahrtzeits.txt')
             muted_path = os.path.join(folder, 'muted_yahrtzeits.txt')
-            
+           
             def parse_custom(file_path):
                 data = {}
                 if not os.path.exists(file_path):
@@ -229,7 +220,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                             data[(m, d)] = []
                         data[(m, d)].append({'text': name})
                 return data
-            
+           
             def parse_muted(file_path):
                 data = set()
                 if not os.path.exists(file_path):
@@ -241,15 +232,14 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                             continue
                         data.add(line)
                 return data
-            
+           
             custom_data = parse_custom(custom_path)
             muted_data = parse_muted(muted_path)
             return custom_data, muted_data
-        
+       
         custom, muted = await self.hass.async_add_executor_job(load_files)
         self._custom_yurtzeits = custom
         self._muted_yurtzeits = muted
-
     def _parse_hebrew_date(self, date_str: str) -> tuple[int, int] | None:
         date_str = date_str.replace('״', '"').replace('’', "'").replace('׳', "'").replace('״', '"')
         parts = date_str.split()
@@ -257,47 +247,44 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
             return None
         day_str = parts[0].strip('"\'')
         month_str = ' '.join(parts[1:]).strip()
-        
+       
         # Parse day
         day = 0
         for char in day_str:
             day += hebrew_digits.get(char, 0)
         if day < 1 or day > 30:
             return None
-        
+       
         # Parse month
         month = month_map.get(month_str)
         if month is None:
             return None
-        
+       
         return month, day
-
     @property
     def state(self) -> str:
-        return self._state or STATE_UNKNOWN
-
+        return self._state if self._state is not None else STATE_UNKNOWN
     @property
     def extra_state_attributes(self) -> dict:
         return self._attributes
-
     async def _update_state(self) -> None:
         """Recompute Yurtzeits based on current Hebrew date."""
         now = datetime.now(self._tz)
         s = sun(self._loc.observer, date=now.date(), tzinfo=self._tz)
         switch_time = s["sunset"] + self._havdalah_offset
         py_date = now.date() + timedelta(days=1) if now >= switch_time else now.date()
-        
+       
         heb = PHebrewDate.from_pydate(py_date)
         is_leap = Year(heb.year).leap
         lookup_month = 12 if heb.month in [12, 13] else heb.month
         key = (lookup_month, heb.day)
-        
+       
         github_entries = self._yurtzeits.get(key, [])
         custom_entries = self._custom_yurtzeits.get(key, [])
         fetched_entries = github_entries + custom_entries
-        
+       
         todays = [e['text'] for e in fetched_entries if e['text'] not in self._muted_yurtzeits]
-        
+       
         if todays:
             heb_day = int_to_hebrew(heb.day)
             if is_leap and heb.month == 12:
@@ -308,22 +295,19 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 month_name = next((k for k, v in month_map.items() if v == heb.month), '')
             self._state = f"יארצייטן {heb_day} {month_name}"
         else:
-            self._state = "No Yurtzeit"
-        
+            self._state = ""
+       
         attrs = {}
         for i, entry in enumerate(todays, start=1):
             attrs[f'יארצייט {i}'] = entry
         self._attributes = attrs
-        
+       
         self.async_write_ha_state()
-
 class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
     """Weekly Yurtzeits, flipping at Saturday sunset + havdalah_offset."""
-
     _attr_name = "Yurtzeits Weekly"
     _attr_icon = "mdi:calendar-week"
     _attr_should_poll = False
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -334,12 +318,12 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
-        
+       
         # Fetch havdalah_offset from config with passed value as fallback
         config = hass.data[DOMAIN]["config"]
         self._havdalah = config.get("havdalah_offset", havdalah_offset)
         self._havdalah_offset = timedelta(minutes=self._havdalah)
-        
+       
         self._tz = ZoneInfo(hass.config.time_zone)
         self._loc = LocationInfo(
             latitude=hass.config.latitude,
@@ -348,56 +332,55 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
         )
         self._state: str | None = None
         self._attributes: dict = {}
-        self._yurtzeits: dict[tuple[int, int], list[dict]] = {}  # (month, day): list of {'text': str}
+        self._yurtzeits: dict[tuple[int, int], list[dict]] = {} # (month, day): list of {'text': str}
         self._custom_yurtzeits: dict[tuple[int, int], list[dict]] = {}
         self._muted_yurtzeits: set[str] = set()
-
     async def async_added_to_hass(self) -> None:
         start_time = time.time()
         await super().async_added_to_hass()
-        
+       
         # Restore previous state
         last = await self.async_get_last_state()
         if last:
             self._state = last.state
             self._attributes = last.attributes or {}
-            
+           
         # Fetch Yurtzeits once on startup
         await self._fetch_yurtzeits()
-        
+       
         # Load custom and muted files
         await self._load_custom_and_muted()
-        
+       
         # Immediate calculation
         await self._update_state()
-        
+       
         # Schedule sunset + offset update
         self._register_sunset(
             self.hass,
             self._schedule_update,
             offset=self._havdalah_offset,
         )
-        
+       
         # Minute-by-minute updates for precise flip
         self._register_interval(
             self.hass,
             self._schedule_update,
             timedelta(minutes=1),
         )
-        
+       
         total_time = time.time() - start_time
-
     def _schedule_update(self, *_args) -> None:
         self.hass.loop.call_soon_threadsafe(
             lambda: self.hass.async_create_task(self._update_state())
         )
-
     async def _fetch_yurtzeits(self) -> None:
         """Fetch Yurtzeits from GitHub-hosted JSON."""
         start_time = time.time()
-        cache_file = self.hass.config.path('yidcal-data', 'yurtzeit_cache.json')
+        config = self.hass.data[DOMAIN]["config"]
+        database = config.get(CONF_YAHRTZEIT_DATABASE, "standard")  # New
+        cache_file = self.hass.config.path('yidcal-data', f'yahrtzeit_cache_{database}.json')  # New: per-database cache
         refetch = True
-        
+       
         if os.path.exists(cache_file):
             mtime = dt.datetime.fromtimestamp(os.stat(cache_file).st_mtime)
             if (dt.datetime.now() - mtime) < dt.timedelta(days=30):
@@ -417,9 +400,12 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                     refetch = False
                 except json.JSONDecodeError:
                     pass
-                    
+                   
         if refetch:
-            github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache.json"
+            if database == "standard":  # New: select URL based on database
+                github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache.json"
+            else:
+                github_url = "https://raw.githubusercontent.com/hitchin999/yidcal-data/main/yahrtzeit_cache_satmar.json"  # Adjust to your new file name
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(github_url, timeout=10) as response:
@@ -427,7 +413,7 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                             return
                         text = await response.text()
                         data = json.loads(text)
-                        
+                       
                 valid_data = {}
                 for k, v in data.items():
                     try:
@@ -435,28 +421,27 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                         valid_data[month_day] = v
                     except (ValueError, TypeError):
                         pass
-                        
+                       
                 self._yurtzeits = valid_data
-                
+               
                 def save_cache():
                     cache_dir = self.hass.config.path('yidcal-data')
                     if not os.path.exists(cache_dir):
                         os.makedirs(cache_dir, mode=0o755)
                     with open(cache_file, 'w', encoding='utf-8') as f:
                         json.dump(data, f, ensure_ascii=False, indent=4)
-                        
+                       
                 await self.hass.async_add_executor_job(save_cache)
             except Exception as e:
                 pass
-                
+               
         total_time = time.time() - start_time
-
     async def _load_custom_and_muted(self) -> None:
         def load_files():
             folder = self.hass.config.path('yidcal-data')
             custom_path = os.path.join(folder, 'custom_yahrtzeits.txt')
             muted_path = os.path.join(folder, 'muted_yahrtzeits.txt')
-            
+           
             def parse_custom(file_path):
                 data = {}
                 if not os.path.exists(file_path):
@@ -479,7 +464,7 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                             data[(m, d)] = []
                         data[(m, d)].append({'text': name})
                 return data
-            
+           
             def parse_muted(file_path):
                 data = set()
                 if not os.path.exists(file_path):
@@ -491,15 +476,14 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                             continue
                         data.add(line)
                 return data
-            
+           
             custom_data = parse_custom(custom_path)
             muted_data = parse_muted(muted_path)
             return custom_data, muted_data
-        
+       
         custom, muted = await self.hass.async_add_executor_job(load_files)
         self._custom_yurtzeits = custom
         self._muted_yurtzeits = muted
-
     def _parse_hebrew_date(self, date_str: str) -> tuple[int, int] | None:
         date_str = date_str.replace('״', '"').replace('’', "'").replace('׳', "'").replace('״', '"')
         parts = date_str.split()
@@ -507,44 +491,41 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
             return None
         day_str = parts[0].strip('"\'')
         month_str = ' '.join(parts[1:]).strip()
-        
+       
         # Parse day
         day = 0
         for char in day_str:
             day += hebrew_digits.get(char, 0)
         if day < 1 or day > 30:
             return None
-        
+       
         # Parse month
         month = month_map.get(month_str)
         if month is None:
             return None
-        
+       
         return month, day
-
     @property
     def state(self) -> str:
-        return self._state or STATE_UNKNOWN
-
+        return self._state if self._state is not None else STATE_UNKNOWN
     @property
     def extra_state_attributes(self) -> dict:
         return self._attributes
-
     async def _update_state(self) -> None:
         """Recompute weekly Yurtzeits based on current Hebrew date."""
         now = datetime.now(self._tz)
         s = sun(self._loc.observer, date=now.date(), tzinfo=self._tz)
         switch_time = s["sunset"] + self._havdalah_offset
         py_date = now.date() + timedelta(days=1) if now >= switch_time else now.date()
-        
+       
         # Calculate the start of the current week (Sunday)
         weekday = py_date.weekday() # 0 = Monday, ..., 6 = Sunday
         days_to_prev_sunday = (weekday + 1) % 7
         week_start_greg = py_date - timedelta(days=days_to_prev_sunday)
-        
+       
         # Calculate the end of the current week (Saturday)
         week_end_greg = week_start_greg + timedelta(days=6)
-        
+       
         # Compute Hebrew date for the start of the week
         heb_start = PHebrewDate.from_pydate(week_start_greg)
         is_leap_start = Year(heb_start.year).leap
@@ -555,7 +536,7 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
             month_name_start = "אדר ב'"
         else:
             month_name_start = next((k for k, v in month_map.items() if v == heb_start.month), '')
-        
+       
         # Compute Hebrew date for the end of the week
         heb_end = PHebrewDate.from_pydate(week_end_greg)
         is_leap_end = Year(heb_end.year).leap
@@ -566,23 +547,23 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
             month_name_end = "אדר ב'"
         else:
             month_name_end = next((k for k, v in month_map.items() if v == heb_end.month), '')
-        
+       
         attrs = {}
         has_any = False
-        
+       
         for day_i in range(7):
             day_greg = week_start_greg + timedelta(days=day_i)
             heb = PHebrewDate.from_pydate(day_greg)
             is_leap = Year(heb.year).leap
             lookup_month = 12 if heb.month in [12, 13] else heb.month
             key = (lookup_month, heb.day)
-            
+           
             github_entries = self._yurtzeits.get(key, [])
             custom_entries = self._custom_yurtzeits.get(key, [])
             fetched_entries = github_entries + custom_entries
-            
+           
             entries = [e['text'] for e in fetched_entries if e['text'] not in self._muted_yurtzeits]
-            
+           
             if entries:
                 has_any = True
                 heb_day = int_to_hebrew(heb.day)
@@ -592,41 +573,36 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                     month_name = "אדר ב'"
                 else:
                     month_name = next((k for k, v in month_map.items() if v == heb.month), '')
-                
+               
                 header = f"יארצייטן {day_labels[day_i]} - {heb_day} {month_name}"
                 attrs[header] = "" # Header key with empty value
-                
+               
                 for i, entry in enumerate(entries, start=1):
                     attrs[f'{day_labels[day_i]} יארצייט {i}'] = entry
-        
+       
         if has_any:
             # Format the state based on whether the week spans two months
             if heb_start.month == heb_end.month:
-                # Same month - show format: "יארצייטן לשבוע ט' אב - ט"ו אב"
+                # Same month - show format: "יארצייטן לשבוע ט' אב - ט\"ו אב"
                 self._state = f"יארצייטן לשבוע {heb_day_start} - {heb_day_end} {month_name_start}"
             else:
-                # Different months - show format: "יארצייטן לשבוע כ"ה אב - ב' אלול"
+                # Different months - show format: "יארצייטן לשבוע כ\"ה אב - ב' אלול"
                 self._state = f"יארצייטן לשבוע {heb_day_start} {month_name_start} - {heb_day_end} {month_name_end}"
         else:
-            self._state = "No Weekly Yurtzeit"
-        
+            self._state = ""
+       
         self._attributes = attrs
         self.async_write_ha_state()
-        
+       
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the sensor platform from a config entry."""
     config = hass.data[DOMAIN]["config"]
     havdalah_offset = config.get("havdalah_offset", 0)
-
     sensors = [YurtzeitSensor(hass, havdalah_offset)]
-
     if config.get(CONF_ENABLE_WEEKLY_YURTZEIT, True):
         sensors.append(YurtzeitWeeklySensor(hass, havdalah_offset))
-
     async_add_entities(sensors)
-
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
