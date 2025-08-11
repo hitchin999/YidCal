@@ -2,32 +2,28 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
-
 from .const import DOMAIN
-
 # Default offsets (minutes)
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
-DEFAULT_TALLIS_TEFILIN_OFFSET = 22  # minutes after Alos
+DEFAULT_TALLIS_TEFILIN_OFFSET = 22 # minutes after Alos
 CONF_INCLUDE_DATE = "include_date"
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
-
 # New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
 CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"
+CONF_YAHRTZEIT_DATABASE = "yahrtzeit_database"  # New
+DEFAULT_YAHRTZEIT_DATABASE = "standard"  # New
 
 class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for YidCal."""
-
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
-
     async def async_step_user(self, user_input=None):
         """First step: ask the user for all the options."""
         # Abort if we already have an entry
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
-
         if user_input is None:
             schema = vol.Schema(
                 {
@@ -48,17 +44,27 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "select": {
                             "options": [
                                 {"value": "yiddish", "label": "זונטאג, מאנטאג"},
-                                {"value": "hebrew",  "label": "יום א', יום ב"},
+                                {"value": "hebrew", "label": "יום א', יום ב"},
                             ]
                         }
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
                     vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=False): bool,
+                    vol.Optional(  # New option
+                        CONF_YAHRTZEIT_DATABASE,
+                        default=DEFAULT_YAHRTZEIT_DATABASE,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "standard", "label": "סטאנדארט (דיפאלט)"},
+                                {"value": "satmar", "label": "אלטערנאטיוו (סאטמאר)"},
+                            ]
+                        }
+                    }),
                 }
             )
             return self.async_show_form(step_id="user", data_schema=schema)
-
         # Once the user submits, store everything in config_entry.data
         data = {
             "strip_nikud": user_input["strip_nikud"],
@@ -66,30 +72,25 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "havdalah_offset": user_input["havdalah_offset"],
             "tallis_tefilin_offset": user_input["tallis_tefilin_offset"],
             "day_label_language": user_input["day_label_language"],
-            CONF_INCLUDE_DATE:        user_input[CONF_INCLUDE_DATE],
+            CONF_INCLUDE_DATE: user_input[CONF_INCLUDE_DATE],
             CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
             CONF_ENABLE_WEEKLY_YURTZEIT: user_input.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
+            CONF_YAHRTZEIT_DATABASE: user_input.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),  # New
         }
         return self.async_create_entry(title="YidCal", data=data)
-
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this integration (if user wants to change later)."""
         return OptionsFlowHandler(config_entry)
-
-
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle YidCal options (after install)."""
-
     def __init__(self, config_entry):
         self._config_entry = config_entry
-
     async def async_step_init(self, user_input=None):
         """Show the form to adjust options after setup."""
         opts = self._config_entry.options or {}
         data = self._config_entry.data or {}
-
         strip_nikud_default = opts.get(
             "strip_nikud", data.get("strip_nikud", False)
         )
@@ -121,6 +122,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_ENABLE_WEEKLY_YURTZEIT,
             data.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
         )
+        yahrtzeit_database_default = opts.get(  # New
+            CONF_YAHRTZEIT_DATABASE,
+            data.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
+        )
         if user_input is None:
             schema = vol.Schema(
                 {
@@ -137,7 +142,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         "select": {
                             "options": [
                                 {"value": "yiddish", "label": "זונטאג, מאנטאג"},
-                                {"value": "hebrew",  "label": "יום א', יום ב"},
+                                {"value": "hebrew", "label": "יום א', יום ב"},
                             ]
                         }
                     }),
@@ -153,9 +158,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_ENABLE_WEEKLY_YURTZEIT,
                         default=enable_weekly_default,
                     ): bool,
+                    vol.Optional(  # New option
+                        CONF_YAHRTZEIT_DATABASE,
+                        default=yahrtzeit_database_default,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "standard", "label": "סטאנדארט (דיפאלט)"},
+                                {"value": "satmar", "label": "אלטערנאטיוו (סאטמאר)"},
+                            ]
+                        }
+                    }),
                 }
             )
             return self.async_show_form(step_id="init", data_schema=schema)
-
         # Save updated options into config_entry.options
         return self.async_create_entry(title="", data=user_input)
