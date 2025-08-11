@@ -1,6 +1,5 @@
 {
   "title": "YidCal",
-
   "config": {
     "abort": {
       "single_instance_allowed": "נישט מעגלעך צו צולייגן מער ווי איין מאל"
@@ -8,31 +7,32 @@
     "step": {
       "user": {
         "data": {
-          "strip_nikud":               "נעם אראפ די נְקֻודּוֹת",
-          "candlelighting_offset":     "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
-          "havdalah_offset":           "וויפיל מינוט נאכן שקיעה איז מוצאי",
-          "tallis_tefilin_offset":     "וויפיל מינוט נאכן עלות איז טלית ותפילין",
-          "day_label_language":        "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
-          "include_date":              "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
+          "strip_nikud": "נעם אראפ די נְקֻודּוֹת",
+          "candlelighting_offset": "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
+          "havdalah_offset": "וויפיל מינוט נאכן שקיעה איז מוצאי",
+          "tallis_tefilin_offset": "וויפיל מינוט נאכן עלות איז טלית ותפילין",
+          "day_label_language": "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
+          "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
-          "enable_weekly_yurtzeit":    "צולייגען די וועכנטליכע יארצייטן סענסאר"
+          "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
+          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן"
         }
       }
     }
   },
-
   "options": {
     "step": {
       "init": {
         "data": {
-          "strip_nikud":               "נעם אראפ די נְקֻודּוֹת",
-          "candlelighting_offset":     "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
-          "havdalah_offset":           "וויפיל מינוט נאכן שקיעה איז מוצאי",
-          "tallis_tefilin_offset":     "וויפיל מינוט נאכן עלות איז טלית ותפילין",
-          "day_label_language":        "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
-		  "include_date":              "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
+          "strip_nikud": "נעם אראפ די נְקֻודּוֹת",
+          "candlelighting_offset": "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
+          "havdalah_offset": "וויפיל מינוט נאכן שקיעה איז מוצאי",
+          "tallis_tefilin_offset": "וויפיל מינוט נאכן עלות איז טלית ותפילין",
+          "day_label_language": "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
+          "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
-          "enable_weekly_yurtzeit":    "צולייגען די וועכנטליכע יארצייטן סענסאר"
+          "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
+          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן"
         }
       }
     }
