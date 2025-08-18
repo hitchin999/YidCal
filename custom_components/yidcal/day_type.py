@@ -63,8 +63,6 @@ def _is_chol_hamoed(pydate: datetime.date) -> bool:
     try:
         name_with = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=True)
         name_no = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=False)
-        #_LOGGER.debug(f"Festival with work for {pydate}: {name_with}")
-        #_LOGGER.debug(f"Festival no work for {pydate}: {name_no}")
         return bool(name_with and not name_no and name_with in ["פסח", "סוכות"])
     except Exception:
         return False
@@ -84,25 +82,37 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_unique_id = "yidcal_day_type"
     entity_id = "sensor.yidcal_day_type"
     _attr_icon = "mdi:calendar-check"
+    _attr_device_class = "enum"
 
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
         self.hass = hass
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
-        self._state = ""
+        self._attr_native_value = "Any Other Day"
         # initialize attributes
         self._attr_extra_state_attributes = {s.replace(' ', '_'): False for s in POSSIBLE_STATES}
-        self._attr_extra_state_attributes["possible_states"] = POSSIBLE_STATES
+
+    @property
+    def options(self) -> list[str]:
+        """Return list of possible values for Home Assistant automation UI."""
+        return POSSIBLE_STATES
+
+    @property
+    def native_value(self) -> str:
+        """Return the current state value."""
+        return self._attr_native_value
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
-        if last:
-            self._state = last.state or ""
+        if last and last.state in POSSIBLE_STATES:
+            self._attr_native_value = last.state
             for k in list(self._attr_extra_state_attributes):
                 if k != "possible_states":
                     self._attr_extra_state_attributes[k] = bool(last.attributes.get(k))
+        else:
+            self._attr_native_value = "Any Other Day"
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
 
@@ -182,11 +192,10 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 if shabbos_start <= now < shabbos_end:
                     state = "Shabbos & Yom Tov"
                 attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-                attrs["possible_states"] = POSSIBLE_STATES
-                self._state = state
+                self._attr_native_value = state
                 self._attr_extra_state_attributes = attrs
                 return
-            # holiday motzi: immediately after fest_end → 2 AM next day
+            # holiday motzi: immediately after fest_end → 2 AM next day
             motzi_start = fest_end
             motzi_end = datetime.datetime.combine(end_date + timedelta(days=1), time(2, 0)).replace(tzinfo=tz)
             if motzi_start <= now < motzi_end:
@@ -195,8 +204,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 else:
                     state = "Motzi"
                 attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-                attrs["possible_states"] = POSSIBLE_STATES
-                self._state = state
+                self._attr_native_value = state
                 self._attr_extra_state_attributes = attrs
                 return
 
@@ -212,8 +220,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             else:
                 state = "Motzi"
             attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            attrs["possible_states"] = POSSIBLE_STATES
-            self._state = state
+            self._attr_native_value = state
             self._attr_extra_state_attributes = attrs
             return
 
@@ -223,8 +230,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         if dawn <= now < candle_cut and not is_fast_tomorrow and ((today.weekday() == 4 and not _is_yomtov(today)) or is_yom_tom):
             state = "Erev"
             attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            attrs["possible_states"] = POSSIBLE_STATES
-            self._state = state
+            self._attr_native_value = state
             self._attr_extra_state_attributes = attrs
             return
 
@@ -236,8 +242,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             elif _is_chol_hamoed(shabbos_day):
                 state = "Shabbos & Chol Hamoed"
             attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            attrs["possible_states"] = POSSIBLE_STATES
-            self._state = state
+            self._attr_native_value = state
             self._attr_extra_state_attributes = attrs
             return
 
@@ -245,8 +250,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         if _is_chol_hamoed(effective_pydate):
             state = "Chol Hamoed"
             attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            attrs["possible_states"] = POSSIBLE_STATES
-            self._state = state
+            self._attr_native_value = state
             self._attr_extra_state_attributes = attrs
             return
 
@@ -268,8 +272,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             if in_fast:
                 state = "Fast Day"
                 attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-                attrs["possible_states"] = POSSIBLE_STATES
-                self._state = state
+                self._attr_native_value = state
                 self._attr_extra_state_attributes = attrs
                 return
 
@@ -277,18 +280,12 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         if shabbos_end <= now < datetime.datetime.combine(shabbos_day + timedelta(days=1), time(2, 0)).replace(tzinfo=tz):
             state = "Motzi"
             attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            attrs["possible_states"] = POSSIBLE_STATES
-            self._state = state
+            self._attr_native_value = state
             self._attr_extra_state_attributes = attrs
             return
 
         # --- Default: Any Other Day ---
         state = "Any Other Day"
         attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-        attrs["possible_states"] = POSSIBLE_STATES
-        self._state = state
+        self._attr_native_value = state
         self._attr_extra_state_attributes = attrs
-
-    @property
-    def state(self) -> str:
-        return self._state
