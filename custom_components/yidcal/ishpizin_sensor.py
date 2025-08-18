@@ -28,13 +28,17 @@ ISHPIZIN_NAMES = [
     "דוד",    # 21 Tishrei
 ]
 
+# All possible states for the sensor
+ISHPIZIN_STATES = [f"אושפיזא ד{name}" for name in ISHPIZIN_NAMES] + [""]
+
 class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
     """Sensor that shows the current Ushpizin during Sukkot nights.
     State updates at Havdalah (sunset + offset) and shows 'אושפיזא ד<Name>'.
-    Attributes include a flag for each possible Ushpizin and possible_states list."""
+    Attributes include a flag for each possible Ushpizin."""
 
     _attr_name = "Ishpizin"
     _attr_icon = "mdi:account-group"
+    _attr_device_class = "enum"
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int) -> None:
         super().__init__()
@@ -45,18 +49,32 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Initial state
         self._attr_native_value: str = ""
-        # Prepare attributes: one boolean per Ushpizin and possible_states
-        flags: dict[str, bool] = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
-        flags["possible_states"] = [f"אושפיזא ד{name}" for name in ISHPIZIN_NAMES]
-        self._attr_extra_state_attributes = flags
+        # Prepare attributes: one boolean per Ushpizin
+        self._attr_extra_state_attributes = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
+
+    @property
+    def options(self) -> list[str]:
+        """Return list of possible values for Home Assistant automation UI."""
+        return ISHPIZIN_STATES
+
+    @property
+    def native_value(self) -> str:
+        """Return the current state value."""
+        return self._attr_native_value
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         # Restore last state
         last = await self.async_get_last_state()
-        if last:
-            self._attr_native_value = last.state or ""
-            self._attr_extra_state_attributes = dict(last.attributes)
+        if last and last.state in ISHPIZIN_STATES:
+            self._attr_native_value = last.state
+            # Restore attributes but skip possible_states
+            for key in self._attr_extra_state_attributes:
+                if key in last.attributes:
+                    self._attr_extra_state_attributes[key] = last.attributes.get(key, False)
+        else:
+            # If no valid state to restore, use empty string
+            self._attr_native_value = ""
         # Initial update and 1-minute polling
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
@@ -75,9 +93,8 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
         )
 
         state: str = ""
-        # Reset attributes
-        attrs: dict[str, bool | list[str]] = {key: False for key in self._attr_extra_state_attributes}
-        attrs["possible_states"] = [f"אושפיזא ד{name}" for name in ISHPIZIN_NAMES]
+        # Reset attributes (no more possible_states)
+        attrs: dict[str, bool] = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
 
         # Iterate through days 15–21 Tishrei
         for offset, name in enumerate(ISHPIZIN_NAMES, start=15):
@@ -98,4 +115,3 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         self._attr_native_value = state
         self._attr_extra_state_attributes = attrs
-      
