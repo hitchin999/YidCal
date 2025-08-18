@@ -38,7 +38,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     """
     _attr_name = "Holiday"
     _attr_icon = "mdi:calendar-star"
-
+    _attr_device_class = "enum"
+    
     FAST_FLAGS = [
         "יום הכיפורים",
         "צום גדליה",
@@ -118,7 +119,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     ]
 
     # ─── Only these may become the sensor.state ───
-    ALLOWED_HOLIDAYS: list[str] = {
+    ALLOWED_HOLIDAYS: list[str] = [
         "א׳ סליחות",
         "ערב ראש השנה",
         "ראש השנה א׳",
@@ -174,7 +175,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "תשעה באב",
         "תשעה באב נדחה",
         "מוצאי תשעה באב",
-    }
+    ]
 
     # ─── Window‐type map: holiday‑name → named window key ───────────
     WINDOW_TYPE: dict[str, str] = {
@@ -281,6 +282,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, bool | str]:
         return self._attr_extra_state_attributes
+        
+    @property
+    def options(self) -> list[str]:
+        """Return list of possible values for Home Assistant automation UI."""
+        # Return all holidays that can be selected in automations
+        return list(self.ALLOWED_HOLIDAYS) + [""]  # Include empty state
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         if self.hass is None:
@@ -771,6 +778,5 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         else:
             picked = next((n for n in self.ALLOWED_HOLIDAYS if attrs.get(n)), "")
 
-        attrs["possible_states"] = self.ALL_HOLIDAYS
         self._attr_native_value = picked
         self._attr_extra_state_attributes = attrs
