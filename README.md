@@ -1,10 +1,6 @@
 # YidCal is a Yiddish Calendar Integration for Home Assistant
 
-[![Total Downloads](https://img.shields.io/github/downloads/hitchin999/YidCal/total.svg?label=Total%20Downloads&style=for-the-badge&color=blue)](https://github.com/hitchin999/YidCal/releases)
-[![Active YidCal Installs][yidcal-badge]][yidcal-analytics]
-
-[yidcal-badge]: https://img.shields.io/badge/dynamic/json?label=Active%20Installs&url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.yidcal.total&style=for-the-badge&color=blue
-[yidcal-analytics]: https://analytics.home-assistant.io/integration/yidcal
+[![Peak Release Downloads](https://img.shields.io/badge/dynamic/json?style=for-the-badge&label=Peak%20Release%20Downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fhitchin999%2Fyidcal-data%2Fmain%2Fbadge%2Fpeak_release_downloads.json&query=%24.value&color=blue)](https://github.com/hitchin999/YidCal/releases)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hitchin999&repository=YidCal&category=Integration)
 
@@ -16,7 +12,7 @@ A custom Home Assistant integration that provides:
 * **Erev** (`binary_sensor.yidcal_erev`) Turns on at the Alos Erev Shabbos, Yom Tov. Turns off at Candle Lighting
 * **Motzi** (`binary_sensor.yidcal_motzi`) Turns on at night Motzi Shabbos, Yom Tov. Turns off at 2AM
 * **Molad** (`sensor.yidcal_molad` → `friendly` attribute) Full human-friendly Molad string in Yiddish
-* **Full Display Sensor** (sensor.yidcal_full_display) displays it all in one (e.g פרייטאג פרשת קרח ~ ב׳ ד׳ראש חודש תמוז)
+* **Full Display Sensor** (`sensor.yidcal_full_display`) displays it all in one (e.g פרייטאג פרשת קרח ~ ב׳ ד׳ראש חודש תמוז)
 * **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion
 * **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) i.e.: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Special Shabbos** sensor for Shabbat specials (שבת זכור, שבת נחמו, etc.)
