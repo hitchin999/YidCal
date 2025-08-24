@@ -134,7 +134,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         start_time = time.time()
         config = self.hass.data[DOMAIN]["config"]
         database = config.get(CONF_YAHRTZEIT_DATABASE, "standard")  # New
-        cache_file = self.hass.config.path('yidcal-data', f'yahrtzeit_cache_{database}.json')  # New: per-database cache
+        cache_file = self.hass.config.path('www/yidcal-data', f'yahrtzeit_cache_{database}.json')  # New: per-database cache
         refetch = True
        
         if os.path.exists(cache_file):
@@ -181,7 +181,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 self._yurtzeits = valid_data
                
                 def save_cache():
-                    cache_dir = self.hass.config.path('yidcal-data')
+                    cache_dir = self.hass.config.path('www/yidcal-data')
                     if not os.path.exists(cache_dir):
                         os.makedirs(cache_dir, mode=0o755)
                     with open(cache_file, 'w', encoding='utf-8') as f:
@@ -194,7 +194,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         total_time = time.time() - start_time
     async def _load_custom_and_muted(self) -> None:
         def load_files():
-            folder = self.hass.config.path('yidcal-data')
+            folder = self.hass.config.path('www/yidcal-data')
             custom_path = os.path.join(folder, 'custom_yahrtzeits.txt')
             muted_path = os.path.join(folder, 'muted_yahrtzeits.txt')
            
@@ -378,7 +378,7 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
         start_time = time.time()
         config = self.hass.data[DOMAIN]["config"]
         database = config.get(CONF_YAHRTZEIT_DATABASE, "standard")  # New
-        cache_file = self.hass.config.path('yidcal-data', f'yahrtzeit_cache_{database}.json')  # New: per-database cache
+        cache_file = self.hass.config.path('www/yidcal-data', f'yahrtzeit_cache_{database}.json')  # New: per-database cache
         refetch = True
        
         if os.path.exists(cache_file):
@@ -425,7 +425,7 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 self._yurtzeits = valid_data
                
                 def save_cache():
-                    cache_dir = self.hass.config.path('yidcal-data')
+                    cache_dir = self.hass.config.path('www/yidcal-data')
                     if not os.path.exists(cache_dir):
                         os.makedirs(cache_dir, mode=0o755)
                     with open(cache_file, 'w', encoding='utf-8') as f:
@@ -438,7 +438,7 @@ class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
         total_time = time.time() - start_time
     async def _load_custom_and_muted(self) -> None:
         def load_files():
-            folder = self.hass.config.path('yidcal-data')
+            folder = self.hass.config.path('www/yidcal-data')
             custom_path = os.path.join(folder, 'custom_yahrtzeits.txt')
             muted_path = os.path.join(folder, 'muted_yahrtzeits.txt')
            
