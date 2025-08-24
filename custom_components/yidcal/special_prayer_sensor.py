@@ -60,7 +60,7 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
     @property
     def native_value(self) -> str:
         try:
-            # --- Guard HA location/tz (can be None briefly after reload) ---
+            # Guard HA location/tz (can be None briefly after reload)
             tzname = self.hass.config.time_zone
             lat = self.hass.config.latitude
             lon = self.hass.config.longitude
@@ -70,7 +70,7 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             now = dt_now()
             today = now.date()
 
-            # compute sun times & offsets
+            # Sun times & offsets
             tz = ZoneInfo(tzname)
             loc = LocationInfo(
                 name="home",
@@ -85,7 +85,7 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             havdala = sunset + timedelta(minutes=self._havdalah)
             hal_mid = sun_times["sunrise"] + (sunset - sun_times["sunrise"]) / 2
 
-            # Hebrew date, adjusting for after havdala
+            # Hebrew date (advance after havdala)
             hd = PHebrewDate.from_pydate(today)
             if now >= havdala:
                 hd = hd + 1  # avoid in-place mutation
@@ -110,18 +110,15 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             )
             insertions.append("ותן טל ומטר לברכה" if tal_start else "ותן ברכה")
 
-            # 3) Holiday insertions (defensive attrs)
+            # 3) Holiday insertions (uses holiday sensor only for Chanukah/Purim/fasts)
             state = self.hass.states.get(HOLIDAY_SENSOR)
             attrs = state.attributes if state else {}
 
-            # Rosh Chodesh (self-contained, no month_length)
-            # R"Ch is true if TODAY is 1, or if YESTERDAY was 30 (two-day R"Ch).
-            hd_yesterday = PHebrewDate.from_pydate(today - timedelta(days=1))
-            is_rosh_chodesh = (hd.day == 1) or (hd_yesterday.day == 30)
-            
+            # Rosh Chodesh (covers 1-day and 2-day RC), but NEVER in Tishrei (Rosh Hashanah)
+            is_rosh_chodesh = ((day == 1) or (day == 30)) and (m != "תשרי")
             if is_rosh_chodesh:
                 insertions.append("יעלה ויבוא")
-                # "אתה יצרת" only on Shabbat daytime when it is actually Rosh Chodesh
+                # "אתה יצרת" only on Shabbat daytime of RC (not in Tishrei due to gate above)
                 if now.weekday() == 5 and dawn <= now < sunset:
                     insertions.append("אתה יצרת")
 
@@ -130,7 +127,7 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             if attrs.get("חנוכה") or attrs.get("פורים"):
                 insertions.append("על הניסים")
 
-            # 4) Fast / Tish'a B'Av windows
+            # 4) Fast days / Tish'a B'Av windows
             is_tisha = (hd.month == 5 and hd.day == 9)
             is_fast = any(
                 bool(v) and ("כיפור" not in k) and (k.startswith("צום") or k.startswith("תענית"))
@@ -152,4 +149,3 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             # Keep entity alive and expose hint for debugging
             self._attr_extra_state_attributes = {"error": repr(e)}
             return ""
-
