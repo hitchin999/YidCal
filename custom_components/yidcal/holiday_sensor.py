@@ -115,6 +115,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "תשעה באב",
         "תשעה באב נדחה",
         "מוצאי תשעה באב",
+        "יום כיפור קטן",
         "ראש חודש",
     ]
 
@@ -175,6 +176,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "תשעה באב",
         "תשעה באב נדחה",
         "מוצאי תשעה באב",
+        "יום כיפור קטן",
     ]
 
     # ─── Window‐type map: holiday‑name → named window key ───────────
@@ -235,6 +237,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ערב תשעה באב":                 "alos_havdalah",
         "תשעה באב":                    "candle_havdalah",
         "תשעה באב נדחה":                "candle_havdalah",
+        "יום כיפור קטן":                  "alos_havdalah",
         "ראש חודש":                    "havdalah_havdalah",
     }
 
@@ -621,6 +624,23 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_sunset.month == 5 and hd_sunset.day == 10 and wd_sunset == 6 and start_time_fast <= now <= end_time:
             attrs["תשעה באב נדחה"] = True
             attrs["תשעה באב"] = False
+            
+        # ─── Yom Kippur Katan (only for Erev Rosh Chodesh Elul) ─────────────
+        elul_year = hd_fest.year  # Hebrew year reference
+        # First day of RC Elul = 30 Av
+        av30 = PHebrewDate(elul_year, 5, 30)
+        av30_wd = av30.to_pydate().weekday()  # Mon=0 .. Sun=6
+
+        # Default = 29 Av
+        if av30_wd == 5:        # If RC Elul starts Shabbos
+            ykk_av_day = 28     # move back to Thu 28 Av
+        elif av30_wd == 6:      # If RC Elul starts Sunday
+            ykk_av_day = 27     # move back to Thu 27 Av
+        else:
+            ykk_av_day = 29     # normal case (also covers Fri start → Thu 29 Av)
+
+        if hd_fest.month == 5 and hd_fest.day == ykk_av_day:
+            attrs["יום כיפור קטן"] = True
 
         # ─── Countdown for fast starts in (6 hours before fast)
         is_fast_day = (
