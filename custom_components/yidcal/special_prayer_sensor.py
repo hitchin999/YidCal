@@ -20,7 +20,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util.dt import now as dt_now
 from astral.sun import sun
 from astral import LocationInfo
-from pyluach.dates import HebrewDate as PHebrewDate
+from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from .device import YidCalDevice
 
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
@@ -59,76 +59,97 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        now = dt_now()
-        today = now.date()
+        try:
+            # --- Guard HA location/tz (can be None briefly after reload) ---
+            tzname = self.hass.config.time_zone
+            lat = self.hass.config.latitude
+            lon = self.hass.config.longitude
+            if not tzname or lat is None or lon is None:
+                return ""  # keep entity available
 
-        # compute sun times & offsets
-        tz = ZoneInfo(self.hass.config.time_zone)
-        loc = LocationInfo(
-            name="home", region="", timezone=self.hass.config.time_zone,
-            latitude=self.hass.config.latitude, longitude=self.hass.config.longitude
-        )
-        sun_times = sun(loc.observer, date=today, tzinfo=tz)
-        dawn = sun_times["sunrise"] - timedelta(minutes=72)
-        sunset = sun_times["sunset"]
-        havdala = sunset + timedelta(minutes=self._havdalah)
-        hal_mid = sun_times["sunrise"] + (sunset - sun_times["sunrise"]) / 2
+            now = dt_now()
+            today = now.date()
 
-        # Hebrew date, adjusting for after havdala
-        hd = PHebrewDate.from_pydate(today)
-        if now >= havdala:
-            hd += 1
-        day, m = hd.day, hd.month_name(hebrew=True)
+            # compute sun times & offsets
+            tz = ZoneInfo(tzname)
+            loc = LocationInfo(
+                name="home",
+                region="",
+                timezone=tzname,
+                latitude=lat,
+                longitude=lon,
+            )
+            sun_times = sun(loc.observer, date=today, tzinfo=tz)
+            dawn = sun_times["sunrise"] - timedelta(minutes=72)
+            sunset = sun_times["sunset"]
+            havdala = sunset + timedelta(minutes=self._havdalah)
+            hal_mid = sun_times["sunrise"] + (sunset - sun_times["sunrise"]) / 2
 
-        insertions: list[str] = []
+            # Hebrew date, adjusting for after havdala
+            hd = PHebrewDate.from_pydate(today)
+            if now >= havdala:
+                hd = hd + 1  # avoid in-place mutation
+            day = hd.day
+            m = hd.month_name(hebrew=True)
 
-        # 1) Rain blessing continuous window
-        rain_start = (
-            (m == "תשרי" and (day > 22 or (day == 22 and now >= dawn)))
-            or m in ["חשון","כסלו","טבת","שבט","אדר","אדר א","אדר ב"]
-            or (m == "ניסן" and (day < 15 or (day == 15 and now < dawn)))
-        )
-        insertions.append("מוריד הגשם" if rain_start else "מוריד הטל")
+            insertions: list[str] = []
 
-        # 2) Tal U'Matar continuous window
-        tal_start = (
-            (m == "כסלו" and (day > 5 or (day == 5 and now >= havdala)))
-            or m in ["טבת","שבט","אדר","אדר א","אדר ב"]
-            or (m == "ניסן" and (day < 15 or (day == 15 and now <= havdala)))
-        )
-        insertions.append("ותן טל ומטר לברכה" if tal_start else "ותן ברכה")
+            # 1) Rain blessing continuous window
+            rain_start = (
+                (m == "תשרי" and (day > 22 or (day == 22 and now >= dawn)))
+                or m in ["חשון", "כסלו", "טבת", "שבט", "אדר", "אדר א", "אדר ב"]
+                or (m == "ניסן" and (day < 15 or (day == 15 and now < dawn)))
+            )
+            insertions.append("מוריד הגשם" if rain_start else "מוריד הטל")
 
-        # 3) Holiday insertions
-        state = self.hass.states.get(HOLIDAY_SENSOR)
-        attrs = state.attributes if state else {}
+            # 2) Tal U'Matar continuous window
+            tal_start = (
+                (m == "כסלו" and (day > 5 or (day == 5 and now >= havdala)))
+                or m in ["טבת", "שבט", "אדר", "אדר א", "אדר ב"]
+                or (m == "ניסן" and (day < 15 or (day == 15 and now <= havdala)))
+            )
+            insertions.append("ותן טל ומטר לברכה" if tal_start else "ותן ברכה")
 
-        # Rosh Chodesh
-        is_rosh_chodesh = (hd.day == 1 or (hd.day == 30 and hd.month_length() == 30))
-        if is_rosh_chodesh:
-            insertions.append("יעלה ויבוא")
-            # אתה יצרת only on Shabbat during daytime on actual Rosh Chodesh
-            if now.weekday() == 5 and dawn <= now < sunset and is_rosh_chodesh:
-                insertions.append("אתה יצרת")
+            # 3) Holiday insertions (defensive attrs)
+            state = self.hass.states.get(HOLIDAY_SENSOR)
+            attrs = state.attributes if state else {}
 
-        # Chanukah or Purim
-        if attrs.get("חנוכה") or attrs.get("פורים"):
-            insertions.append("על הניסים")
+            # Rosh Chodesh (self-contained, no month_length)
+            # R"Ch is true if TODAY is 1, or if YESTERDAY was 30 (two-day R"Ch).
+            hd_yesterday = PHebrewDate.from_pydate(today - timedelta(days=1))
+            is_rosh_chodesh = (hd.day == 1) or (hd_yesterday.day == 30)
+            
+            if is_rosh_chodesh:
+                insertions.append("יעלה ויבוא")
+                # "אתה יצרת" only on Shabbat daytime when it is actually Rosh Chodesh
+                if now.weekday() == 5 and dawn <= now < sunset:
+                    insertions.append("אתה יצרת")
 
-        # 4) Fast / Tish'a B'Av windows
-        is_tisha = (hd.month == 5 and hd.day == 9)
-        is_fast = any(
-            v and not "כיפור" in k and (k.startswith("צום") or k.startswith("תענית"))
-            for k, v in attrs.items()
-        )
-        # Tisha B'Av: נחם from chatzos → havdala, but עננו from dawn → havdala
-        if is_tisha:
-            if now >= dawn and now <= havdala:
-                insertions.append("עננו")
-            if now >= hal_mid and now <= havdala:
-                insertions.append("נחם")
-        # Other fasts: עננו from dawn → havdala
-        elif is_fast:
-            if now >= dawn and now <= havdala:
-                insertions.append("עננו")
 
-        return " - ".join(insertions)
+            # Chanukah or Purim
+            if attrs.get("חנוכה") or attrs.get("פורים"):
+                insertions.append("על הניסים")
+
+            # 4) Fast / Tish'a B'Av windows
+            is_tisha = (hd.month == 5 and hd.day == 9)
+            is_fast = any(
+                bool(v) and ("כיפור" not in k) and (k.startswith("צום") or k.startswith("תענית"))
+                for k, v in attrs.items()
+            )
+
+            if is_tisha:
+                if dawn <= now <= havdala:
+                    insertions.append("עננו")
+                if hal_mid <= now <= havdala:
+                    insertions.append("נחם")
+            elif is_fast:
+                if dawn <= now <= havdala:
+                    insertions.append("עננו")
+
+            return " - ".join(insertions)
+
+        except Exception as e:
+            # Keep entity alive and expose hint for debugging
+            self._attr_extra_state_attributes = {"error": repr(e)}
+            return ""
+
