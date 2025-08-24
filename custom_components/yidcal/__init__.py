@@ -43,7 +43,7 @@ MUTED_YAHRTZEITS_SAMPLE = """# YidCal Muted Yahrtzeits
 """
 async def create_sample_files(hass: HomeAssistant) -> None:
     """Create sample yahrtzeit files if they don't exist."""
-    yidcal_dir = Path(hass.config.path("yidcal-data"))
+    yidcal_dir = Path(hass.config.path("www/yidcal-data"))
    
     # Create directory if it doesn't exist
     if not yidcal_dir.exists():
