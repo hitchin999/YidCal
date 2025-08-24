@@ -123,6 +123,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "תשעה באב":              "tisha_bav",
     "תשעה באב נדחה":          "tisha_bav_nidche",
     "מוצאי תשעה באב":         "motzei_tisha_bav",
+    "יום כיפור קטן":            "yom_kipur_kuten",
     "ראש חודש":              "rosh_chodesh",
 }
 
