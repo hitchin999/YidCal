@@ -11,7 +11,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DOMAIN
 from . import DEFAULT_DAY_LABEL_LANGUAGE
-from homeassistant.const import STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
@@ -61,50 +61,61 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         tz = self._tz
         now = now or datetime.datetime.now(tz)
 
+        def _ok(state: str | None) -> bool:
+            if state is None:
+                return False
+            s = str(state).strip()
+            return s not in ("", STATE_UNKNOWN, STATE_UNAVAILABLE, "unknown", "unavailable")
+
         # 1) Day label (Yiddish or Hebrew per user choice)
         label_entity = f"sensor.yidcal_day_label_{self._day_label_language}"
         day = self.hass.states.get(label_entity)
-        text = day.state if day and day.state else ""
+        text = day.state.strip() if day and _ok(day.state) else ""
 
-        # 2) Parsha
+        # 2) Parsha (suppress sentinel "None")
         parsha = self.hass.states.get("sensor.yidcal_parsha")
-        if parsha and parsha.state.strip():
-            text += f" {parsha.state}"
-                
-        # 3) Holiday — just show the single state from sensor.yidcal_holiday
+        if parsha and _ok(parsha.state):
+            ps = str(parsha.state).strip()
+            if ps.lower() not in ("none", "פרשת none"):
+                text += f" {ps}"
+
+        # 3) Holiday — single state from sensor.yidcal_holiday
         hol = self.hass.states.get("sensor.yidcal_holiday")
-        if hol and hol.state and hol.state not in (None, "", STATE_UNKNOWN):
-            text += f" - {hol.state}"
+        if hol and _ok(hol.state):
+            text += f" - {hol.state.strip()}"
 
         # 5) Special Shabbos (after Fri-13:00 or any Sat)
         special = self.hass.states.get("sensor.yidcal_special_shabbos")
         show_special = False
-        if special and special.state not in ("No data", ""):
-            wd, hr = now.weekday(), now.hour
-            if wd == 4 and hr >= 13:
-                show_special = True
-            elif wd == 5 and self._geo:
-                today = now.date()
-                cal = ZmanimCalendar(geo_location=self._geo, date=today)
-                sunset = cal.sunset()
-                if sunset:
-                    sunset = sunset.astimezone(tz)
-                    havdalah = sunset + timedelta(minutes=72)
-                    if now < havdalah:
-                        show_special = True
-            if show_special:
-                text += f" ~ {special.state}"
+        if special and _ok(special.state):
+            sstate = str(special.state).strip()
+            if sstate.lower() not in ("no data",):
+                wd, hr = now.weekday(), now.hour
+                if wd == 4 and hr >= 13:
+                    show_special = True
+                elif wd == 5 and self._geo:
+                    today = now.date()
+                    cal = ZmanimCalendar(geo_location=self._geo, date=today)
+                    sunset = cal.sunset()
+                    if sunset:
+                        sunset = sunset.astimezone(tz)
+                        havdalah = sunset + timedelta(minutes=72)
+                        if now < havdalah:
+                            show_special = True
+                if show_special:
+                    text += f" ~ {sstate}"
 
         # 4) Rosh Chodesh
         rosh = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
-        if rosh and rosh.state != "Not Rosh Chodesh Today":
-            if not (show_special and "שבת ראש חודש" in special.state):
-                text += f" ~ {rosh.state}"
-                
+        if rosh and _ok(rosh.state) and rosh.state != "Not Rosh Chodesh Today":
+            # only add if not already covered by "שבת ראש חודש"
+            if not (show_special and special and _ok(special.state) and "שבת ראש חודש" in str(special.state)):
+                text += f" ~ {rosh.state.strip()}"
+
         # 6) Optional “today’s date”
         if self._include_date:
             date_ent = self.hass.states.get("sensor.yidcal_date")
-            if date_ent and date_ent.state not in (None, "", STATE_UNKNOWN):
-                text += f" - {date_ent.state}"
-                
+            if date_ent and _ok(date_ent.state):
+                text += f" - {date_ent.state.strip()}"
+
         self._state = text
