@@ -326,7 +326,11 @@ class MoladSensor(YidCalDevice, SensorEntity):
         else:
             molad_part = f"{original_day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {h}"
         rc_text_yd = rc_days[0] if len(rc_days) == 1 else " און ".join(rc_days)
-        full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part} - ראש חודש, {rc_text_yd}"
+        if rc_days:
+            full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part} - ראש חודש, {rc_text_yd}"
+        else:
+            full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part}"
+
 
         self._attr_extra_state_attributes = {
             "Day": day_yd,
@@ -691,4 +695,7 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
     @property
     def available(self) -> bool:
         main = self.hass.states.get("sensor.yidcal_molad")
-        return bool(main and main.attributes.get("Rosh_Chodesh_Nightfall"))
+        if not main:
+            return False
+        # Consider attribute presence, not truthiness — handles months with no RC (e.g., Tishrei)
+        return "Rosh_Chodesh_Nightfall" in main.attributes
