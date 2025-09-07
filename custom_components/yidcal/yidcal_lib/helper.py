@@ -93,15 +93,15 @@ class YidCalHelper:
         hy, hm = hd.year, hd.month
         nm = hm + 1
 
-        # Attempt to build PMonth(hy, nm). If invalid, roll into next year:
-        try:
-            PMonth(hy, nm)
-        except ValueError:
-            # Invalid month number (e.g. exceeding 12 or 13 in a given year)
-            nm = 1
-            hy += 1
+        if hm == 6:            # Elul → Tishrei
+            return {"year": hy + 1, "month": 7}
 
-        return {"year": hy, "month": nm}
+        try:
+            PMonth(hy, nm)     # valid within the same Hebrew year?
+            return {"year": hy, "month": nm}
+        except ValueError:
+            # overflow (e.g., Adar II → Nissan in short form)
+            return {"year": hy + 1, "month": 1}
 
     def get_gdate(self, numeric_date: dict[str, int], day: int) -> datetime.date:
         """
@@ -119,13 +119,12 @@ class YidCalHelper:
         if wd == 5:
             return "Shabbos"
         return gdate.strftime("%A")
-
+        
     def get_rosh_chodesh_days(self, today: datetime.date) -> RoshChodesh:
         """
         Compute Rosh Chodesh for the Hebrew month containing 'today' using pyluach.
         - If the current Hebrew month has 30 days: include the 30th of that month.
         - Always include the 1st of the next Hebrew month.
-
         Returns a RoshChodesh object with:
           .month = English name (e.g. "Av")
           .text = e.g. "Shabbos" or "Shabbos & Sunday"
@@ -136,48 +135,43 @@ class YidCalHelper:
         hd = PHebrewDate.from_pydate(today)
         hy, hm = hd.year, hd.month
 
-        # 2) Determine length of current Hebrew month via pyluach (count iterdates)
         pm_cur = PMonth(hy, hm)
         length_cur = sum(1 for _ in pm_cur.iterdates())
 
         days: list[str] = []
         gdays: list[datetime.date] = []
 
-        # 3a) If length = 30, compute 30th of current month
+        # 30th of current month (if it exists)
         if length_cur == 30:
-            hd30 = PHebrewDate(hy, hm, 30)
-            g30 = hd30.to_pydate()
-            dayname_30 = self.get_day_of_week(g30)
-            days.append(dayname_30)
+            g30 = PHebrewDate(hy, hm, 30).to_pydate()
+            days.append(self.get_day_of_week(g30))
             gdays.append(g30)
 
-        # 3b) Compute 1st of next Hebrew month:
-        nm = hm + 1
-        hy_next = hy
+        # --- next month (handle Elul→Tishrei year rollover) ---
+        if hm == 6:               # Elul → Tishrei bumps the Hebrew year
+            hy_next, nm = hy + 1, 7
+        else:
+            hy_next, nm = hy, hm + 1
+            try:
+                PMonth(hy_next, nm)
+            except ValueError:
+                hy_next, nm = hy + 1, 1
 
-        # If PMonth(hy, nm) is invalid, roll into month=1 of next year
-        try:
-            PMonth(hy, nm)
-        except ValueError:
-            nm = 1
-            hy_next += 1
-            
         hd1_next = PHebrewDate(hy_next, nm, 1)
 
-        # always include 1st of next month (so days[] is never empty)
+        # No "Rosh Chodesh" for Tishrei
+        if nm == 7:
+            return RoshChodesh(hd1_next.month_name(), "", [], [])
+
+        # Always include day 1 of the next month
         g1_next = hd1_next.to_pydate()
-        dayname_1 = self.get_day_of_week(g1_next)
-        days.append(dayname_1)
+        days.append(self.get_day_of_week(g1_next))
         gdays.append(g1_next)
 
-        month_name = hd.month_name()  # English, e.g. "Av"
-        if   len(days) == 2:
-            text = " & ".join(days)
-        elif len(days) == 1:
-            text = days[0]
-        else:
-            text = ""
+        month_name = hd1_next.month_name()  # upcoming month
+        text = " & ".join(days) if len(days) == 2 else (days[0] if days else "")
         return RoshChodesh(month_name, text, days, gdays)
+
 
     def get_shabbos_mevorchim_hebrew_day_of_month(self, today: datetime.date) -> int | None:
         """
@@ -282,15 +276,18 @@ class YidCalHelper:
         """
         # 1) Pick the target year/month
         hd = PHebrewDate.from_pydate(today)
+        hy, hm = hd.year, hd.month
+
         if hd.day < 3:
-            hy, hm = hd.year, hd.month
+            # molad for the current Hebrew month
+            pass
         else:
-            # roll to next month (and year if needed)
-            hy, hm = hd.year, hd.month + 1
-            try:
-                PHebrewDate(hy, hm, 1)
-            except ValueError:
-                hm = 1  # Roll to Nissan (1), but keep same year
+            # molad for the *next* Hebrew month
+            if hm == 6:         # Elul → Tishrei bumps the Hebrew year
+                hy += 1
+                hm = 7
+            else:
+                hm += 1
 
         # 2) Ask pyluach for its announcement
         pm = PMonth(hy, hm)
