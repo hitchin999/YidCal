@@ -28,7 +28,7 @@ from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from .yidcal_lib.helper import YidCalHelper
 from .sensor import ShabbosMevorchimSensor, UpcomingShabbosMevorchimSensor
 from .no_music_sensor import NoMusicSensor
-from .upcoming_holiday_sensor import UpcomingYomTovSensor
+from .upcoming_yomtov_sensor import UpcomingYomTovSensor
 from .nine_days_sensor import NineDaysSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
