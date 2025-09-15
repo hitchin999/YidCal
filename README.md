@@ -143,7 +143,7 @@ Upon installation or restart, the integration automatically creates a `/config/w
 * **HACS** recommended
 * Dependencies installed via manifest:
 
-  * `hdate[astral]==1.1.0`
+  * `hdate[astral]==1.1.2`
   * `pyluach==2.2.0`
   * `zmanim==0.3.1`
   * `timezonefinder==6.5.9`
