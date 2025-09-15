@@ -13,9 +13,6 @@ from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
 
-
-
-
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
 
 _LOGGER = logging.getLogger(__name__)
@@ -199,10 +196,10 @@ class YidCalHelper:
         """
         Return True if 'today' is the actual Shabbos Mevorchim:
           - Normally: the Shabbat on or before R”Ch.
-          - Special‑case: if R”Ch is a one‑day RC on Shabbat, or
+          - Special-case: if R”Ch is a one-day RC on Shabbat, or
                           spans Shabbat & Sunday,
             then it’s the *previous* Shabbat.
-        Always skip Rosh Chodesh Tishrei.
+        Always skip Rosh Chodesh Tishrei.
         """
         # 1) Must be Shabbat
         if not is_shabbat(today):
@@ -214,10 +211,10 @@ class YidCalHelper:
         if rc.month.upper() == "TISHREI":
             return False
 
-        # 3) Special‑case: first RC day falls on Shabbat
+        # 3) Special-case: first RC day falls on Shabbat
         #    (covers both 1-day RC on Shabbat, and 2-day RC starting on Shabbat)
         if rc.gdays and rc.gdays[0].weekday() == 5:  # Saturday=5
-            # Mevorchim is the *week before* that RC‑Shabbat
+            # Mevorchim is the *week before* that RC-Shabbat
             target = rc.gdays[0] - timedelta(days=7)
             return today == target
 
@@ -235,10 +232,10 @@ class YidCalHelper:
     def is_upcoming_shabbos_mevorchim(self, today: datetime.date) -> bool:
         """
         Return True if the *next* Shabbat after `today` is a Mevorchim Shabbat.
-        Special‑case:
+        Special-case:
           - If RC is a single day on Shabbos, Mevorchim is the previous Shabbat.
           - If RC spans Shabbos & Sunday, Mevorchim is the previous Shabbat.
-        Skip Rosh Chodesh Tishrei.
+        Skip Rosh Chodesh Tishrei.
         """
         # 1) figure out the date of the *next* Shabbat
         wd = today.weekday()  # Monday=0 … Saturday=5
@@ -272,7 +269,7 @@ class YidCalHelper:
         """
         Compute the exact molad for the Hebrew month containing `today`
         (if day<3) or for the *next* Hebrew month (if day≥3), using pyluach’s
-        built‑in molad_announcement().
+        built-in molad_announcement().
         """
         # 1) Pick the target year/month
         hd = PHebrewDate.from_pydate(today)
@@ -384,4 +381,3 @@ def int_to_hebrew(num: int) -> str:
     if len(result) > 1:
         return f"{result[:-1]}\u05F4{result[-1]}"
     return f"{result}\u05F3"
-    
