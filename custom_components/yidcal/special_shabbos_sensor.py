@@ -1,6 +1,7 @@
 # custom_components/yidcal/special_shabbos_sensor.py
 
 from datetime import datetime
+import re
 from homeassistant.components.sensor import SensorEntity
 from .yidcal_lib import specials
 from .device import YidCalDevice
@@ -37,8 +38,8 @@ class SpecialShabbosSensor(YidCalDevice, SensorEntity):
         self.entity_id = f"sensor.yidcal_{slug}"
         # internal state string
         self._state: str = ""
-        # expose one boolean attribute per possible event
-        self._attr_extra_state_attributes: dict[str, bool] = {}
+        # expose one boolean attribute per possible event + mevorchim helpers
+        self._attr_extra_state_attributes: dict[str, bool | str | None] = {}
 
     @property
     def state(self) -> str:
@@ -51,11 +52,30 @@ class SpecialShabbosSensor(YidCalDevice, SensorEntity):
         except Exception:
             raw = ""
 
-        # split the raw hyphen-joined string into individual events
-        events = raw.split("־") if raw else []
-        # update the sensor state
+        # Keep the state exactly as produced by specials
         self._state = raw
-        # build attributes: True if the event is in the upcoming list
-        self._attr_extra_state_attributes = {
-            ev: (ev in events) for ev in self.POSSIBLE_EVENTS
-        }
+
+        # Split on ASCII hyphen '-' or Hebrew maqaf '־', tolerating spaces
+        parts = [p.strip() for p in re.split(r"\s*[־-]\s*", raw) if p.strip()] if raw else []
+
+        # Standard event booleans
+        attrs = {ev: (ev in parts) for ev in self.POSSIBLE_EVENTS}
+
+        # Add Mevorchim info as separate attributes
+        is_mev = None
+        mev_month = None
+        for p in parts:
+            if p.startswith("מברכים חודש"):
+                is_mev = True
+                # "מברכים חודש XXXXX"
+                mev_month = p.replace("מברכים חודש", "", 1).strip() or None
+                break
+        if is_mev is None:
+            is_mev = False
+
+        attrs.update({
+            "שבת מברכים": is_mev,
+            "חודש_מברכים": mev_month,  # e.g. "כסלו", "שבט", etc. or None
+        })
+
+        self._attr_extra_state_attributes = attrs
