@@ -29,6 +29,7 @@ from .yidcal_lib.helper import YidCalHelper
 from .sensor import ShabbosMevorchimSensor, UpcomingShabbosMevorchimSensor
 from .no_music_sensor import NoMusicSensor
 from .upcoming_yomtov_sensor import UpcomingYomTovSensor
+from .slichos_sensor import SlichosSensor 
 from .nine_days_sensor import NineDaysSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
@@ -462,6 +463,7 @@ async def async_setup_entry(
         UpcomingShabbosMevorchimSensor(hass, helper),
         NoMeluchaSensor(hass, candle, havdalah),
         ErevHolidaySensor(hass, candle),
+        SlichosSensor(hass, candle, havdalah),
         NoMusicSensor(hass, candle, havdalah),
         UpcomingYomTovSensor(hass, candle, havdalah),
         NineDaysSensor(hass, candle, havdalah),
