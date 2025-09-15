@@ -28,7 +28,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """
     Continuous Slichos window:
-      ON  = Alef Slichos Motzaei  → Erev Yom Kippur candle-lighting
+      ON  = Alef Slichos Motzi  → Erev Yom Kippur candle-lighting
       OFF = whenever 'festival day' (with havdalah-roll) is RH (1–2 Tishrei) or Shabbos
     """
 
@@ -93,7 +93,7 @@ class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         # If we're before Tishrei (months 1..6), the upcoming Tishrei is year+1
         target_year = hd_fest.year if hd_fest.month >= 7 else hd_fest.year + 1
 
-        # ---- Global start: Alef Slichos Motzaei ----
+        # ---- Global start: Alef Slichos Motzi ----
         tishrei1_greg = PHebrewDate(target_year, 7, 1).to_pydate()
         rh_wd = tishrei1_greg.weekday()  # Mon=0 ... Sun=6
 
@@ -105,7 +105,7 @@ class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         if rh_wd in (0, 1):
             alef_shabbos -= timedelta(days=7)
 
-        # Start = that Motzaei's havdalah (sunset + havdalah_offset)
+        # Start = that Motzi's havdalah (sunset + havdalah_offset)
         alef_start = (
             ZmanimCalendar(geo_location=geo, date=alef_shabbos)
             .sunset().astimezone(tz)
@@ -130,11 +130,12 @@ class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Now": now.isoformat(),
             #"Festival_Gregorian": festival_date.isoformat(),
             #"Festival_Hebrew": f"{hd_fest.month}/{hd_fest.day}/{hd_fest.year}",
-            "Global_Start_Alef_Motzaei": alef_start.isoformat(),
+            "Global_Start_Alef_Motzi": alef_start.isoformat(),
             "Global_End_Erev_YK_Candle": erev_yk_candle.isoformat(),
             "Excluded_Rosh_Hashanah": is_rosh_hashanah,
             "Excluded_Shabbos": is_shabbos,
             "In_Global_Window": in_global_window,
             #"RH_Weekday": rh_wd,  # Mon=0 ... Sun=6
         }
+
 
