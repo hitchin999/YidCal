@@ -33,6 +33,7 @@ A custom Home Assistant integration that provides:
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
 * **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
+* **Slichos** (`binary_sensor.yidcal_slichos`) Continuous Selichos period: turns **on** at **Alef Slichos** Motzi (havdalah) and stays on until **Erev Yom Kippur** candle-lighting; auto-**off** on any **Shabbos** or **Rosh Hashanah (1–2 Tishrei)** within the span.
 * **Zman Talis & Tefilin** (`sensor.yidcal_zman_tallis_tefilin`) – Misheyakir: Alos HaShachar + configured offset
 * **Sof Zman Krias Shma (MGA)** (`sensor.yidcal_sof_zman_krias_shma_mga`) – end-of-Shema, Magen Avraham
 * **Sof Zman Krias Shma (GRA)** (`sensor.yidcal_sof_zman_krias_shma_gra`) – end-of-Shema, Vilna Ga’on
