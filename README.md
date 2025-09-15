@@ -146,7 +146,7 @@ Upon installation or restart, the integration automatically creates a `/config/w
   * `hdate[astral]==1.1.2`
   * `pyluach==2.2.0`
   * `zmanim==0.3.1`
-  * `timezonefinder==6.5.9`
+  * `timezonefinder==5.2.0`
   * `geopy==2.4.1`
 
 ---
