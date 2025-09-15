@@ -99,14 +99,10 @@ ENG2HEB = {
     "Adar II": "אדר ב",   # leap year month 13
 }
 
-
-
 TIME_OF_DAY = {
     "am": lambda h: "פארטאגס" if h < 6 else "צופרי" if h < 9 else "פארמיטאג",
     "pm": lambda h: "נאכמיטאג" if h < 6 else "ביינאכט",
 }
-
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -171,8 +167,6 @@ async def async_setup_entry(
 
     async_add_entities(sensors, update_before_add=True)
 
-
-
 class MoladSensor(YidCalDevice, SensorEntity):
     _attr_name = "Molad"
 
@@ -194,7 +188,6 @@ class MoladSensor(YidCalDevice, SensorEntity):
         self._attr_native_value = None
         self._attr_extra_state_attributes: dict[str, any] = {}
 
-
     async def _handle_minute_tick(self, now):
         """Called every minute by async_track_time_interval."""
         await self.async_update()
@@ -214,14 +207,12 @@ class MoladSensor(YidCalDevice, SensorEntity):
         )
 
     async def async_update(self, now=None) -> None:
-        # ───────────────────────────────────────────────────────
         # 1) Use Home Assistant’s clock for “today”
-        # ───────────────────────────────────────────────────────
         today = dt_util.now().date()
         jdn = gdate_to_jdn(today)
         heb = HHebrewDate.from_jdn(jdn)
 
-        # Choose base_date exactly as before
+        # Choose base_date exactly as before (ONLY for molad/RC context)
         if heb.day < 3:
             base_date = today - timedelta(days=15)
         else:
@@ -234,12 +225,15 @@ class MoladSensor(YidCalDevice, SensorEntity):
             self._attr_native_value = None
             return
 
+        # Compute Mevorchim flags for *today*, not for base_date
+        is_mev_today = self.helper.is_shabbos_mevorchim(today)
+        is_upcoming_today = self.helper.is_upcoming_shabbos_mevorchim(today)
+
         m = details.molad
         h, mi = m.hours, m.minutes
         tod = TIME_OF_DAY[m.am_or_pm](h)
         chal = m.chalakim
         chal_txt = "חלק" if chal == 1 else "חלקים"
-
 
         tz = ZoneInfo(self.hass.config.time_zone)
         if now:
@@ -266,7 +260,7 @@ class MoladSensor(YidCalDevice, SensorEntity):
         if m.day == "Shabbos" and m.dt >= hav_end:
             is_special = True
         elif m.day == "Sunday":
-            # before Sunday 4 AM local Jerusalem
+            # before Sunday 4 AM local Jerusalem
             four_am = datetime(
                 m.date.year, m.date.month, m.date.day,
                 4, 0,
@@ -274,7 +268,6 @@ class MoladSensor(YidCalDevice, SensorEntity):
             )
             if m.dt < four_am:
                 is_special = True
-
 
         hh12 = h
         day_yd = 'מוצש"ק' if is_special else DAY_MAPPING.get(m.day, m.day)
@@ -284,9 +277,8 @@ class MoladSensor(YidCalDevice, SensorEntity):
         else:
             state = f"מולד {day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {hh12}"
         self._attr_native_value = state
-        # ───────────────────────────────────────────────────────
+
         # 2) Rosh Chodesh attributes (unchanged)
-        # ───────────────────────────────────────────────────────
         rc = details.rosh_chodesh
         rc_mid = [f"{gd.isoformat()}T00:00:00Z" for gd in rc.gdays]
 
@@ -298,11 +290,8 @@ class MoladSensor(YidCalDevice, SensorEntity):
 
         rc_days = [DAY_MAPPING.get(d, d) for d in rc.days]
         rc_text = rc_days[0] if len(rc_days) == 1 else " & ".join(rc_days)
-        
 
-        # ───────────────────────────────────────────────────────
-        # 3) Compute the molad’s Hebrew‐month via pyluach (fixed)
-        # ───────────────────────────────────────────────────────
+        # 3) Compute the molad’s Hebrew‐month via pyluach
         hd = PHebrewDate.from_pydate(today)
         if hd.day < 3:
             target_year, target_month = hd.year, hd.month
@@ -313,13 +302,9 @@ class MoladSensor(YidCalDevice, SensorEntity):
             except ValueError:
                 target_year, target_month = hd.year + 1, 1
 
-        # Compute the Hebrew‐month name directly (e.g. "אב", "טבת", etc.)
         molad_month_name = PHebrewDate(target_year, target_month, 1).month_name(True)
         
-        # ───────────────────────────────────────────────────────
         # 4) Add Full_Molad attribute
-        # ───────────────────────────────────────────────────────
-        # Use the original day (not motzei-adjusted) and always include time of day
         original_day_yd = DAY_MAPPING.get(m.day, m.day)
         if is_special:
             molad_part = f"מוצש\"ק, {mi} מינוט און {chal} {chal_txt} נאך {h}"
@@ -331,7 +316,6 @@ class MoladSensor(YidCalDevice, SensorEntity):
         else:
             full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part}"
 
-
         self._attr_extra_state_attributes = {
             "Day": day_yd,
             "Hours": h,
@@ -339,16 +323,16 @@ class MoladSensor(YidCalDevice, SensorEntity):
             "Time_Of_Day": "" if is_special else tod,
             "Chalakim": chal,
             "Friendly": state,
-            #"Rosh_Chodesh_Midnight": rc_mid,
+            # "Rosh_Chodesh_Midnight": rc_mid,
             "Rosh_Chodesh_Nightfall": rc_night,
             "Rosh_Chodesh": rc_text,
             "Rosh_Chodesh_Days": rc_days,
-            "Is_Shabbos_Mevorchim": details.is_shabbos_mevorchim,
-            "Is_Upcoming_Shabbos_Mevorchim": details.is_upcoming_shabbos_mevorchim,
-            "Month_Name": molad_month_name,  # now a string, not a method
+            # Use TODAY-based flags (fixes mevorchim visibility in attributes)
+            "Is_Shabbos_Mevorchim": is_mev_today,
+            "Is_Upcoming_Shabbos_Mevorchim": is_upcoming_today,
+            "Month_Name": molad_month_name,
             "Full_Molad": full_molad,
         }
-
 
     def update(self) -> None:
         self.hass.async_create_task(self.async_update())
@@ -356,7 +340,6 @@ class MoladSensor(YidCalDevice, SensorEntity):
     @property
     def icon(self) -> str:
         return "mdi:calendar-star"
-
 
 class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
     """Sensor for standalone day label in Yiddish."""
@@ -400,17 +383,12 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         if current >= s["sunset"]:
             hdate = PHebrewDate(hdate.year, hdate.month, hdate.day) + 1
 
-        # Holiday
-        #is_tov = bool(hdate.festival(israel=False, include_working_days=False))
-
         # Shabbos
         wd = current.weekday()
         is_shab = (wd == 4 and current >= candle) or (wd == 5 and current < havdalah)
 
         if is_shab:
             lbl = "שבת קודש"
-        #elif is_tov:
-            #lbl = "יום טוב"
         elif wd == 4 and current.hour >= 12:
             lbl = 'ערש\"ק'
         elif wd == 5 and current >= havdalah:
@@ -435,7 +413,6 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
             self.async_update,
             timedelta(hours=1),
         )
-
 
 class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Shabbos Mevorchim"
@@ -486,44 +463,43 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
         )
+
     async def async_update(self, now: datetime | None = None) -> None:
         """ON from Fri candle-lighting until Sat havdalah, only for a Mevorchim Shabbos."""
         try:
             tz = ZoneInfo(self.hass.config.time_zone)
-            today_date = date.today()
-            weekday = today_date.weekday()
+            today = date.today()
+            wd = today.weekday()  # 0=Mon … 4=Fri, 5=Sat
 
-            # 1) Check if this is the right Shabbos:
-            is_mev = False
-            if weekday == 4:  # Friday → tomorrow is Saturday
-                is_mev = self.helper.is_shabbos_mevorchim(today_date + timedelta(days=1))
-            elif weekday == 5:  # Saturday itself
-                is_mev = self.helper.is_shabbos_mevorchim(today_date)
+            # Which Shabbos are we talking about, and is it Mevorchim?
+            if wd == 4:          # Friday → tomorrow is Shabbos
+                shabbos = today + timedelta(days=1)
+                friday = today
+                saturday = shabbos
+            elif wd == 5:        # Saturday
+                shabbos = today
+                friday = today - timedelta(days=1)
+                saturday = today
+            else:
+                self._attr_is_on = False
+                return
 
+            is_mev = self.helper.is_shabbos_mevorchim(shabbos)
             if not is_mev:
                 self._attr_is_on = False
                 return
 
-            # 2) Compute on/off times
+            # Use Friday for candle-lighting and Saturday for havdalah (bug fix)
             loc = LocationInfo(
                 latitude=self.hass.config.latitude,
                 longitude=self.hass.config.longitude,
                 timezone=self.hass.config.time_zone,
             )
-            # Friday sunset
-            sun_today = sun(loc.observer, date=today_date, tzinfo=tz)
-            fri_sunset = sun_today["sunset"]
+            fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
+            sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
 
-            # Saturday sunset
-            sat_date = today_date + timedelta(days=(5 - weekday))
-            sun_sat = sun(loc.observer, date=sat_date, tzinfo=tz)
-            sat_sunset = sun_sat["sunset"]
-
-            # ON at Friday candle-lighting
             on_time = fri_sunset - timedelta(minutes=self._candle_offset)
-            # OFF at Saturday havdalah
             off_time = sat_sunset + timedelta(minutes=self._havdalah_offset)
-
             now_local = (now or datetime.now(tz))
 
             self._attr_is_on = (on_time <= now_local < off_time)
@@ -535,7 +511,6 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     @property
     def icon(self) -> str:
         return "mdi:star-outline"
-
 
 class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Upcoming Shabbos Mevorchim"
@@ -571,7 +546,6 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             offset=timedelta(minutes=-self.helper._candle_offset),
         )
     
-        
     async def async_update(self, now=None) -> None:
         tz = ZoneInfo(self.hass.config.time_zone)
         today = date.today()
@@ -612,9 +586,6 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
         self._havdalah_offset = havdalah_offset
         self._attr_native_value = None
 
-    # ──────────────────────────────
-    # Set up listeners
-    # ──────────────────────────────
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
@@ -646,9 +617,6 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
         """Called when the Molad sensor’s state changes—just re‐run async_update."""
         await self.async_update()
 
-    # ──────────────────────────────
-    # Core calculation
-    # ──────────────────────────────
     async def async_update(self, _now: datetime | None = None) -> None:
         """Compute whether *now* is inside any Rosh-Chodesh interval."""
         tz = ZoneInfo(self.hass.config.time_zone)
@@ -689,9 +657,6 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
 
         self._attr_native_value = val
 
-    # ──────────────────────────────
-    # Availability
-    # ──────────────────────────────
     @property
     def available(self) -> bool:
         main = self.hass.states.get("sensor.yidcal_molad")
