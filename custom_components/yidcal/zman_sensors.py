@@ -117,32 +117,59 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         dawn       = sunrise - timedelta(minutes=72)
         candle_cut = sunset - timedelta(minutes=self._candle)
 
-        # Determine eve date
-        if now >= candle_cut:
-            check_date = today + timedelta(days=1)
-        else:
-            check_date = today
+        # ── Find the next Erev day (Erev-Yom-Tov or Erev-Shabbos) ─────────────
+        eve_date = None
+        reason = None  # optional debug
 
-        hd = HDateInfo(check_date, diaspora=self._diaspora)
-        is_yomtov = hd.is_yom_tov
+        # look ahead up to 7 days (inclusive) to catch next Friday from a late Friday
+        for i in range(0, 8):  # 0..7
+            d = today + timedelta(days=i)
 
-        if is_yomtov:
-            start = check_date
-            while HDateInfo(start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                start -= timedelta(days=1)
-            eve_date = start - timedelta(days=1)
-        else:
+            # Flags for this day and the following day
+            hd_d  = HDateInfo(d, diaspora=self._diaspora)
+            hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+            yom_d  = hd_d.is_yom_tov
+            yom_d1 = hd_d1.is_yom_tov
+
+            is_fri    = (d.weekday() == 4)
+            is_shabbos= (d.weekday() == 5)
+
+            # Erev-Shabbos = Friday that is not Yom Tov
+            ev_shabbos = is_fri and not yom_d
+            # Erev-Yom-Tov = the civil day *before* a Yom Tov day (tomorrow is YT),
+            # excluding cases where today is Shabbos (no candle-lighting then).
+            ev_holiday = yom_d1 and not is_shabbos
+
+            if not (ev_shabbos or ev_holiday):
+                continue
+
+            # Candle-lighting target on that Erev day
+            cal_d = ZmanimCalendar(geo_location=self._geo, date=d)
+            sunset_d = cal_d.sunset().astimezone(self._tz)
+            target_d = sunset_d - timedelta(minutes=self._candle)
+
+            # If it's today and we've already passed candle-lighting, skip to next
+            if i == 0 and now >= target_d:
+                continue
+
+            eve_date = d
+            reason = "Erev Shabbos" if ev_shabbos else "Erev Yom Tov"
+            break
+
+        # Fallback: if nothing matched, default to the next Friday
+        if eve_date is None:
             wd = today.weekday()
-            if wd == 5 and now < (sunset + timedelta(minutes=self._havdalah)):
-                eve_date = today - timedelta(days=1)
-            else:
-                days_to_fri = (4 - wd) % 7
-                eve_date = today + timedelta(days=days_to_fri)
+            days_to_fri = (4 - wd) % 7
+            eve_date = today + timedelta(days=days_to_fri)
+            reason = "Fallback to next Friday"
 
+        # Compute final target and round half-up to the minute
         cal_eve = ZmanimCalendar(geo_location=self._geo, date=eve_date)
         s_eve   = cal_eve.sunset().astimezone(self._tz)
         target  = s_eve - timedelta(minutes=self._candle)
+
         full_iso = target.isoformat()
+        
         # half‑up rounding
         if target.second >= 30:
             target += timedelta(minutes=1)
@@ -161,7 +188,9 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "City":                   self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
             "Latitude":               self._geo.latitude,
             "Longitude":              self._geo.longitude,
+            #"Reason":                 reason,  # optional for debugging
         }
+
 
 # ─── Zman Motzi Sensor ────────────────────────────────────────────────────────
 
