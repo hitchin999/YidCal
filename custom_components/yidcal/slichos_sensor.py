@@ -119,23 +119,52 @@ class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         in_global_window = (alef_start <= now < erev_yk_candle)
 
-        # ---- Exclusions by "festival day" (with havdalah-roll) ----
-        is_rosh_hashanah = (hd_fest.month == 7 and hd_fest.day in (1, 2))
-        is_shabbos = (festival_date.weekday() == 5)  # Saturday
+        # ---- Exclusions as real-time windows (Candle → Havdalah) ----
+        
+        # 1) Shabbos window (this week)
+        wd = actual_date.weekday()                 # Mon=0 .. Sat=5, Sun=6
+        friday = actual_date - timedelta(days=(wd - 4) % 7)
+        saturday = friday + timedelta(days=1)
+        
+        cal_f = ZmanimCalendar(geo_location=geo, date=friday)
+        shabbos_start = cal_f.sunset().astimezone(tz) - timedelta(minutes=self._candle_offset)
+        
+        cal_s = ZmanimCalendar(geo_location=geo, date=saturday)
+        shabbos_end = cal_s.sunset().astimezone(tz) + timedelta(minutes=self._havdalah_offset)
+        
+        excluded_shabbos = (shabbos_start <= now < shabbos_end)
+        
+        # 2) Rosh Hashanah window (Tishrei 1–2 of target_year)
+        tishrei1_greg = PHebrewDate(target_year, 7, 1).to_pydate()
+        tishrei2_greg = tishrei1_greg + timedelta(days=1)
+        
+        cal_eve_rh = ZmanimCalendar(geo_location=geo, date=tishrei1_greg - timedelta(days=1))
+        rh_start = cal_eve_rh.sunset().astimezone(tz) - timedelta(minutes=self._candle_offset)
+        
+        cal_rh2 = ZmanimCalendar(geo_location=geo, date=tishrei2_greg)
+        rh_end = cal_rh2.sunset().astimezone(tz) + timedelta(minutes=self._havdalah_offset)
+        
+        excluded_rosh_hashanah = (rh_start <= now < rh_end)
+        
+        # Final state
+        is_on = in_global_window and not (excluded_shabbos or excluded_rosh_hashanah)
 
-        is_on = in_global_window and not (is_rosh_hashanah or is_shabbos)
 
         self._attr_is_on = is_on
         self._attr_extra_state_attributes = {
             "Now": now.isoformat(),
             #"Festival_Gregorian": festival_date.isoformat(),
             #"Festival_Hebrew": f"{hd_fest.month}/{hd_fest.day}/{hd_fest.year}",
-            "Global_Start_Alef_Motzi": alef_start.isoformat(),
+            "Global_Start_Alef_Slichos_Motzi": alef_start.isoformat(),
             "Global_End_Erev_YK_Candle": erev_yk_candle.isoformat(),
-            "Excluded_Rosh_Hashanah": is_rosh_hashanah,
-            "Excluded_Shabbos": is_shabbos,
+            "Excluded_Rosh_Hashanah": excluded_rosh_hashanah,
+            "Excluded_Shabbos": excluded_shabbos,
             "In_Global_Window": in_global_window,
-            #"RH_Weekday": rh_wd,  # Mon=0 ... Sun=6
+            #"RH_Weekday": rh_wd,
+            #"Shabbos_Start": shabbos_start.isoformat(),
+            #"Shabbos_End": shabbos_end.isoformat(),
+            #"RH_Start": rh_start.isoformat(),
+            #"RH_End": rh_end.isoformat(),
         }
 
 
