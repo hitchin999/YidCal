@@ -29,11 +29,15 @@ A custom Home Assistant integration that provides:
 * **No Music** (`binary_sensor.yidcal_no_music`) Indicates when music is prohibited (e.g., in Sefirah, three weeks)
 * **Upcoming Shabbos Mevorchim** (`binary_sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim
 * **Shabbos Mevorchim** (`binary_sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim
-* **Special Prayer Sensor** (`sensor.yidcal_special_prayer`) Aggregates special insertions (e.g., ותן טל, יעלה ויבוא, על הניסים)
+* **Special Prayer Sensor** (`sensor.yidcal_special_prayer`)  
+  * Aggregates all liturgical insertions (e.g., מוריד הגשם / מוריד הטל, ותן טל ומטר לברכה / ותן ברכה, יעלה ויבוא, על הניסים, עננו, נחם)  
+  * **Attribute `הושענות`** – shows the daily Hoshana during Sukkot (e.g., למען אמתך, אבן שתיה, אום נצורה)
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
 * **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
-* **Slichos** (`binary_sensor.yidcal_slichos`) Continuous Selichos period: turns **on** at **Alef Slichos** Motzi (havdalah) and stays on until **Erev Yom Kippur** candle-lighting; auto-**off** on any **Shabbos** or **Rosh Hashanah (1–2 Tishrei)** within the span.
+* **Slichos** (`binary_sensor.yidcal_slichos`) 
+  * Continuous Selichos window: turns **on** at **Alef Slichos** Motzaei-Shabbos (havdalah) and stays on until **Erev Yom Kippur** candle-lighting; auto-**off** on any intervening **Shabbos** or **Rosh Hashanah (1–2 Tishrei)**.  
+  * **Attribute `Selichos_Label`** – Hebrew label for the current Selichos day (e.g., סליחות ליום א׳, סליחות לערב ר״ה, סליחות ליום חמישי מעשי״ת)
 * **Zman Talis & Tefilin** (`sensor.yidcal_zman_tallis_tefilin`) – Misheyakir: Alos HaShachar + configured offset
 * **Sof Zman Krias Shma (MGA)** (`sensor.yidcal_sof_zman_krias_shma_mga`) – end-of-Shema, Magen Avraham
 * **Sof Zman Krias Shma (GRA)** (`sensor.yidcal_sof_zman_krias_shma_gra`) – end-of-Shema, Vilna Ga’on
@@ -78,16 +82,16 @@ To ensure you calculate sunrise/sunset on the correct center of your municipalit
 
 After adding the integration via UI, go to **Settings → Devices & Services → YidCal → Options** to set:
 
-| Option                                          | Default | Description                                                                                                |
-| ----------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `וויפיל מינוט פארן שקיעה איז הדלקת הנרות`       | 15      | Minutes before sunset for Erev Shabbos                                                                     |
-| `וויפיל מינוט נאכן שקיעה איז מוצאי`             | 72      | Minutes after sunset for Motzaei Shabbos                                                                   |
-| `וויפיל מינוט נאכן עלות איז טלית ותפילין`       | 22      | Minutes after Alos HaShachar for Talis & Tefilin (Misheyakir)                                              |
-| `נעם אראפ די נְקֻודּוֹת`                        | false   | Remove Hebrew vowel points from Omer text                                                                  |
-| `צולייגען באזונדערע סענסאָרס פאר די ימים טובים` | true    | Add/remove separate binary sensors for each holiday (they always show as attributes in the holiday sensor) |
-| `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די`          | yiddish | Choose how to display the day label (Yiddish or Hebrew)                                                    |
-| `צולייגען די וועכנטליכע יארצייטן סענסאר` | false   | Enable the weekly Yurtzeit sensor                                                                          |
-
+| Option                                                            | Default   | Description                                                                                                                    |
+| ----------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `וויפיל מינוט פארן שקיעה איז הדלקת הנרות`                         | `15`      | Minutes before sunset for Erev Shabbos / Yom-Tov candle-lighting                                                               |
+| `וויפיל מינוט נאכן שקיעה איז מוצאי`                               | `72`      | Minutes after sunset for Motzaei Shabbos / Yom-Tov havdalah                                                                    |
+| `וויפיל מינוט נאכן עלות איז טלית ותפילין`                         | `22`      | Minutes after **Alos HaShachar** for Talis & Tefilin (Misheyakir)                                                              |
+| `נעם אראפ די נְקֻודּוֹת`                                          | `false`   | Remove Hebrew vowel-points (nikud) from Omer text                                                                              |
+| `צולייגען באזונדערע סענסאָרס פאר די ימים טובים`                   | `true`    | Add/remove individual binary sensors for each holiday (holidays always remain as attributes)                                   |
+| `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די`        | `yiddish` | Choose Yiddish (`זונטאג, מאנטאג`) or Hebrew (`יום א׳, יום ב׳`) labels for the day-of-week sensor                             |
+| `צולייגען די וועכנטליכע יארצייטן סענסאר`                         | `false`   | Enable the weekly Yahrzeit summary sensor                                                                                      |
+| `ווען זאל זיך די סליחות טאג טוישן`                               | `זמן הבדלה`| When the Selichos label advances to the next day: `havdalah` = after sunset + havdalah-offset; `midnight` = at 12 AM local time |
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. You must manually remove them via **Settings → Entities**, or delete and re-add the integration with the holiday sensors option turned off.
 
 ---
