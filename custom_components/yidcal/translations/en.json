@@ -15,7 +15,8 @@
           "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
           "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
-          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן"
+          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן",
+					"slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן"
         }
       }
     }
@@ -32,7 +33,8 @@
           "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
           "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
-          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן"
+          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן",
+					"slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן"
         }
       }
     }
