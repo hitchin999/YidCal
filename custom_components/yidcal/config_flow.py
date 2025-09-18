@@ -12,8 +12,10 @@ DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 # New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
 CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"
-CONF_YAHRTZEIT_DATABASE = "yahrtzeit_database"  # New
-DEFAULT_YAHRTZEIT_DATABASE = "standard"  # New
+CONF_YAHRTZEIT_DATABASE = "yahrtzeit_database"
+DEFAULT_YAHRTZEIT_DATABASE = "standard"
+CONF_SLICHOS_LABEL_ROLLOVER = "slichos_label_rollover"
+DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
 
 class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for YidCal."""
@@ -51,7 +53,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
                     vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=False): bool,
-                    vol.Optional(  # New option
+                    vol.Optional(
                         CONF_YAHRTZEIT_DATABASE,
                         default=DEFAULT_YAHRTZEIT_DATABASE,
                     ): selector({
@@ -59,6 +61,17 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "options": [
                                 {"value": "standard", "label": "סטאנדארט (דיפאלט)"},
                                 {"value": "satmar", "label": "אלטערנאטיוו (סאטמאר)"},
+                            ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_SLICHOS_LABEL_ROLLOVER,
+                        default=DEFAULT_SLICHOS_LABEL_ROLLOVER,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "havdalah", "label": "זמן הבדלה"},
+                                {"value": "midnight", "label": "12 AM"},
                             ]
                         }
                     }),
@@ -75,7 +88,8 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_INCLUDE_DATE: user_input[CONF_INCLUDE_DATE],
             CONF_INCLUDE_ATTR_SENSORS: user_input[CONF_INCLUDE_ATTR_SENSORS],
             CONF_ENABLE_WEEKLY_YURTZEIT: user_input.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
-            CONF_YAHRTZEIT_DATABASE: user_input.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),  # New
+            CONF_YAHRTZEIT_DATABASE: user_input.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
+            CONF_SLICHOS_LABEL_ROLLOVER: user_input.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
         }
         return self.async_create_entry(title="YidCal", data=data)
     @staticmethod
@@ -122,9 +136,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_ENABLE_WEEKLY_YURTZEIT,
             data.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
         )
-        yahrtzeit_database_default = opts.get(  # New
+        yahrtzeit_database_default = opts.get(
             CONF_YAHRTZEIT_DATABASE,
             data.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
+        )
+        slichos_label_rollover = opts.get(
+            CONF_SLICHOS_LABEL_ROLLOVER,
+            data.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
         )
         if user_input is None:
             schema = vol.Schema(
@@ -166,6 +184,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             "options": [
                                 {"value": "standard", "label": "סטאנדארט (דיפאלט)"},
                                 {"value": "satmar", "label": "אלטערנאטיוו (סאטמאר)"},
+                            ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_SLICHOS_LABEL_ROLLOVER,
+                        default=slichos_label_rollover,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "havdalah", "label": "זמן הבדלה"},
+                                {"value": "midnight", "label": "12 AM"},
                             ]
                         }
                     }),
