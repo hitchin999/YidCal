@@ -10,14 +10,18 @@ from .const import DOMAIN
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
 from .config_flow import CONF_INCLUDE_DATE
 from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
-from .config_flow import CONF_YAHRTZEIT_DATABASE  # New
+from .config_flow import CONF_YAHRTZEIT_DATABASE
+from .config_flow import CONF_SLICHOS_LABEL_ROLLOVER
+
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
-DEFAULT_YAHRTZEIT_DATABASE = "standard"  # New
+DEFAULT_YAHRTZEIT_DATABASE = "standard"
+DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
+
 # Sample content for custom yahrtzeits file
 CUSTOM_YAHRTZEITS_SAMPLE = """# YidCal Custom Yahrtzeits
 # Format: Date: Name
@@ -168,9 +172,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_WEEKLY_YURTZEIT,
         initial.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
     )
-    yahrtzeit_database = opts.get(  # New
+    yahrtzeit_database = opts.get(
         CONF_YAHRTZEIT_DATABASE,
         initial.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
+    )
+    slichos_label_rollover = opts.get(
+        CONF_SLICHOS_LABEL_ROLLOVER,
+        initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
     )
     # Resolve and store geo+tz config
     latitude = hass.config.latitude
@@ -189,7 +197,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
-        CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,  # New
+        CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,
+        CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
     }
     # Store global config for sensors
     hass.data[DOMAIN]["config"] = {
@@ -206,7 +215,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "include_date": include_date,
         "havdalah_offset": havdala,
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
-        CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,  # New
+        CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,
+        CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
     }
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -244,9 +254,13 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_ENABLE_WEEKLY_YURTZEIT,
         initial.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
     )
-    yahrtzeit_database = opts.get(  # New
+    yahrtzeit_database = opts.get(
         CONF_YAHRTZEIT_DATABASE,
         initial.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
+    )
+    slichos_label_rollover = opts.get(
+        CONF_SLICHOS_LABEL_ROLLOVER,
+        initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
     )
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -258,7 +272,8 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
-        CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,  # New
+        CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,
+        CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
     }
     # Schedule the reload shortly after to apply new options
     async_call_later(
