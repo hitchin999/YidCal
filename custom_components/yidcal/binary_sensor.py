@@ -210,6 +210,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._tz = ZoneInfo(cfg["tzname"])
         self._geo: GeoLocation | None = None
         self._attr_extra_state_attributes: dict[str, str | bool] = {}
+        self._havdalah = cfg.get("havdalah_offset", 72)
 
     def _schedule_update(self, *_args) -> None:
         self.hass.loop.call_soon_threadsafe(
@@ -276,43 +277,53 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         blocked_shabbos = raw_erev_shabbos and is_yomtov_today
         blocked_holiday = raw_erev_holiday and is_shabbos_today
 
-        # find next window start/end and round them
+        # find next window start/end and round them (melacha-day only; no YT→YT, no Sat→YT)
         next_start = next_end = None
+
         for i in range(32):
-            d = today + timedelta(days=i)
-            hd_d = HDateInfo(d, diaspora=self._diaspora)
-            hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
-            yomd = hd_d.is_yom_tov
-            yomd1 = hd_d1.is_yom_tov
-            shd = d.weekday() == 5
-            ev_sh = (d.weekday() == 4 and not yomd)
-            ev_hol = (yomd1 and not shd)
-            if not (ev_sh or ev_hol):
+            d       = today + timedelta(days=i)
+            hd_d    = HDateInfo(d, diaspora=self._diaspora)
+            hd_d1   = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+            is_yt   = hd_d.is_yom_tov
+            is_yt1  = hd_d1.is_yom_tov
+            is_fri  = (d.weekday() == 4)
+            is_sat  = (d.weekday() == 5)
+
+            # Eligible Erev days (match the binary's ON logic):
+            #  A) Erev Shabbos: Friday and NOT YT today
+            #  B) Weekday → YT: NOT Saturday, NOT YT today, YT tomorrow
+            is_erev_shabbos     = is_fri and not is_yt
+            is_erev_hol_weekday = (not is_sat) and (not is_yt) and is_yt1
+
+            if not (is_erev_shabbos or is_erev_hol_weekday):
                 continue
 
-            cal_d = ZmanimCalendar(geo_location=self._geo, date=d)
+            cal_d     = ZmanimCalendar(geo_location=self._geo, date=d)
             sunrise_d = cal_d.sunrise().astimezone(self._tz)
-            sunset_d = cal_d.sunset().astimezone(self._tz)
-            raw_start = sunrise_d - timedelta(minutes=72)
-            raw_end = sunset_d - timedelta(minutes=self._candle)
+            sunset_d  = cal_d.sunset().astimezone(self._tz)
 
-            # skip if today’s window already past
+            raw_start = sunrise_d - timedelta(minutes=72)
+            raw_end   = sunset_d  - timedelta(minutes=self._candle)  # end is before sunset for these cases
+
+            # If this is today's window and we've already passed the end, skip to the next candidate
             if d == today and now >= raw_end:
                 continue
 
             next_start = round_half_up(raw_start)
-            next_end = round_half_up(raw_end)
+            next_end   = round_half_up(raw_end)
             break
 
-        # build attributes
+        # ── Build attributes ──
         attrs: dict[str, str | bool] = {
             "Now": now.isoformat(),
-            "Is_Erev_Shabbos": is_erev_shabbos,
-            "Is_Erev_Holiday": is_erev_holiday,
+            # Only true if we're inside the current Erev window AND this is the matching type
+            "Is_Erev_Shabbos":  bool(self._attr_is_on and raw_erev_shabbos),
+            "Is_Erev_Holiday":  bool(self._attr_is_on and raw_erev_holiday),
+
             "Blocked_Erev_Shabbos": blocked_shabbos,
             "Blocked_Erev_Holiday": blocked_holiday,
-            "Is_Yom_Tov_Today": is_yomtov_today,
-            "Is_Shabbos_Today": is_shabbos_today,
+            "Is_Yom_Tov_Today":     is_yomtov_today,
+            "Is_Shabbos_Today":     is_shabbos_today,
         }
         if next_start and next_end:
             attrs.update({
