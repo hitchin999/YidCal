@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import (
     async_track_time_change,
-    async_track_time_interval,
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
@@ -24,11 +23,12 @@ from zmanim.util.geo_location import GeoLocation
 from .const import DOMAIN
 from .device import YidCalDevice
 
+
 # ─── Helper: compute holiday duration via pyluach ───────────────────────────
 
 def get_holiday_duration(pydate: datetime.date) -> int:
     """
-    Return the number of consecutive Yom Tov days starting at `pydate`,
+    Return the number of consecutive Yom Tov days starting at `pydate`,
     using pyluach to detect the festival name.
     """
     hd0 = HDateInfo(pydate, diaspora=True)
@@ -53,7 +53,8 @@ def get_holiday_duration(pydate: datetime.date) -> int:
 
     return length
 
-# ─── Geo helpers ──────────────────────────────────────────────────────────────
+
+# ─── Geo helpers ────────────────────────────────────────────────────────────
 
 def _create_geo(config) -> GeoLocation:
     return GeoLocation(
@@ -68,7 +69,83 @@ async def get_geo(hass: HomeAssistant) -> GeoLocation:
     config = hass.data[DOMAIN]["config"]
     return await hass.async_add_executor_job(_create_geo, config)
 
-# ─── Zman Erev Sensor ─────────────────────────────────────────────────────────
+
+# ─── Lighting helpers for multi-day schedules ───────────────────────────────
+
+def lighting_event_for_day(
+    d: datetime.date,
+    *,
+    diaspora: bool,
+    tz: ZoneInfo,
+    geo: GeoLocation,
+    candle_offset: int,
+    havdalah_offset: int,
+) -> tuple[datetime.datetime | None, str]:
+    """
+    Return the datetime (aware) of that civil day's candle-lighting event (if any),
+    plus a machine-friendly kind:
+      - 'erev_before_sunset'             → Erev Shabbos / Erev Yom Tov (weekday)
+      - 'between_yt_after_tzeis'         → Yom Tov → Yom Tov (2nd night)
+      - 'motzaei_shabbos_after_tzeis'    → Shabbos → Yom Tov (after tzeis)
+      - 'none'                           → no lighting that civil day
+    """
+    hd_today = HDateInfo(d, diaspora=diaspora)
+    hd_tom   = HDateInfo(d + timedelta(days=1), diaspora=diaspora)
+
+    is_shabbos_today = (d.weekday() == 5)          # Saturday
+    is_shabbos_tom   = ((d + timedelta(days=1)).weekday() == 5)
+    is_yt_today = hd_today.is_yom_tov
+    is_yt_tom   = hd_tom.is_yom_tov
+
+    cal = ZmanimCalendar(geo_location=geo, date=d)
+    sunset = cal.sunset().astimezone(tz)
+
+    # Tomorrow Shabbos → standard Erev (before sunset)
+    if is_shabbos_tom:
+        return (sunset - timedelta(minutes=candle_offset), "erev_before_sunset")
+
+    # Tomorrow Yom Tov
+    if is_yt_tom:
+        if is_shabbos_today:
+            # Shabbos → YT (after tzeis)
+            return (sunset + timedelta(minutes=havdalah_offset), "motzaei_shabbos_after_tzeis")
+        if is_yt_today:
+            # YT → YT (2nd night, after tzeis)
+            return (sunset + timedelta(minutes=havdalah_offset), "between_yt_after_tzeis")
+        # Weekday → YT (before sunset)
+        return (sunset - timedelta(minutes=candle_offset), "erev_before_sunset")
+
+    return (None, "none")
+
+def label_for_kind_and_context(d: datetime.date, kind: str, *, diaspora: bool) -> str:
+    """
+    Human label for dashboards (short, clear).
+    """
+    if kind == "erev_before_sunset":
+        # Tomorrow’s context
+        tom = d + timedelta(days=1)
+        is_shabbos_tom = (tom.weekday() == 5)
+        is_yt_tom      = HDateInfo(tom, diaspora=diaspora).is_yom_tov
+
+        # If the first Yom Tov day is on Shabbos (e.g., Rosh Hashanah on Shabbos)
+        if is_shabbos_tom and is_yt_tom:
+            return "Shabbos & Yom Tov"
+
+        if is_shabbos_tom:
+            return "Shabbos"
+        if is_yt_tom:
+            return "Yom Tov – Night 1"
+        return "Candles"
+
+    if kind == "between_yt_after_tzeis":
+        return "Yom Tov – Night 2"
+
+    if kind == "motzaei_shabbos_after_tzeis":
+        return "Motzi Shabbos → Yom Tov"
+
+    return "—"
+
+# ─── Zman Erev Sensor ───────────────────────────────────────────────────────
 
 class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -109,90 +186,225 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
+        yesterday = today - timedelta(days=1)
+        midnight_next = datetime.datetime.combine(
+            today + timedelta(days=1), datetime.time(0), tzinfo=self._tz
+        )
 
-        z_civil    = {"sunrise": None, "sunset": None}
-        cal_today  = ZmanimCalendar(geo_location=self._geo, date=today)
-        sunrise    = cal_today.sunrise().astimezone(self._tz)
-        sunset     = cal_today.sunset().astimezone(self._tz)
-        dawn       = sunrise - timedelta(minutes=72)
-        candle_cut = sunset - timedelta(minutes=self._candle)
+        def half_up(dt_local: datetime.datetime) -> datetime.datetime:
+            if dt_local.second >= 30:
+                dt_local += timedelta(minutes=1)
+            return dt_local.replace(second=0, microsecond=0)
 
-        # ── Find the next Erev day (Erev-Yom-Tov or Erev-Shabbos) ─────────────
-        eve_date = None
-        reason = None  # optional debug
+        def fmt_simple(dt_local: datetime.datetime) -> str:
+            h, m = dt_local.hour % 12 or 12, dt_local.minute
+            ampm = "AM" if dt_local.hour < 12 else "PM"
+            return f"{h}:{m:02d} {ampm}"
 
-        # look ahead up to 7 days (inclusive) to catch next Friday from a late Friday
-        for i in range(0, 8):  # 0..7
+        # Today's standard before-sunset (used as a safety)
+        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
+        sunset_today = cal_today.sunset().astimezone(self._tz)
+        candle_today_std = sunset_today - timedelta(minutes=self._candle)
+
+        # What is *today's* lighting (if any)?
+        today_event, today_kind = lighting_event_for_day(
+            today,
+            diaspora=self._diaspora,
+            tz=self._tz,
+            geo=self._geo,
+            candle_offset=self._candle,
+            havdalah_offset=self._havdalah,
+        )
+
+        # Helper: find most recent past lighting (scan back up to ~10 days)
+        def most_recent_lighting_before(d0: datetime.date) -> datetime.datetime | None:
+            for back in range(1, 11):
+                d = d0 - timedelta(days=back)
+                ev, _ = lighting_event_for_day(
+                    d,
+                    diaspora=self._diaspora,
+                    tz=self._tz,
+                    geo=self._geo,
+                    candle_offset=self._candle,
+                    havdalah_offset=self._havdalah,
+                )
+                if ev is not None:
+                    return ev
+            return None
+
+        # Determine if *yesterday* was a Motzi night we care about:
+        #   - Yesterday was Shabbos (Saturday), OR
+        #   - Yesterday was Yom-Tov and *today* is NOT Yom-Tov (i.e., yesterday was the final YT day)
+        hd_yesterday = HDateInfo(yesterday, diaspora=self._diaspora)
+        hd_today = HDateInfo(today, diaspora=self._diaspora)
+        yesterday_was_shabbos = (yesterday.weekday() == 5)
+        yesterday_was_final_yt = (hd_yesterday.is_yom_tov and not hd_today.is_yom_tov)
+        allow_forward_jump_today = (yesterday_was_shabbos or yesterday_was_final_yt)
+
+        # ── Shabbos/YT daytime freeze: show *yesterday's* lighting until midnight ──
+        if (today.weekday() == 5 or hd_today.is_yom_tov) and now < midnight_next and today_event is None:
+            y_event = most_recent_lighting_before(today) or (sunset_today - timedelta(minutes=self._candle))
+            chosen_unrounded = y_event
+            chosen = half_up(y_event)
+        else:
+            if today_event is not None:
+                # There IS lighting today → show it (before or after it happens) and freeze until midnight
+                chosen_unrounded = today_event
+                chosen = half_up(today_event)
+            else:
+                # No lighting today.
+                if allow_forward_jump_today:
+                    # It's the first civil day after Motzi → now we're allowed to jump to the *next* lighting.
+                    chosen_unrounded = None
+                    chosen = None
+                    for i in range(1, 11):
+                        d = today + timedelta(days=i)
+                        ev, _ = lighting_event_for_day(
+                            d,
+                            diaspora=self._diaspora,
+                            tz=self._tz,
+                            geo=self._geo,
+                            candle_offset=self._candle,
+                            havdalah_offset=self._havdalah,
+                        )
+                        if ev is not None:
+                            chosen_unrounded = ev
+                            chosen = half_up(ev)
+                            break
+                    if chosen is None:
+                        # ultimate fallback → next Friday
+                        wd = today.weekday()
+                        days_to_fri = (4 - wd) % 7
+                        d = today + timedelta(days=days_to_fri)
+                        cal_fri = ZmanimCalendar(geo_location=self._geo, date=d)
+                        s_fri = cal_fri.sunset().astimezone(self._tz)
+                        chosen_unrounded = s_fri - timedelta(minutes=self._candle)
+                        chosen = half_up(chosen_unrounded)
+                else:
+                    # Not allowed to jump yet (e.g., Mon/Tue/Wed/Thu after midnight).
+                    # Keep showing the most recent past lighting.
+                    y_event = most_recent_lighting_before(today)
+                    if y_event is None:
+                        # fallback: use standard yesterday-style calc
+                        y_event = (sunset_today - timedelta(minutes=self._candle))
+                    chosen_unrounded = y_event
+                    chosen = half_up(y_event)
+
+        # Publish main value (rounded minute in UTC)
+        self._attr_native_value = chosen.astimezone(timezone.utc)
+
+        # ── Build multi-lighting attributes (STATIC across cluster) ──────────
+        # Collect events from yesterday through ~10 days ahead so we can
+        # backtrack to the cluster's first day if we're already inside it.
+        events = []
+        for i in range(-2, 12):  # include a couple days back
             d = today + timedelta(days=i)
+            ev, kind = lighting_event_for_day(
+                d,
+                diaspora=self._diaspora,
+                tz=self._tz,
+                geo=self._geo,
+                candle_offset=self._candle,
+                havdalah_offset=self._havdalah,
+            )
+            if ev is not None:
+                events.append((d, ev, kind))
 
-            # Flags for this day and the following day
-            hd_d  = HDateInfo(d, diaspora=self._diaspora)
-            hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
-            yom_d  = hd_d.is_yom_tov
-            yom_d1 = hd_d1.is_yom_tov
+        # Find any adjacency, then backtrack to earliest consecutive-day start (cluster anchor)
+        cluster_start_idx = None
+        for j in range(len(events) - 1):
+            if events[j + 1][0] == events[j][0] + timedelta(days=1):
+                # backtrack while previous days are also consecutive
+                k = j
+                while k - 1 >= 0 and events[k][0] == events[k - 1][0] + timedelta(days=1):
+                    k -= 1
+                cluster_start_idx = k
+                break
 
-            is_fri    = (d.weekday() == 4)
-            is_shabbos= (d.weekday() == 5)
+        def fmt_simple(dt_local: datetime.datetime) -> str:
+            h, m = dt_local.hour % 12 or 12, dt_local.minute
+            ampm = "AM" if dt_local.hour < 12 else "PM"
+            return f"{h}:{m:02d} {ampm}"
 
-            # Erev-Shabbos = Friday that is not Yom Tov
-            ev_shabbos = is_fri and not yom_d
-            # Erev-Yom-Tov = the civil day *before* a Yom Tov day (tomorrow is YT),
-            # excluding cases where today is Shabbos (no candle-lighting then).
-            ev_holiday = yom_d1 and not is_shabbos
-
-            if not (ev_shabbos or ev_holiday):
-                continue
-
-            # Candle-lighting target on that Erev day
-            cal_d = ZmanimCalendar(geo_location=self._geo, date=d)
-            sunset_d = cal_d.sunset().astimezone(self._tz)
-            target_d = sunset_d - timedelta(minutes=self._candle)
-
-            # If it's today and we've already passed candle-lighting, skip to next
-            if i == 0 and now >= target_d:
-                continue
-
-            eve_date = d
-            reason = "Erev Shabbos" if ev_shabbos else "Erev Yom Tov"
-            break
-
-        # Fallback: if nothing matched, default to the next Friday
-        if eve_date is None:
-            wd = today.weekday()
-            days_to_fri = (4 - wd) % 7
-            eve_date = today + timedelta(days=days_to_fri)
-            reason = "Fallback to next Friday"
-
-        # Compute final target and round half-up to the minute
-        cal_eve = ZmanimCalendar(geo_location=self._geo, date=eve_date)
-        s_eve   = cal_eve.sunset().astimezone(self._tz)
-        target  = s_eve - timedelta(minutes=self._candle)
-
-        full_iso = target.isoformat()
-        
-        # half‑up rounding
-        if target.second >= 30:
-            target += timedelta(minutes=1)
-        target = target.replace(second=0, microsecond=0)
-
-        self._attr_native_value = target.astimezone(timezone.utc)
-
-        lt = target.astimezone(self._tz)
-        hour, minute = lt.hour % 12 or 12, lt.minute
-        ampm = "AM" if lt.hour < 12 else "PM"
-        human = f"{hour}:{minute:02d} {ampm}"
-
-        self._attr_extra_state_attributes = {
-            "Zman_Erev_With_Seconds": full_iso,
-            "Zman_Erev_Simple":       human,
-            "City":                   self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "Latitude":               self._geo.latitude,
-            "Longitude":              self._geo.longitude,
-            #"Reason":                 reason,  # optional for debugging
+        # Base attrs (always present)
+        attrs: dict[str, object] = {
+            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude": self._geo.latitude,
+            "Longitude": self._geo.longitude,
+            # With_Seconds = UNROUNDED; Simple = ROUNDED
+            "Zman_Erev_With_Seconds": (chosen_unrounded or chosen).astimezone(self._tz).isoformat(),
+            "Zman_Erev_Simple": fmt_simple(chosen.astimezone(self._tz)),
+            # helpful flags
+            #"has_cluster": False,
+            #"cluster_size": 0,
         }
 
+        # ALWAYS initialize Day 1/2/3 placeholders (stable schema)
+        for i in (1, 2, 3):
+            attrs[f"Day_{i}_Label"] = ""
+            #attrs[f"Day_{i}_Date"] = ""
+            #attrs[f"Day_{i}_With_Seconds"] = ""
+            attrs[f"Day_{i}_Simple"] = ""
 
-# ─── Zman Motzi Sensor ────────────────────────────────────────────────────────
+        if cluster_start_idx is not None:
+            # From the first day of the cluster, take up to 3 consecutive days
+            cluster = [events[cluster_start_idx]]
+            k = cluster_start_idx + 1
+            while (
+                k < len(events)
+                and events[k][0] == cluster[-1][0] + timedelta(days=1)
+                and len(cluster) < 3
+            ):
+                cluster.append(events[k])
+                k += 1
+
+            # ---- UPDATED WINDOW GATE (dual windows) ----
+            # Show Day_* if the cluster overlaps EITHER:
+            #   A) [last regular Shabbos .. next regular Shabbos]   (handles Sun/Mon/Tue YT like RH)
+            #   B) [next regular Shabbos .. the Shabbos after that] (handles Fri Shabbos → YT)
+            wd = today.weekday()  # Mon=0..Sun=6
+            days_since_shabbos = (wd - 5) % 7
+            days_until_shabbos = (5 - wd) % 7
+            last_shabbos = today - timedelta(days=days_since_shabbos)
+            next_shabbos = today + timedelta(days=days_until_shabbos)
+            next_next_shabbos = next_shabbos + timedelta(days=7)
+
+            windowA_start = last_shabbos
+            windowA_end   = next_shabbos
+            windowB_start = next_shabbos
+            windowB_end   = next_next_shabbos
+
+            cluster_start_date = cluster[0][0]
+            cluster_end_date   = cluster[-1][0]
+
+            def overlaps(a_start: datetime.date, a_end: datetime.date,
+                         b_start: datetime.date, b_end: datetime.date) -> bool:
+                return not (a_end < b_start or a_start > b_end)
+
+            overlaps_A = overlaps(cluster_start_date, cluster_end_date, windowA_start, windowA_end)
+            overlaps_B = overlaps(cluster_start_date, cluster_end_date, windowB_start, windowB_end)
+            show_days = overlaps_A or overlaps_B
+
+            #attrs["has_cluster"] = True
+            #attrs["cluster_size"] = len(cluster)
+
+            if show_days:
+                for idx, (d, ev, kind) in enumerate(cluster, start=1):
+                    ev_unrounded_local = ev.astimezone(self._tz)
+                    # Erev uses half-up rounding for display
+                    ev_rounded_local = (ev_unrounded_local + timedelta(minutes=1)).replace(second=0, microsecond=0) \
+                        if ev_unrounded_local.second >= 30 else ev_unrounded_local.replace(second=0, microsecond=0)
+                    label = label_for_kind_and_context(d, kind, diaspora=self._diaspora)
+
+                    attrs[f"Day_{idx}_Label"] = label                # e.g., "Shabbos", "Yom Tov – Night 1"
+                    #attrs[f"Day_{idx}_Date"] = d.isoformat()
+                    #attrs[f"Day_{idx}_With_Seconds"] = ev_unrounded_local.isoformat()
+                    attrs[f"Day_{idx}_Simple"] = fmt_simple(ev_rounded_local)
+
+
+        self._attr_extra_state_attributes = attrs
+
+# ─── Zman Motzi Sensor ──────────────────────────────────────────────────────
 
 class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -233,60 +445,119 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
+        midnight_next = datetime.datetime.combine(today + timedelta(days=1), datetime.time(0), tzinfo=self._tz)
 
-        cal_today    = ZmanimCalendar(geo_location=self._geo, date=today)
-        sunset_today = cal_today.sunset().astimezone(self._tz)
-        candle_cut   = sunset_today - timedelta(minutes=self._candle)
+        def ceil_minute(dt_local: datetime.datetime) -> datetime.datetime:
+            return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-        # decide which Hebrew day (today or tomorrow) to use
-        check_date = today + timedelta(days=1) if now >= candle_cut else today
-        hd = HDateInfo(check_date, diaspora=self._diaspora)
-        is_yomtov = hd.is_yom_tov
+        def sunset_on(d: datetime.date) -> datetime.datetime:
+            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
 
-        if is_yomtov:
-            # find the first day of the festival span
-            start = check_date
+        # ---------------- IN-SPAN YOM TOV: target current span's end ----------------
+        hd_today = HDateInfo(today, diaspora=self._diaspora)
+        if hd_today.is_yom_tov:
+            # walk back to span start
+            start = today
             while HDateInfo(start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
                 start -= timedelta(days=1)
-            # compute duration via pyluach fallback
             duration = get_holiday_duration(start)
-        else:
-            wd = today.weekday()
-            if wd == 5 and now < (sunset_today + timedelta(minutes=self._havdalah)):
-                start = today - timedelta(days=1)
-            else:
-                days_to_fri = (4 - wd) % 7
-                start = today + timedelta(days=days_to_fri)
-            duration = 1
-
-        # figure out which date’s sunset to use for the final havdalah
-        if is_yomtov:
-            # festival: the last *civil* festival day is start + (duration - 1)
             end_date = start + timedelta(days=duration - 1)
+
+            target_unrounded = sunset_on(end_date) + timedelta(minutes=self._havdalah)
+            full_iso = target_unrounded.isoformat()
+
+            # freeze tonight (last YT day) until midnight
+            if today == end_date and now >= target_unrounded and now < midnight_next:
+                pass
+
+            target = ceil_minute(target_unrounded)
+            self._attr_native_value = target.astimezone(timezone.utc)
+
+            lt = target.astimezone(self._tz)
+            human = f"{(lt.hour % 12 or 12)}:{lt.minute:02d} {'AM' if lt.hour < 12 else 'PM'}"
+            self._attr_extra_state_attributes = {
+                "Zman_Motzi_With_Seconds": full_iso,
+                "Zman_Motzi_Simple": human,
+                "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+                "Latitude": self._geo.latitude,
+                "Longitude": self._geo.longitude,
+            }
+            return
+
+        # ---------------- NOT IN YT TODAY: compute candidates ----------------
+        wd = today.weekday()  # Mon=0..Sun=6; Sat=5
+
+        def next_saturday_future(now_date: datetime.date) -> datetime.date:
+            """Return the next Saturday such that its havdalah will be >= now."""
+            base = now_date if now_date.weekday() == 5 else now_date + timedelta(days=(5 - now_date.weekday()) % 7)
+            base_hav = sunset_on(base) + timedelta(minutes=self._havdalah)
+            return base if base_hav >= now else (base + timedelta(days=7))
+
+        # 1) Next Shabbos havdalah (guaranteed future-facing)
+        shabbos_date = next_saturday_future(today)
+        shabbos_havdalah_unrounded = sunset_on(shabbos_date) + timedelta(minutes=self._havdalah)
+        shabbos_havdalah_iso = shabbos_havdalah_unrounded.isoformat()
+
+        # 2) Next Yom Tov span END havdalah (walk with is_yom_tov; guaranteed future-facing)
+        yt_start: datetime.date | None = None
+        yt_end_havdalah_unrounded: datetime.datetime | None = None
+        yt_end_havdalah_iso: str | None = None
+
+        for i in range(0, 90):  # scan up to ~3 months
+            d = today + timedelta(days=i)
+            hd_d = HDateInfo(d, diaspora=self._diaspora)
+            hd_prev = HDateInfo(d - timedelta(days=1), diaspora=self._diaspora)
+            # first civil day of an upcoming YT span
+            if hd_d.is_yom_tov and not hd_prev.is_yom_tov:
+                # Walk forward while is_yom_tov stays True → end is last True day
+                span_end = d
+                j = 1
+                while HDateInfo(d + timedelta(days=j), diaspora=self._diaspora).is_yom_tov:
+                    span_end = d + timedelta(days=j)
+                    j += 1
+                cand_unrounded = sunset_on(span_end) + timedelta(minutes=self._havdalah)
+                if cand_unrounded >= now:
+                    yt_start = d
+                    yt_end_havdalah_unrounded = cand_unrounded
+                    yt_end_havdalah_iso = cand_unrounded.isoformat()
+                    break
+
+        # 3) Cluster override: if next YT starts the day AFTER the next Shabbos,
+        #    show the END of that YT span (not Motzaei Shabbos).
+        if yt_start is not None and yt_start == (shabbos_date + timedelta(days=1)):
+            chosen_unrounded = yt_end_havdalah_unrounded
+            chosen_iso = yt_end_havdalah_iso
         else:
-            # weekly Motzi (Shabbos): start + duration lands on Saturday
-            end_date = start + timedelta(days=duration)
+            # Otherwise pick the earliest FUTURE candidate that exists
+            if yt_end_havdalah_unrounded is not None and yt_end_havdalah_unrounded < shabbos_havdalah_unrounded:
+                chosen_unrounded = yt_end_havdalah_unrounded
+                chosen_iso = yt_end_havdalah_iso
+            else:
+                chosen_unrounded = shabbos_havdalah_unrounded
+                chosen_iso = shabbos_havdalah_iso
 
-        # sunset on the last day of the festival
-        cal_final = ZmanimCalendar(geo_location=self._geo, date=end_date)
-        s_final   = cal_final.sunset().astimezone(self._tz)
-        target    = s_final + timedelta(minutes=self._havdalah)
+        # ---------------- freeze guards (keep chosen night until midnight) ----------------
+        # If chosen is Shabbos tonight
+        if wd == 5 and chosen_unrounded.date() == today and now >= chosen_unrounded and now < midnight_next:
+            pass  # keep tonight's Shabbos havdalah
 
-        full_iso = target.isoformat()
-        # always ceil to next minute
-        target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        # If chosen is end of a YT span that ends today
+        if yt_end_havdalah_unrounded is not None and chosen_unrounded == yt_end_havdalah_unrounded:
+            end_day = (chosen_unrounded - timedelta(minutes=self._havdalah)).date()
+            if now.date() == end_day and now >= chosen_unrounded and now < midnight_next:
+                pass  # keep tonight's YT end
 
+        # ---------------- publish ----------------
+        target = ceil_minute(chosen_unrounded)
         self._attr_native_value = target.astimezone(timezone.utc)
 
         lt = target.astimezone(self._tz)
-        hour, minute = lt.hour % 12 or 12, lt.minute
-        ampm = "AM" if lt.hour < 12 else "PM"
-        human = f"{hour}:{minute:02d} {ampm}"
-
+        human = f"{(lt.hour % 12 or 12)}:{lt.minute:02d} {'AM' if lt.hour < 12 else 'PM'}"
         self._attr_extra_state_attributes = {
-            "Zman_Motzi_With_Seconds": full_iso,
-            "Zman_Motzi_Simple":       human,
-            "City":                    self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "Latitude":                self._geo.latitude,
-            "Longitude":               self._geo.longitude,
+            "Zman_Motzi_With_Seconds": chosen_iso,  # unrounded
+            "Zman_Motzi_Simple": human,             # rounded HH:MM
+            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude": self._geo.latitude,
+            "Longitude": self._geo.longitude,
         }
+
