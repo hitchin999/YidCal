@@ -355,41 +355,88 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             self._state = False
 
         # ── Build attributes ──
+        blocked_shabbos = (today.weekday() == 5) and HDateInfo(tomorrow, diaspora=True).is_yom_tov
+        blocked_holiday = HDateInfo(today, diaspora=True).is_yom_tov and ((tomorrow.weekday() == 5))
+
         attrs: dict[str, bool | str] = {
-            "Now":                  now.isoformat(),
-            "Is_Motzi_Shabbos":     (not is_holiday) and self._state,
-            "Is_Motzi_Yom_Tov":      is_holiday and self._state,
-            "Blocked_Motzi_Shabbos": (yesterday.weekday() == 5) and hd_today.is_yom_tov,
-            "Blocked_Motzi_Yom_Tov":  hd_yest.is_yom_tov and (today.weekday() == 5),
+            "Now": now.isoformat(),
+            "Is_Motzi_Shabbos":     (not HDateInfo(today, diaspora=True).is_yom_tov) and self._state,
+            "Is_Motzi_Yom_Tov":      HDateInfo(today, diaspora=True).is_yom_tov and self._state,
+            "Blocked_Motzi_Shabbos": blocked_shabbos,
+            "Blocked_Motzi_Yom_Tov": blocked_holiday,
             "Is_Shabbos_Today":      (today.weekday() == 5),
-            "Is_Yom_Tov_Today":      hd_today.is_yom_tov,
+            "Is_Yom_Tov_Today":      HDateInfo(today, diaspora=True).is_yom_tov,
         }
 
-        # ── Next window look‑ahead ──
+        # ── Next window look-ahead (YT-span aware) ──
         next_start = next_end = None
-        for i in range(1, 33):  # look ahead up to a month
-            d    = today + timedelta(days=i)
-            hd_d = HDateInfo(d, diaspora=True)
-            is_sh = (d.weekday() == 5)
-            is_hol= hd_d.is_yom_tov
 
-            raw_msh  = is_sh  and not is_hol
-            raw_mhol = is_hol and not is_sh
-            if not (raw_msh or raw_mhol):
-                continue
+        def sunset_on(d: datetime.date) -> datetime.datetime:
+            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
 
-            cal_d     = ZmanimCalendar(geo_location=self._geo, date=d)
-            sunset_d  = cal_d.sunset().astimezone(self._tz)
-            raw_start = sunset_d + timedelta(minutes=self._havdalah)
+        def yt_span_end_from(start_date: datetime.date) -> datetime.date:
+            """Walk forward while is_yom_tov is True; return the last YT day."""
+            end = start_date
+            j = 1
+            while HDateInfo(start_date + timedelta(days=j), diaspora=True).is_yom_tov:
+                end = start_date + timedelta(days=j)
+                j += 1
+            return end
+
+        # If we're currently inside a Yom Tov span (even if it's also Shabbos),
+        # the NEXT Motzi window should be the END of this YT span.
+        if hd_today.is_yom_tov:
+            span_end = yt_span_end_from(today)
+            raw_start = sunset_on(span_end) + timedelta(minutes=self._havdalah)
             raw_end   = datetime.datetime.combine(
-                          d + timedelta(days=1),
-                          time(hour=2, minute=0),
-                          tzinfo=self._tz,
-                        )
+                span_end + timedelta(days=1),
+                time(hour=2, minute=0),
+                tzinfo=self._tz,
+            )
+            if now < raw_end:
+                next_start = round_ceil(raw_start)
+                next_end   = raw_end
 
-            next_start = round_ceil(raw_start)
-            next_end   = raw_end
-            break
+        # Otherwise, look ahead for the next qualifying Motzi (Shabbos or YT-end),
+        # skipping Shabbos→YT clusters (we’ll surface the YT-end instead).
+        if next_start is None:
+            for i in range(1, 33):  # look ahead up to a month
+                d       = today + timedelta(days=i)
+                hd_prev = HDateInfo(d - timedelta(days=1), diaspora=True)
+                hd_d    = HDateInfo(d, diaspora=True)
+                hd_next = HDateInfo(d + timedelta(days=1), diaspora=True)
+
+                is_shab   = (d.weekday() == 5)
+                is_hol    = hd_d.is_yom_tov
+                hol_tom   = hd_next.is_yom_tov
+                hol_yest  = hd_prev.is_yom_tov
+
+                # Case A: start of a YT span → show END of that span
+                if is_hol and not hol_yest:
+                    span_end = yt_span_end_from(d)
+                    raw_start = sunset_on(span_end) + timedelta(minutes=self._havdalah)
+                    raw_end   = datetime.datetime.combine(
+                        span_end + timedelta(days=1),
+                        time(hour=2, minute=0),
+                        tzinfo=self._tz,
+                    )
+                    next_start = round_ceil(raw_start)
+                    next_end   = raw_end
+                    break
+
+                # Case B: plain Motzaei Shabbos (no YT tomorrow)
+                if is_shab and not is_hol and not hol_tom:
+                    raw_start = sunset_on(d) + timedelta(minutes=self._havdalah)
+                    raw_end   = datetime.datetime.combine(
+                        d + timedelta(days=1),
+                        time(hour=2, minute=0),
+                        tzinfo=self._tz,
+                    )
+                    next_start = round_ceil(raw_start)
+                    next_end   = raw_end
+                    break
+                # Note: if is_shab and hol_tom → Shabbos→YT cluster; skip here
+                # because we’ll surface the YT end via Case A when that span starts.
 
         if next_start and next_end:
             attrs["Next_Motzi_Window_Start"] = next_start.isoformat()
