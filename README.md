@@ -21,8 +21,34 @@ A custom Home Assistant integration that provides:
 * **Day Label Hebrew** (`sensor.yidcal_day_label_hebrew`) Daily label in Hebrew (e.g. יום א' יום ב)
 * **Daily Tehilim** (`sensor.yidcal_tehilim_daily`) Five-chapter rotation of Tehilim (e.g. א–ה, ו–ט)
 * **Date** (`sensor.yidcal_date`) Current Hebrew date in Yiddish (e.g., כ"ה חשון תשפ"ה)
-* **Zman Erev** (`sensor.yidcal_zman_erev`) Next candle-lighting timestamp (Shabbos or Yom Tov eve, sunset - candlelighting_offset from config flow)
-* **Zman Motzi** (`sensor.yidcal_zman_motzi`) Next havdalah timestamp (Shabbos or Yom Tov end, sunset + havdalah_offset from config flow)
+* **Zman Erev** (`sensor.yidcal_zman_erev`) — **Next candle-lighting timestamp**
+  * **What it shows:** The current day’s candle-lighting for **Shabbos or Yom Tov**.
+    * **Erev Shabbos / Erev Yom Tov (weekday):** `sunset − candlelighting_offset`
+    * **Between Yom Tov days (Night 2)** and **Motzi Shabbos → Yom Tov:** `sunset + havdalah_offset`
+  * **When it updates:**
+    * At **local 12:00 AM**, it flips to the lighting for **that civil day** when applicable.
+    * If **today has no lighting**, it **holds the most recent lighting** and only jumps forward at **the first midnight after Motzi** (the day right after Shabbos or the final Yom-Tov day).
+    * During **Shabbos/Yom-Tov day**, it keeps showing **yesterday’s lighting** until midnight (prevents jumping mid-day).
+  * **Attributes:**
+    * `Zman_Erev_With_Seconds` – ISO local time (unrounded)
+    * `Zman_Erev_Simple` – HH\:MM (local)
+    * `City`, `Latitude`, `Longitude`
+    * **Static “Day” rows for Shabbos↔Yom-Tov clusters** (always present; empty when not applicable):
+      * `Day_1_Label`, `Day_1_Simple`
+      * `Day_2_Label`, `Day_2_Simple`
+      * `Day_3_Label`, `Day_3_Simple`
+      * Labels auto-select: **“Shabbos”**, **“Yom Tov – Night 1”**, **“Yom Tov – Night 2”**, or **“Motzi Shabbos → Yom Tov”** as appropriate.
+* **Zman Motzi** (`sensor.yidcal_zman_motzi`) — **Next havdalah timestamp**
+  * **What it shows:** The **earliest** of:
+    1. **End of the next Yom-Tov span**: `sunset(last day) + havdalah_offset`
+    2. **Next Motzi Shabbos**: `sunset(Saturday) + havdalah_offset`
+       (When currently inside a Yom-Tov span, it targets that span’s end.)
+  * **When it updates:**
+    * Holds **tonight’s havdalah** and then rolls at **local 12:00 AM** after that night.
+  * **Attributes:**
+    * `Zman_Motzi_With_Seconds` – ISO local time (unrounded)
+    * `Zman_Motzi_Simple` – HH\:MM (local)
+    * `City`, `Latitude`, `Longitude`
 * **Perek Avos**: current Perek rendered in אבות פרק ה׳
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
 * **Tal U’Matar** (`sensor.yidcal_tal_umatar`) Indicates when to change the prayer between “V’sen Tal u’Matar”/“V’sen Beracha”
