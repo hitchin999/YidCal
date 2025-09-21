@@ -527,9 +527,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         parsha = (getparsha_string(hd_fest) or "").upper()
         #_LOGGER.debug(f"Current parsha: {parsha}")
         shov_base = ["SHEMOS", "VA'EIRA", "BO", "BESHALACH", "YISRO", "MISHPATIM"]
-        shov_ext = shov_base + ["TERUMAH", "TETZAVEH"]
-        attrs["שובבים"] = parsha in shov_base
-        attrs["שובבים ת\"ת"] = is_leap and parsha in shov_ext
+        shov_ext  = shov_base + ["TERUMAH", "TETZAVEH"]
+        
+        # Shovavim: always on for base weeks; in leap years also on for Terumah/Tetzaveh
+        attrs["שובבים"] = (parsha in shov_base) or (is_leap and parsha in shov_ext)
+        
+        # Shovavim TAT: only in leap years (base + Terumah/Tetzaveh)
+        attrs["שובבים ת\"ת"] = is_leap and (parsha in shov_ext)
 
         # Tzom Tevet
         if hd_py_fast.month == 10 and hd_py_fast.day == 10 and dawn <= now <= end_time:
