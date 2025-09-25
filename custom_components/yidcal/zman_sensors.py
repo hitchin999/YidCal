@@ -235,11 +235,27 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Determine if *yesterday* was a Motzi night we care about:
         #   - Yesterday was Shabbos (Saturday), OR
         #   - Yesterday was Yom-Tov and *today* is NOT Yom-Tov (i.e., yesterday was the final YT day)
+        # Find the most recent Motzi cutoff date:
+        # return the civil date that begins right after a Motzi night (i.e., midnight after Shabbos/YT ends).
+        def last_motzi_cutoff_date(ref: datetime.date) -> datetime.date | None:
+            for back in range(0, 14):  # scan up to 2 weeks back
+                d   = ref - timedelta(days=back)
+                hd0 = HDateInfo(d, diaspora=self._diaspora)
+                hd1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+
+                ended_shabbos = (d.weekday() == 5) and (not hd1.is_yom_tov)           # Motzaei Shabbos not leading into YT
+                ended_yomtov  = hd0.is_yom_tov and (not hd1.is_yom_tov)               # last YT day
+                if ended_shabbos or ended_yomtov:
+                    return d + timedelta(days=1)  # the civil day that starts right after Motzi
+            return None
+
         hd_yesterday = HDateInfo(yesterday, diaspora=self._diaspora)
-        hd_today = HDateInfo(today, diaspora=self._diaspora)
-        yesterday_was_shabbos = (yesterday.weekday() == 5)
-        yesterday_was_final_yt = (hd_yesterday.is_yom_tov and not hd_today.is_yom_tov)
-        allow_forward_jump_today = (yesterday_was_shabbos or yesterday_was_final_yt)
+        hd_today     = HDateInfo(today,    diaspora=self._diaspora)
+
+        # Allow forward jump on ANY day at/after the midnight that follows the most recent Motzi.
+        cutoff = last_motzi_cutoff_date(today)
+        allow_forward_jump_today = (cutoff is not None and today >= cutoff)
+
 
         # ── Shabbos/YT daytime freeze: show *yesterday's* lighting until midnight ──
         if (today.weekday() == 5 or hd_today.is_yom_tov) and now < midnight_next and today_event is None:
@@ -293,11 +309,19 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Publish main value (rounded minute in UTC)
         self._attr_native_value = chosen.astimezone(timezone.utc)
 
-        # ── Build multi-lighting attributes (STATIC across cluster) ──────────
-        # Collect events from yesterday through ~10 days ahead so we can
-        # backtrack to the cluster's first day if we're already inside it.
+        # ── Base attrs (always present) ───────────────────────────────────────
+        attrs: dict[str, object] = {
+            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
+            "Latitude": self._geo.latitude,
+            "Longitude": self._geo.longitude,
+            # With_Seconds = UNROUNDED; Simple = ROUNDED
+            "Zman_Erev_With_Seconds": (chosen_unrounded or chosen).astimezone(self._tz).isoformat(),
+            "Zman_Erev_Simple": fmt_simple(chosen.astimezone(self._tz)),
+        }
+
+        # ── Build events list for [today-2 .. today+7] so Day_1 stays static inside clusters ──
         events = []
-        for i in range(-2, 12):  # include a couple days back
+        for i in range(-2, 8):  # backtrack up to 2 days; look ahead 7
             d = today + timedelta(days=i)
             ev, kind = lighting_event_for_day(
                 d,
@@ -310,98 +334,115 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
             if ev is not None:
                 events.append((d, ev, kind))
 
-        # Find any adjacency, then backtrack to earliest consecutive-day start (cluster anchor)
-        cluster_start_idx = None
-        for j in range(len(events) - 1):
-            if events[j + 1][0] == events[j][0] + timedelta(days=1):
-                # backtrack while previous days are also consecutive
-                k = j
-                while k - 1 >= 0 and events[k][0] == events[k - 1][0] + timedelta(days=1):
-                    k -= 1
-                cluster_start_idx = k
-                break
+        # Helper: is this lighting YT-related?
+        def is_yt_related(d: datetime.date, kind: str) -> bool:
+            if kind != "erev_before_sunset":
+                return True
+            return HDateInfo(d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov
 
-        def fmt_simple(dt_local: datetime.datetime) -> str:
-            h, m = dt_local.hour % 12 or 12, dt_local.minute
-            ampm = "AM" if dt_local.hour < 12 else "PM"
-            return f"{h}:{m:02d} {ampm}"
+        # Group into consecutive-day clusters
+        clusters: list[list[tuple[datetime.date, datetime.datetime, str]]] = []
+        if events:
+            cur = [events[0]]
+            for item in events[1:]:
+                if item[0] == cur[-1][0] + timedelta(days=1):
+                    cur.append(item)
+                else:
+                    clusters.append(cur)
+                    cur = [item]
+            clusters.append(cur)
 
-        # Base attrs (always present)
-        attrs: dict[str, object] = {
-            "City": self.hass.data[DOMAIN]["config"]["city"].replace("Town of ", ""),
-            "Latitude": self._geo.latitude,
-            "Longitude": self._geo.longitude,
-            # With_Seconds = UNROUNDED; Simple = ROUNDED
-            "Zman_Erev_With_Seconds": (chosen_unrounded or chosen).astimezone(self._tz).isoformat(),
-            "Zman_Erev_Simple": fmt_simple(chosen.astimezone(self._tz)),
-            # helpful flags
-            #"has_cluster": False,
-            #"cluster_size": 0,
-        }
+        # Keep clusters that involve YT (drop plain Shabbos-only clusters)
+        yt_clusters = [cl for cl in clusters if any(is_yt_related(d, k) for (d, _e, k) in cl)]
 
-        # ALWAYS initialize Day 1/2/3 placeholders (stable schema)
+        # Pick active cluster anchored to the state’s base date.
+        # base_date = local date of the chosen state timestamp
+        base_date = (chosen_unrounded or chosen).astimezone(self._tz).date()
+
+        active_cluster: list[tuple[datetime.date, datetime.datetime, str]] | None = None
+        if yt_clusters:
+            # 1) Prefer the cluster that CONTAINS the base_date (keeps Day_1/2/3 static inside the span)
+            candidate = next(
+                (cl for cl in yt_clusters if cl[0][0] <= base_date <= cl[-1][0]),
+                None
+            )
+            if candidate is not None and any(is_yt_related(d, k) for (d, _e, k) in candidate):
+                active_cluster = candidate
+            else:
+                # 2) Otherwise, choose the NEXT YT cluster that starts within the next 7 days (no past fallback)
+                upcoming = [
+                    cl for cl in yt_clusters
+                    if today <= cl[0][0] <= (today + timedelta(days=7))
+                ]
+                if upcoming:
+                    active_cluster = min(upcoming, key=lambda cl: cl[0][0])
+
+        # Initialize Day_1/2/3 placeholders
         for i in (1, 2, 3):
             attrs[f"Day_{i}_Label"] = ""
             #attrs[f"Day_{i}_Date"] = ""
             #attrs[f"Day_{i}_With_Seconds"] = ""
             attrs[f"Day_{i}_Simple"] = ""
 
-        if cluster_start_idx is not None:
-            # From the first day of the cluster, take up to 3 consecutive days
-            cluster = [events[cluster_start_idx]]
-            k = cluster_start_idx + 1
-            while (
-                k < len(events)
-                and events[k][0] == cluster[-1][0] + timedelta(days=1)
-                and len(cluster) < 3
-            ):
-                cluster.append(events[k])
-                k += 1
-
-            # ---- UPDATED WINDOW GATE (dual windows) ----
-            # Show Day_* if the cluster overlaps EITHER:
-            #   A) [last regular Shabbos .. next regular Shabbos]   (handles Sun/Mon/Tue YT like RH)
-            #   B) [next regular Shabbos .. the Shabbos after that] (handles Fri Shabbos → YT)
+        if active_cluster:
+            # ---- WINDOW GATE (dual windows) + suppression until a plain Shabbos is over ----
             wd = today.weekday()  # Mon=0..Sun=6
             days_since_shabbos = (wd - 5) % 7
             days_until_shabbos = (5 - wd) % 7
-            last_shabbos = today - timedelta(days=days_since_shabbos)
-            next_shabbos = today + timedelta(days=days_until_shabbos)
-            next_next_shabbos = next_shabbos + timedelta(days=7)
+            last_shabbos       = today - timedelta(days=days_since_shabbos)
+            next_shabbos       = today + timedelta(days=days_until_shabbos)
+            next_next_shabbos  = next_shabbos + timedelta(days=7)
 
             windowA_start = last_shabbos
             windowA_end   = next_shabbos
             windowB_start = next_shabbos
             windowB_end   = next_next_shabbos
 
-            cluster_start_date = cluster[0][0]
-            cluster_end_date   = cluster[-1][0]
+            cl_start = active_cluster[0][0]
+            cl_end   = active_cluster[-1][0]
 
             def overlaps(a_start: datetime.date, a_end: datetime.date,
                          b_start: datetime.date, b_end: datetime.date) -> bool:
                 return not (a_end < b_start or a_start > b_end)
 
-            overlaps_A = overlaps(cluster_start_date, cluster_end_date, windowA_start, windowA_end)
-            overlaps_B = overlaps(cluster_start_date, cluster_end_date, windowB_start, windowB_end)
-            show_days = overlaps_A or overlaps_B
+            overlaps_A = overlaps(cl_start, cl_end, windowA_start, windowA_end)
+            overlaps_B = overlaps(cl_start, cl_end, windowB_start, windowB_end)
 
-            #attrs["has_cluster"] = True
-            #attrs["cluster_size"] = len(cluster)
+            # The YT cluster is “connected” to this Shabbos if it contains that Shabbos
+            # OR starts on Motzaei Shabbos (civil day after Shabbos).
+            cluster_includes_next_shabbos  = (cl_start <= next_shabbos <= cl_end)
+            cluster_starts_motzaei_shabbos = (cl_start == (next_shabbos + timedelta(days=1)))
+            connected_ok = cluster_includes_next_shabbos or cluster_starts_motzaei_shabbos
+
+            # Suppress preview if there is a plain Shabbos between today and the cluster start
+            # and we haven't yet crossed Sunday 12:00 AM after that Shabbos.
+            next_shabbos_is_yom_tov = HDateInfo(next_shabbos, diaspora=self._diaspora).is_yom_tov
+            plain_shabbos_pending = (
+                not next_shabbos_is_yom_tov
+                and (cl_start > next_shabbos)           # YT starts after that Shabbos
+                and (today < (next_shabbos + timedelta(days=1)))  # it isn't past Motzaei yet
+            )
+
+            # Base windowing + global suppression until that plain Shabbos finishes (unless connected)
+            show_days = (overlaps_A or overlaps_B) and (not plain_shabbos_pending or connected_ok)
 
             if show_days:
-                for idx, (d, ev, kind) in enumerate(cluster, start=1):
+                # Render Day_1.. from the **start** of the cluster (keeps static across span)
+                for idx, (d, ev, kind) in enumerate(active_cluster[:3], start=1):
                     ev_unrounded_local = ev.astimezone(self._tz)
-                    # Erev uses half-up rounding for display
-                    ev_rounded_local = (ev_unrounded_local + timedelta(minutes=1)).replace(second=0, microsecond=0) \
-                        if ev_unrounded_local.second >= 30 else ev_unrounded_local.replace(second=0, microsecond=0)
+                    ev_rounded_local = (
+                        (ev_unrounded_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
+                        if ev_unrounded_local.second >= 30
+                        else ev_unrounded_local.replace(second=0, microsecond=0)
+                    )
                     label = label_for_kind_and_context(d, kind, diaspora=self._diaspora)
 
-                    attrs[f"Day_{idx}_Label"] = label                # e.g., "Shabbos", "Yom Tov – Night 1"
-                    #attrs[f"Day_{idx}_Date"] = d.isoformat()
+                    attrs[f"Day_{idx}_Label"]  = label
+                    #attrs[f"Day_{idx}_Date"] = (ev_unrounded_local + timedelta(days=1)).date().isoformat()
                     #attrs[f"Day_{idx}_With_Seconds"] = ev_unrounded_local.isoformat()
                     attrs[f"Day_{idx}_Simple"] = fmt_simple(ev_rounded_local)
 
-
+        # publish attributes
         self._attr_extra_state_attributes = attrs
 
 # ─── Zman Motzi Sensor ──────────────────────────────────────────────────────
