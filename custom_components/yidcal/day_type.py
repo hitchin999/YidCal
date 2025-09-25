@@ -50,7 +50,9 @@ POSSIBLE_STATES = [
 def _is_yomtov(pydate: datetime.date) -> bool:
     """Festival detection: try pyluach, exclude FAST_DAYS and Chol Hamoed."""
     try:
-        name = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=False)
+        name = PHebrewDate.from_pydate(pydate).festival(
+            hebrew=True, include_working_days=False
+        )
         if name:
             return True
         return False
@@ -61,8 +63,12 @@ def _is_yomtov(pydate: datetime.date) -> bool:
 def _is_chol_hamoed(pydate: datetime.date) -> bool:
     """Check if the given date is Chol Hamoed."""
     try:
-        name_with = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=True)
-        name_no = PHebrewDate.from_pydate(pydate).festival(hebrew=True, include_working_days=False)
+        name_with = PHebrewDate.from_pydate(pydate).festival(
+            hebrew=True, include_working_days=True
+        )
+        name_no = PHebrewDate.from_pydate(pydate).festival(
+            hebrew=True, include_working_days=False
+        )
         return bool(name_with and not name_no and name_with in ["פסח", "סוכות"])
     except Exception:
         return False
@@ -76,6 +82,14 @@ def _is_fast_day(pydate: datetime.date) -> bool:
     except Exception:
         return False
 
+def _attrs_for_state(state: str) -> dict:
+    # Flags first…
+    flags = {name: (name == state) for name in POSSIBLE_STATES}
+    # …then "Possible states" last so it shows after the booleans
+    return {
+        **flags,
+        "Possible states": POSSIBLE_STATES,
+    }
 
 class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
     _attr_name = "Day Type"
@@ -90,8 +104,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
         self._attr_native_value = "Any Other Day"
-        # initialize attributes
-        self._attr_extra_state_attributes = {s.replace(' ', '_'): False for s in POSSIBLE_STATES}
+        self._attr_extra_state_attributes = _attrs_for_state(self._attr_native_value)
 
     @property
     def options(self) -> list[str]:
@@ -103,16 +116,18 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         """Return the current state value."""
         return self._attr_native_value
 
+    def _set_state(self, state: str) -> None:
+        """Atomic state+attributes setter to avoid dropping keys."""
+        self._attr_native_value = state
+        self._attr_extra_state_attributes = _attrs_for_state(state)
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last and last.state in POSSIBLE_STATES:
-            self._attr_native_value = last.state
-            for k in list(self._attr_extra_state_attributes):
-                if k != "possible_states":
-                    self._attr_extra_state_attributes[k] = bool(last.attributes.get(k))
+            self._set_state(last.state)
         else:
-            self._attr_native_value = "Any Other Day"
+            self._set_state("Any Other Day")
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
 
@@ -138,7 +153,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             return True
         if hd.month == adar_month and hd.day == 11 and hd.weekday() == 5 and PHebrewDate(hd.year, adar_month, 13).weekday() == 7:
             return True
-        # Tisha B'Av (already handled in original code, but included for completeness)
+        # Tisha B'Av
         if hd.month == 5 and hd.day == 9 and hd.weekday() != 7:
             return True
         if hd.month == 5 and hd.day == 10 and hd.weekday() == 1 and PHebrewDate(hd.year, 5, 9).weekday() == 7:
@@ -155,8 +170,11 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Civil sun times for today
         loc = LocationInfo(
-            name="home", region="", timezone=self.hass.config.time_zone,
-            latitude=self.hass.config.latitude, longitude=self.hass.config.longitude
+            name="home",
+            region="",
+            timezone=self.hass.config.time_zone,
+            latitude=self.hass.config.latitude,
+            longitude=self.hass.config.longitude,
         )
         solar = sun(loc.observer, date=today, tzinfo=tz)
         dawn = solar["sunrise"] - timedelta(minutes=72)
@@ -191,21 +209,14 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 state = "Yom Tov"
                 if shabbos_start <= now < shabbos_end:
                     state = "Shabbos & Yom Tov"
-                attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-                self._attr_native_value = state
-                self._attr_extra_state_attributes = attrs
+                self._set_state(state)
                 return
             # holiday motzi: immediately after fest_end → 2 AM next day
             motzi_start = fest_end
             motzi_end = datetime.datetime.combine(end_date + timedelta(days=1), time(2, 0)).replace(tzinfo=tz)
             if motzi_start <= now < motzi_end:
-                if _is_chol_hamoed(effective_pydate):
-                    state = "Chol Hamoed"
-                else:
-                    state = "Motzi"
-                attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-                self._attr_native_value = state
-                self._attr_extra_state_attributes = attrs
+                state = "Chol Hamoed" if _is_chol_hamoed(effective_pydate) else "Motzi"
+                self._set_state(state)
                 return
 
         # --- Standard Motzi: only if yesterday was Yom Tov ---
@@ -215,23 +226,19 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         motzi_start = prev_sunset + timedelta(minutes=self._havdalah_offset)
         motzi_end = datetime.datetime.combine(today, time(2, 0)).replace(tzinfo=tz)
         if raw_motzi and motzi_start <= now < motzi_end:
-            if _is_chol_hamoed(effective_pydate):
-                state = "Chol Hamoed"
-            else:
-                state = "Motzi"
-            attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            self._attr_native_value = state
-            self._attr_extra_state_attributes = attrs
+            state = "Chol Hamoed" if _is_chol_hamoed(effective_pydate) else "Motzi"
+            self._set_state(state)
             return
 
         # --- Erev: dawn → candlelighting for Shabbos or Yom Tov eve ---
         is_yom_tom = _is_yomtov(today + timedelta(days=1))
         is_fast_tomorrow = _is_fast_day(today + timedelta(days=1))
-        if dawn <= now < candle_cut and not is_fast_tomorrow and ((today.weekday() == 4 and not _is_yomtov(today)) or is_yom_tom):
-            state = "Erev"
-            attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            self._attr_native_value = state
-            self._attr_extra_state_attributes = attrs
+        if (
+            dawn <= now < candle_cut
+            and not is_fast_tomorrow
+            and ((today.weekday() == 4 and not _is_yomtov(today)) or is_yom_tom)
+        ):
+            self._set_state("Erev")
             return
 
         # --- Shabbos on Friday evening or Saturday day ---
@@ -241,17 +248,12 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 state = "Shabbos & Yom Tov"
             elif _is_chol_hamoed(shabbos_day):
                 state = "Shabbos & Chol Hamoed"
-            attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            self._attr_native_value = state
-            self._attr_extra_state_attributes = attrs
+            self._set_state(state)
             return
 
         # --- Chol Hamoed ---
         if _is_chol_hamoed(effective_pydate):
-            state = "Chol Hamoed"
-            attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            self._attr_native_value = state
-            self._attr_extra_state_attributes = attrs
+            self._set_state("Chol Hamoed")
             return
 
         # --- Fast days ---
@@ -270,22 +272,13 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             if self._is_minor_fast(effective_hd) and now < sunset_today and now < dawn:
                 in_fast = False
             if in_fast:
-                state = "Fast Day"
-                attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-                self._attr_native_value = state
-                self._attr_extra_state_attributes = attrs
+                self._set_state("Fast Day")
                 return
 
         # --- Motzi on Saturday evening ---
         if shabbos_end <= now < datetime.datetime.combine(shabbos_day + timedelta(days=1), time(2, 0)).replace(tzinfo=tz):
-            state = "Motzi"
-            attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-            self._attr_native_value = state
-            self._attr_extra_state_attributes = attrs
+            self._set_state("Motzi")
             return
 
         # --- Default: Any Other Day ---
-        state = "Any Other Day"
-        attrs = {s.replace(' ', '_'): (s == state) for s in POSSIBLE_STATES}
-        self._attr_native_value = state
-        self._attr_extra_state_attributes = attrs
+        self._set_state("Any Other Day")
