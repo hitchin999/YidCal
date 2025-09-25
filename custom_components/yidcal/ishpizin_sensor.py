@@ -1,3 +1,4 @@
+#/homeassistant/custom_components/yidcal/ishpizin_sensor.py
 from __future__ import annotations
 import datetime
 from datetime import timedelta
@@ -28,13 +29,24 @@ ISHPIZIN_NAMES = [
     "דוד",    # 21 Tishrei
 ]
 
-# All possible states for the sensor
+# All possible states for the sensor (enum options)
 ISHPIZIN_STATES = [f"אושפיזא ד{name}" for name in ISHPIZIN_NAMES] + [""]
+
+
+def _attrs_for_state(state: str) -> dict:
+    """Flags first, then 'Possible states' last (for nice UI ordering)."""
+    flags = {f"אושפיזא ד{name}": (state == f"אושפיזא ד{name}") for name in ISHPIZIN_NAMES}
+    return {
+        **flags,
+        "Possible states": ISHPIZIN_STATES,  # durable; HA preserves order
+    }
+
 
 class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
     """Sensor that shows the current Ushpizin during Sukkot nights.
     State updates at Havdalah (sunset + offset) and shows 'אושפיזא ד<Name>'.
-    Attributes include a flag for each possible Ushpizin."""
+    Attributes include a flag for each possible Ushpizin + 'Possible states' list.
+    """
 
     _attr_name = "Ishpizin"
     _attr_icon = "mdi:account-group"
@@ -47,10 +59,9 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._attr_unique_id = "yidcal_ishpizin"
         self.entity_id = "sensor.yidcal_ishpizin"
 
-        # Initial state
+        # Initial state + attributes (with 'Possible states' last)
         self._attr_native_value: str = ""
-        # Prepare attributes: one boolean per Ushpizin
-        self._attr_extra_state_attributes = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
+        self._attr_extra_state_attributes = _attrs_for_state(self._attr_native_value)
 
     @property
     def options(self) -> list[str]:
@@ -62,19 +73,20 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
         """Return the current state value."""
         return self._attr_native_value
 
+    def _set_state(self, state: str) -> None:
+        """Atomic state+attributes setter to avoid dropping keys."""
+        self._attr_native_value = state
+        self._attr_extra_state_attributes = _attrs_for_state(state)
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # Restore last state
+        # Restore last valid state; always regenerate attrs to include 'Possible states'
         last = await self.async_get_last_state()
         if last and last.state in ISHPIZIN_STATES:
-            self._attr_native_value = last.state
-            # Restore attributes but skip possible_states
-            for key in self._attr_extra_state_attributes:
-                if key in last.attributes:
-                    self._attr_extra_state_attributes[key] = last.attributes.get(key, False)
+            self._set_state(last.state)
         else:
-            # If no valid state to restore, use empty string
-            self._attr_native_value = ""
+            self._set_state("")
+
         # Initial update and 1-minute polling
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
@@ -83,35 +95,37 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
         tz = ZoneInfo(self.hass.config.time_zone)
         now = now or datetime.datetime.now(tz)
 
-        # Determine Hebrew year
+        # Determine Hebrew year for Sukkot mapping (Tishrei = month 7)
         today = now.date()
         heb_year = PHebrewDate.from_pydate(today).year
 
         loc = LocationInfo(
-            name="home", region="", timezone=self.hass.config.time_zone,
-            latitude=self.hass.config.latitude, longitude=self.hass.config.longitude
+            name="home",
+            region="",
+            timezone=self.hass.config.time_zone,
+            latitude=self.hass.config.latitude,
+            longitude=self.hass.config.longitude,
         )
 
-        state: str = ""
-        # Reset attributes (no more possible_states)
-        attrs: dict[str, bool] = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
+        # Default: outside the Sukkot nights window → empty state, flags all False
+        chosen_state: str = ""
 
-        # Iterate through days 15–21 Tishrei
-        for offset, name in enumerate(ISHPIZIN_NAMES, start=15):
-            # Convert Hebrew date to Gregorian
-            date_day = PHebrewDate(heb_year, 7, offset).to_pydate()
-            # Havdalah start for that day: sunset + offset
-            s = sun(loc.observer, date=date_day, tzinfo=tz)
-            off_time = s["sunset"] + timedelta(minutes=self._havdalah_offset)
-            # Havdalah start of next day
-            next_day = date_day + timedelta(days=1)
-            s2 = sun(loc.observer, date=next_day, tzinfo=tz)
-            next_off = s2["sunset"] + timedelta(minutes=self._havdalah_offset)
+        # Iterate through the 7 Sukkot nights (15–21 Tishrei)
+        for day_num, name in enumerate(ISHPIZIN_NAMES, start=15):
+            # Gregorian date for that Hebrew day in this Hebrew year
+            gdate = PHebrewDate(heb_year, 7, day_num).to_pydate()
 
-            if now >= off_time and now < next_off:
-                state = f"אושפיזא ד{name}"
-                attrs[state] = True
+            # Havdalah start for that night: sunset + offset
+            s = sun(loc.observer, date=gdate, tzinfo=tz)
+            start = s["sunset"] + timedelta(minutes=self._havdalah_offset)
+
+            # End at next night's havdalah (sunset+offset of next day)
+            gdate_next = gdate + timedelta(days=1)
+            s_next = sun(loc.observer, date=gdate_next, tzinfo=tz)
+            end = s_next["sunset"] + timedelta(minutes=self._havdalah_offset)
+
+            if start <= now < end:
+                chosen_state = f"אושפיזא ד{name}"
                 break
 
-        self._attr_native_value = state
-        self._attr_extra_state_attributes = attrs
+        self._set_state(chosen_state)
