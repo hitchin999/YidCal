@@ -240,6 +240,16 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "יום כיפור קטן":                  "alos_havdalah",
         "ראש חודש":                    "havdalah_havdalah",
     }
+    
+    @staticmethod
+    def _base_attrs() -> dict[str, bool | str | list[str]]:
+        """Fresh attributes dict with all flags False + countdowns. (No 'Possible states' here.)"""
+        attrs = {name: False for name in HolidaySensor.ALL_HOLIDAYS}
+        attrs["מען פאַסט אויס און"] = ""  # fast ends in
+        attrs["מען פאַסט אַן און"] = ""   # fast starts in
+        return attrs
+
+
 
     def __init__(
         self,
@@ -267,10 +277,22 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Restore last state/attributes on startup
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
+    
+        # Always start from a clean base that includes "Possible states"
+        attrs = self._base_attrs()
+    
         if last:
+            # Merge back only known flags + countdowns (ignore unknown keys)
+            for k, v in (last.attributes or {}).items():
+                if k in self.ALL_HOLIDAYS or k in ("מען פאַסט אויס און", "מען פאַסט אַן און"):
+                    attrs[k] = v
             self._attr_native_value = last.state or ""
-            self._attr_extra_state_attributes = dict(last.attributes)
-
+        else:
+            self._attr_native_value = ""
+            
+        attrs["Possible states"] = list(self.ALLOWED_HOLIDAYS)
+        self._attr_extra_state_attributes = attrs
+    
         # schedule minute‐interval updates via base‐class wrapper
         self._register_interval(
             self.hass,
@@ -446,10 +468,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         #_LOGGER.debug(f"Fast times: start_time_fast={start_time_fast}, end_time={end_time}, now={now}")
 
-        # Build raw attrs (default no holiday + no countdown)
-        attrs = {name: False for name in self.ALL_HOLIDAYS}
-        attrs["מען פאַסט אויס און"] = ""
-        attrs["מען פאַסט אַן און"] = ""
+        # Build raw attrs (always includes 'Possible states')
+        attrs = self._base_attrs()
 
         # Alef Slichos
         if hd_py.month == 6 and 21 <= hd_py.day <= 26 and wd_py == 6:
@@ -804,3 +824,4 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         self._attr_native_value = picked
         self._attr_extra_state_attributes = attrs
+        attrs["Possible states"] = list(self.ALLOWED_HOLIDAYS)
