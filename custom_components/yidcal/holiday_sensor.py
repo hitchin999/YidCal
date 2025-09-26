@@ -696,8 +696,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             (13 if is_leap else 12, 13),  # Ta'anit Esther (Adar II in leap years)
         ]
         
-        # Use *halachic* next day (festival_date already rolls at havdalah)
-        next_halachic_date = festival_date + timedelta(days=1)
+        # Use the next morning's halachic date (already rolls at havdalah)
+        next_halachic_date = festival_date
         hd_tomorrow = PHebrewDate.from_pydate(next_halachic_date)
         
         # Is the *next halachic day* a minor dawn-start fast?
