@@ -130,8 +130,6 @@ SLUG_OVERRIDES: dict[str, str] = {
 
 # ─── The fixed dynamic‐attribute binary sensor ────────────────────────────────
 
-
-
 class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """Mirrors one attribute from sensor.yidcal_holiday, with restore-on-reboot."""
 
@@ -189,7 +187,6 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
         """Fetch the latest binary state from sensor.yidcal_holiday's attributes."""
         src = self.hass.states.get("sensor.yidcal_holiday")
         self._attr_is_on = bool(src and src.attributes.get(self.attr_name, False))
-
 
 class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from alos ha-shachar until candle-lighting on Erev-Shabbos or any Erev-Yom-Tov."""
@@ -313,6 +310,27 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             next_end   = round_half_up(raw_end)
             break
 
+        # --- Eruv Tavshilin (only when the upcoming YT span includes Friday) ---
+        eruv_tavshilin = False
+        if raw_erev_holiday:
+            # Tomorrow starts a Yom Tov cluster; find its last day.
+            span_start = today + timedelta(days=1)
+            if HDateInfo(span_start, diaspora=self._diaspora).is_yom_tov:
+                span_end = span_start
+                while HDateInfo(span_end + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                    span_end += timedelta(days=1)
+
+                # Need Eruv if ANY day in the YT span is Friday (covers Thu–Fri→Shabbos and Fri–Shabbos)
+                includes_friday = any(
+                    (span_start + timedelta(days=i)).weekday() == 4
+                    for i in range((span_end - span_start).days + 1)
+                )
+
+                if includes_friday:
+                    # Attribute ON only during today's Erev-YT window: Alos → Shkiah
+                    shkiah = round_half_up(sunset)
+                    eruv_tavshilin = (alos <= now < shkiah)
+
         # ── Build attributes ──
         attrs: dict[str, str | bool] = {
             "Now": now.isoformat(),
@@ -324,6 +342,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Blocked_Erev_Holiday": blocked_holiday,
             "Is_Yom_Tov_Today":     is_yomtov_today,
             "Is_Shabbos_Today":     is_shabbos_today,
+            "Eruv_Tavshilin":       eruv_tavshilin,
         }
         if next_start and next_end:
             attrs.update({
@@ -331,7 +350,6 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 "Next_Erev_Window_End": next_end.isoformat(),
             })
         self._attr_extra_state_attributes = attrs
-
 
 class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
@@ -401,7 +419,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 raw_end = end_dt
                 break
 
-
         # 2) If no Yom-Tov is ACTIVE now, fall back to Shabbos
         if raw_start is None:
             wd = today.weekday()
@@ -448,9 +465,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Is_Yom_Tov":            (active_festival is not None and active_festival != "שבת"),
             "Is_Shabbos":            (active_festival == "שבת"),
         }
-
-
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
