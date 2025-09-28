@@ -528,18 +528,21 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
         # ---------------- NOT IN YT TODAY: compute candidates ----------------
         wd = today.weekday()  # Mon=0..Sun=6; Sat=5
 
-        def next_saturday_future(now_date: datetime.date) -> datetime.date:
-            """Return the next Saturday such that its havdalah will be >= now."""
-            base = now_date if now_date.weekday() == 5 else now_date + timedelta(days=(5 - now_date.weekday()) % 7)
-            base_hav = sunset_on(base) + timedelta(minutes=self._havdalah)
-            return base if base_hav >= now else (base + timedelta(days=7))
+        def sunset_on(d: datetime.date) -> datetime.datetime:
+            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
 
-        # 1) Next Shabbos havdalah (guaranteed future-facing)
-        shabbos_date = next_saturday_future(today)
+        # 1) Shabbos candidate:
+        #    If it's Saturday, always use *today* (even if havdalah already passed).
+        #    Otherwise, use the next coming Saturday.
+        if wd == 5:
+            shabbos_date = today
+        else:
+            shabbos_date = today + timedelta(days=(5 - wd) % 7)
+
         shabbos_havdalah_unrounded = sunset_on(shabbos_date) + timedelta(minutes=self._havdalah)
         shabbos_havdalah_iso = shabbos_havdalah_unrounded.isoformat()
 
-        # 2) Next Yom Tov span END havdalah (walk with is_yom_tov; guaranteed future-facing)
+        # 2) Next Yom Tov span END havdalah (future-facing)
         yt_start: datetime.date | None = None
         yt_end_havdalah_unrounded: datetime.datetime | None = None
         yt_end_havdalah_iso: str | None = None
@@ -548,9 +551,8 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
             d = today + timedelta(days=i)
             hd_d = HDateInfo(d, diaspora=self._diaspora)
             hd_prev = HDateInfo(d - timedelta(days=1), diaspora=self._diaspora)
-            # first civil day of an upcoming YT span
             if hd_d.is_yom_tov and not hd_prev.is_yom_tov:
-                # Walk forward while is_yom_tov stays True → end is last True day
+                # walk forward to last YT day
                 span_end = d
                 j = 1
                 while HDateInfo(d + timedelta(days=j), diaspora=self._diaspora).is_yom_tov:
@@ -563,13 +565,12 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
                     yt_end_havdalah_iso = cand_unrounded.isoformat()
                     break
 
-        # 3) Cluster override: if next YT starts the day AFTER the next Shabbos,
+        # 3) Cluster override: if next YT starts the day AFTER this Shabbos,
         #    show the END of that YT span (not Motzaei Shabbos).
         if yt_start is not None and yt_start == (shabbos_date + timedelta(days=1)):
             chosen_unrounded = yt_end_havdalah_unrounded
             chosen_iso = yt_end_havdalah_iso
         else:
-            # Otherwise pick the earliest FUTURE candidate that exists
             if yt_end_havdalah_unrounded is not None and yt_end_havdalah_unrounded < shabbos_havdalah_unrounded:
                 chosen_unrounded = yt_end_havdalah_unrounded
                 chosen_iso = yt_end_havdalah_iso
@@ -578,15 +579,15 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 chosen_iso = shabbos_havdalah_iso
 
         # ---------------- freeze guards (keep chosen night until midnight) ----------------
-        # If chosen is Shabbos tonight
+        # If it's Saturday night and chosen is *tonight's* Shabbos havdalah, hold it until 12:00 AM.
         if wd == 5 and chosen_unrounded.date() == today and now >= chosen_unrounded and now < midnight_next:
-            pass  # keep tonight's Shabbos havdalah
+            pass  # keep tonight
 
-        # If chosen is end of a YT span that ends today
+        # If chosen is end of a YT span that ends today, hold it until 12:00 AM.
         if yt_end_havdalah_unrounded is not None and chosen_unrounded == yt_end_havdalah_unrounded:
             end_day = (chosen_unrounded - timedelta(minutes=self._havdalah)).date()
             if now.date() == end_day and now >= chosen_unrounded and now < midnight_next:
-                pass  # keep tonight's YT end
+                pass  # keep tonight
 
         # ---------------- publish ----------------
         target = ceil_minute(chosen_unrounded)
@@ -601,4 +602,3 @@ class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "Latitude": self._geo.latitude,
             "Longitude": self._geo.longitude,
         }
-
