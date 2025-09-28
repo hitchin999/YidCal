@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as date_cls
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
@@ -50,6 +50,32 @@ class SofZmanTefilahGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
     async def _midnight_update(self, now: datetime) -> None:
         await self.async_update()
 
+    def _format_human(self, dt_local: datetime) -> str:
+        hour = dt_local.hour % 12 or 12
+        minute = dt_local.minute
+        ampm = "AM" if dt_local.hour < 12 else "PM"
+        return f"{hour}:{minute:02d} {ampm}"
+
+    def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
+        """
+        GRA day (sunrise→sunset); SZT = sunrise + 4 sha'ot zmaniot.
+        Returns (rounded_local_dt, precise_local_iso_before_flooring).
+        """
+        assert self._geo is not None
+        cal   = ZmanimCalendar(geo_location=self._geo, date=base_date)
+        dawn  = cal.sunrise().astimezone(self._tz)   # geometric sunrise
+        dusk  = cal.sunset().astimezone(self._tz)    # geometric sunset
+
+        hour_td = (dusk - dawn) / 12
+        target  = dawn + hour_td * 4
+
+        full_iso_local = target.isoformat()  # before flooring
+
+        # floor to the minute (any seconds 0–59)
+        target = target.replace(second=0, microsecond=0)
+
+        return target, full_iso_local
+
     async def async_update(self, now: datetime | None = None) -> None:
         if not self._geo:
             return
@@ -57,42 +83,26 @@ class SofZmanTefilahGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
         now_local = (now or dt_util.now()).astimezone(self._tz)
         today     = now_local.date()
 
-        cal      = ZmanimCalendar(geo_location=self._geo, date=today)
-        # dawn = geometric sunrise at 0°50′
-        dawn     = cal.sunrise().astimezone(self._tz)
+        # compute today / yesterday / tomorrow
+        local_today_dt, full_iso_today = self._compute_for_date(today)
+        local_yest_dt, _               = self._compute_for_date(today - timedelta(days=1))
+        local_tom_dt, _                = self._compute_for_date(today + timedelta(days=1))
 
-        # nightfall = geometric sunset at 0°50′
-        nightfall = cal.sunset().astimezone(self._tz)
+        # state = today's value in UTC
+        self._attr_native_value = local_today_dt.astimezone(timezone.utc)
 
-        # length of one sha’ah zmanit
-        hour_td  = (nightfall - dawn) / 12
+        # human strings
+        human_today = self._format_human(local_today_dt)
+        human_tom   = self._format_human(local_tom_dt)
+        human_yest  = self._format_human(local_yest_dt)
 
-        # Sof Zman Tefilah (Gra) = dawn + 4 * hour_td
-        target   = dawn + hour_td * 4
-        
-        # save full‐precision ISO timestamp
-        full_iso = target.isoformat()
-        
-        # floor to the minute (any seconds 0–59)
-        target = target.replace(second=0, microsecond=0)
-
-        # set native UTC value
-        self._attr_native_value = target.astimezone(timezone.utc)
-        
-        # now build the human string in your configured tz
-        local_target = target.astimezone(self._tz)
-        # cross‐platform AM/PM formatting without %-I
-        hour = local_target.hour % 12 or 12
-        minute = local_target.minute
-        ampm = "AM" if local_target.hour < 12 else "PM"
-        human = f"{hour}:{minute:02d} {ampm}"
-
-        # expose for debugging
+        # attributes (Tomorrow before Yesterday), keep existing keys
         self._attr_extra_state_attributes = {
-            #"dawn":        dawn.isoformat(),
-            #"sunrise":     dawn.isoformat(),
-            #"sunset":      nightfall.isoformat(),
-            #"hour_len":    str(hour_td),
-            "Tefila_GRA_With_Seconds":  full_iso,
-            "Tefila_GRA_Simple":  human,
+            # "dawn":  dawn.isoformat(),   # optional, if you want later
+            # "dusk":  dusk.isoformat(),
+            # "hour_len": str(hour_td),
+            "Tefila_GRA_With_Seconds": full_iso_today,
+            "Tefila_GRA_Simple": human_today,
+            "Tomorrows_Simple": human_tom,
+            "Yesterdays_Simple": human_yest,
         }
