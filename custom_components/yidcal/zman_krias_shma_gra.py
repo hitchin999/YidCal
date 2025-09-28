@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as date_cls
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
@@ -50,49 +50,60 @@ class SofZmanKriasShmaGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
     async def _midnight_update(self, now: datetime) -> None:
         await self.async_update()
 
+    def _format_human(self, dt_local: datetime) -> str:
+        hour = dt_local.hour % 12 or 12
+        minute = dt_local.minute
+        ampm = "AM" if dt_local.hour < 12 else "PM"
+        return f"{hour}:{minute:02d} {ampm}"
+
+    def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
+        """GRA day (sunrise→sunset); SZKS = sunrise + 3 sha'ot zmaniot.
+
+        Returns (rounded_local_dt, precise_iso_string_in_local_tz).
+        """
+        assert self._geo is not None
+        cal       = ZmanimCalendar(geo_location=self._geo, date=base_date)
+        sunrise   = cal.sunrise().astimezone(self._tz)
+        sunset    = cal.sunset().astimezone(self._tz)
+
+        hour_td   = (sunset - sunrise) / 12
+        target    = sunrise + hour_td * 3
+
+        # full precision (local tz) before flooring
+        full_iso_local = target.isoformat()
+
+        # floor to the minute
+        target = target.replace(second=0, microsecond=0)
+
+        return target, full_iso_local
+
     async def async_update(self, now: datetime | None = None) -> None:
         if not self._geo:
             return
 
-        # 1) current date in local tz
+        # local date basis
         now_local = (now or dt_util.now()).astimezone(self._tz)
         today     = now_local.date()
 
-        # 2) build calendar at 0°50′ zenith
-        cal        = ZmanimCalendar(geo_location=self._geo, date=today)
-        dawn       = cal.sunrise().astimezone(self._tz)
-        nightfall  = cal.sunset().astimezone(self._tz)
+        # compute for today / yesterday / tomorrow
+        local_today_dt, full_iso_today = self._compute_for_date(today)
+        local_yest_dt, _               = self._compute_for_date(today - timedelta(days=1))
+        local_tom_dt, _                = self._compute_for_date(today + timedelta(days=1))
 
-        # 3) length of one sha’ah zmanit
-        hour_td    = (nightfall - dawn) / 12
+        # state = today's time in UTC
+        self._attr_native_value = local_today_dt.astimezone(timezone.utc)
 
-        # 4) Sof Zman Kri’at Shema (GRA) = dawn + 3 * hour_td
-        target     = dawn + hour_td * 3
+        # human strings
+        human_today = self._format_human(local_today_dt)
+        human_tom   = self._format_human(local_tom_dt)
+        human_yest  = self._format_human(local_yest_dt)
 
-        # save full‐precision ISO timestamp
-        full_iso = target.isoformat()
-
-        # floor to the minute (any seconds 0–59)
-        target = target.replace(second=0, microsecond=0)
-
-        # set native UTC
-        self._attr_native_value = target.astimezone(timezone.utc)
-        
-        # now build the human string in your configured tz
-        local_target = target.astimezone(self._tz)
-        # cross‐platform AM/PM formatting without %-I
-        hour = local_target.hour % 12 or 12
-        minute = local_target.minute
-        ampm = "AM" if local_target.hour < 12 else "PM"
-        human = f"{hour}:{minute:02d} {ampm}"
-        
-
-        # debug attrs
+        # attributes (Tomorrow before Yesterday) + keep your existing keys
         self._attr_extra_state_attributes = {
-            #"dawn":       dawn.isoformat(),
-            #"sunrise":    dawn.isoformat(),
-            #"sunset":     nightfall.isoformat(),
-            #"hour_len":   str(hour_td),
-            "Krias_Shma_GRA_With_Seconds": full_iso,
-            "krias_Shma_GRA_Simple":  human,
+            # "sunrise": sunrise.isoformat(),  # optional debug if you want later
+            # "sunset":  sunset.isoformat(),
+            "Krias_Shma_GRA_With_Seconds": full_iso_today,
+            "krias_Shma_GRA_Simple": human_today,
+            "Tomorrows_Simple": human_tom,
+            "Yesterdays_Simple": human_yest,
         }
