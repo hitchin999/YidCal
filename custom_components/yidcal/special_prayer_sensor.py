@@ -4,17 +4,21 @@ custom_components/yidcal/special_prayer_sensor.py
 Aggregates all dynamic *tefillah* insertions **plus** a ʻHoshanaʼ label for
 each day of Sukkot.
 
-Prayers handled (joined with " - "):
-  • מוריד הגשם / מוריד הטל – dawn 22 Tishrei → dawn 15 Nisan
-  • ותן טל ומטר לברכה / ותן ברכה – Motzaei 5 Kislev → Motzaei 15 Nisan
-  • יעלה ויבוא – every Rosh‑Chodesh (not R"H) from dawn onward
-  • אתה יצרת – when Shabbat is Rosh‑Chodesh (dawn → sunset)
+Prayers handled in the main state (joined with " - "):
+  • מוריד הגשם / מוריד הטל – dawn 22 Tishrei → dawn 15 Nisan
+  • ותן טל ומטר לברכה / ותן ברכה – Motzaei 5 Kislev → Motzaei 15 Nisan
+  • יעלה ויבוא – every Rosh-Chodesh (not R"H) from dawn onward
+  • אתה יצרת – when Shabbat is Rosh-Chodesh (dawn → sunset)
   • על הניסים – Chanukah or Purim
-  • עננו – any minor fast (dawn → Motzaei); also on 9 Av (dawn → Motzaei)
-  • נחם – 9 Av only, from chatzot → Motzaei
+  • עננו – any minor fast (dawn → Motzaei); also on 9 Av (dawn → Motzaei)
+  • נחם – 9 Av only, from chatzot → Motzaei
 
-Extra attribute:
-  • "הושענות" – which *Hoshana* is recited on days 1‑6 of Sukkot, empty otherwise.
+Extra attributes:
+  • "הושענות" – which *Hoshana* is recited on days 1-6 of Sukkot, empty otherwise.
+  • "עשי\"ת" – during Aseres Yemei Teshuvah:
+       Motzaei R"H (at havdalah offset) → Erev YK (until candle-lighting offset).
+       On Shabbos in that window: omit "אבינו מלכנו".
+       Value is a single string like: "ממעמקים - זכרינו - המלך - אבינו מלכנו"
 """
 
 from __future__ import annotations
@@ -35,8 +39,8 @@ from .device import YidCalDevice
 # -----------------------------------------------------------------------------
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
 
-# Mapping of the 6 Hoshanos (15‑20 Tishrei) by WEEKDAY of 15 Tishrei
-# weekday(): Mon=0 … Sun=6 – only the four possible weekdays for the first day.
+# Mapping of the 6 Hoshanos (15-20 Tishrei) by WEEKDAY of 15 Tishrei
+# weekday(): Mon=0 … Sun=6 – only the four possible weekdays for the first day.
 HOSHANOS_TABLE = {
     0: [  # Monday
         "למען אמתך",
@@ -120,33 +124,34 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             tz = ZoneInfo(tzname)
             loc = LocationInfo("home", "", tzname, lat, lon)
             sun_times = sun(loc.observer, date=today, tzinfo=tz)
-            dawn = sun_times["sunrise"] - timedelta(minutes=72)
+            sunrise = sun_times["sunrise"]
             sunset = sun_times["sunset"]
+            dawn = sunrise - timedelta(minutes=72)
+            candle_time = sunset - timedelta(minutes=self._candle)
             havdala = sunset + timedelta(minutes=self._havdalah)
-            hal_mid = sun_times["sunrise"] + (sunset - sun_times["sunrise"]) / 2
+            hal_mid = sunrise + (sunset - sunrise) / 2
 
-            # -------- Hebrew date (roll after Havdalah)
+            # -------- Hebrew date (roll after Havdalah for general logic)
             hd = PHebrewDate.from_pydate(today)
             if now >= havdala:
                 hd = hd + 1
             day = hd.day
             m_he = hd.month_name(hebrew=True)
 
-            # -------- Build insertion list
+            # -------- Sunset-rolled date for AYT window bounds
+            hd_sun = PHebrewDate.from_pydate(today)
+            if now >= sunset:
+                hd_sun = hd_sun + 1
+            m_num_sun = hd_sun.month  # 7 == Tishrei
+            d_num_sun = hd_sun.day
+
+            # -------- Build main-state insertions (unchanged)
             insertions: list[str] = []
 
             # 1) Rain blessing window
             rain_start = (
                 (m_he == "תשרי" and (day > 22 or (day == 22 and now >= dawn)))
-                or m_he in [
-                    "חשון",
-                    "כסלו",
-                    "טבת",
-                    "שבט",
-                    "אדר",
-                    "אדר א",
-                    "אדר ב",
-                ]
+                or m_he in ["חשון", "כסלו", "טבת", "שבט", "אדר", "אדר א", "אדר ב"]
                 or (m_he == "ניסן" and (day < 15 or (day == 15 and now < dawn)))
             )
             insertions.append("מוריד הגשם" if rain_start else "מוריד הטל")
@@ -163,18 +168,18 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             state = self.hass.states.get(HOLIDAY_SENSOR)
             attrs = state.attributes if state else {}
 
-            # Rosh‑Chodesh
+            # Rosh-Chodesh
             is_rc = ((day == 1) or (day == 30)) and (m_he != "תשרי")
             if is_rc:
                 insertions.append("יעלה ויבוא")
-                if now.weekday() == 5 and dawn <= now < sunset:
+                if now.weekday() == 5 and sunrise - timedelta(minutes=72) <= now < sunset:
                     insertions.append("אתה יצרת")
 
             # Chanukah / Purim
             if attrs.get("חנוכה") or attrs.get("פורים"):
                 insertions.append("על הניסים")
 
-            # 4) Fast‑day insertions
+            # 4) Fast-day insertions
             is_tisha = hd.month == 5 and hd.day == 9
             is_fast = any(
                 bool(v)
@@ -191,9 +196,35 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             elif is_fast and dawn <= now <= havdala:
                 insertions.append("עננו")
 
+            # 5) Aseres Yemei Teshuvah — attribute only (not in main state)
+            # Window: Motzaei R"H (at havdalah offset) → Erev YK (until candle-lighting offset)
+            is_tishrei_sun = (m_num_sun == 7)
+            is_ayt = False
+            if is_tishrei_sun:
+                if 3 <= d_num_sun <= 8:
+                    is_ayt = True
+                    if d_num_sun == 3 and now < havdala:
+                        is_ayt = False
+                elif d_num_sun == 9:
+                    if now < candle_time:
+                        is_ayt = True
+
+            ayt_attr = ""
+            if is_ayt:
+                # Shabbos: omit אבינו מלכנו from Friday CL → Motzaei Shabbos (havdalah)
+                is_shabbos_window = (
+                    (now.weekday() == 4 and now >= candle_time) or  # Friday after CL time
+                    (now.weekday() == 5 and now <= havdala)         # until Motzaei Shabbos (havdalah)
+                )
+                if is_shabbos_window:
+                    ayt_list = ["ממעמקים", "זכרינו", "המלך"]
+                else:
+                    ayt_list = ["ממעמקים", "זכרינו", "המלך", "אבינו מלכנו"]
+                ayt_attr = " - ".join(ayt_list)
+
             # ------------------------------------------------------------------ Hoshana  (rolls at civil midnight)
             hoshana = ""
-            hd_civil = PHebrewDate.from_pydate(today)          # ← never advanced after Havdalah
+            hd_civil = PHebrewDate.from_pydate(today)  # ← never advanced after Havdalah
             if hd_civil.month == 7 and 15 <= hd_civil.day <= 20:
                 first_day_greg = PHebrewDate(hd_civil.year, 7, 15).to_pydate()
                 seq = HOSHANOS_TABLE.get(first_day_greg.weekday())
@@ -201,7 +232,10 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
                     hoshana = seq[hd_civil.day - 15]
 
             # ---------------------------------------------------------------- expose attributes
-            self._attr_extra_state_attributes = {"הושענות": hoshana}
+            self._attr_extra_state_attributes = {
+                "הושענות": hoshana,
+                "עשי\"ת": ayt_attr,
+            }
 
             return " - ".join(insertions)
 
