@@ -242,10 +242,18 @@ class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         elif hd_today.month == 7 and hd_today.day == 9:  # 9 Tishrei – Erev YK
             label = "סליחות לערב יוה\"כ"
 
-        # ---- Aseres‑Yemei‑Teshuvah numbering (after the fast, before Erev YK)
+        # ---- Aseres-Yemei-Teshuvah numbering (after the fast, before Erev YK)
         elif hd_today.month == 7 and tzom_gedaliah_greg < today < erev_yk_greg:
-            idx = (today - tzom_gedaliah_greg).days  # 1 → 4 Tishrei, etc.
-            label = f"סליחות ליום {HEBREW_DAY_WORDS[idx + 1]} מעשי\"ת"
+            # Day-1 = Tzom Gedaliah itself (3 Tishrei)
+            cnt = 1
+            d = tzom_gedaliah_greg + timedelta(days=1)     # start with 4 Tishrei
+            while d <= today:
+                if d.weekday() != 5:                       # skip Shabbos Shuvah
+                    cnt += 1
+                d += timedelta(days=1)
+
+            # cnt now 1…6 → ראשון…חמישי
+            label = f"סליחות ליום {HEBREW_DAY_WORDS[cnt]} מעשי\"ת"
 
         # ---- Elul period ordinal
         elif is_on:  # still active but none of the above captions applied
