@@ -695,38 +695,38 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             (4, 17),                  # 17 Tammuz
             (13 if is_leap else 12, 13),  # Ta'anit Esther (Adar II in leap years)
         ]
-        
+
+        # Remember if a pre-fast countdown was already set (e.g., Erev YK / Tish'a)
+        prefast_already = bool(attrs["מען פאַסט אַן און"])
+
         # Use the next morning's halachic date (already rolls at havdalah)
         next_halachic_date = festival_date
         hd_tomorrow = PHebrewDate.from_pydate(next_halachic_date)
-        
+
         # Is the *next halachic day* a minor dawn-start fast?
         is_pre_minor_fast = any(hd_tomorrow.month == m and hd_tomorrow.day == d for m, d in minor_fast_dates)
-        
+
         # Compute next dawn for the halachic next day (rounding consistent with earlier logic)
         tomorrow_cal = ZmanimCalendar(geo_location=geo, date=next_halachic_date)
         next_dawn = tomorrow_cal.sunrise().astimezone(tz) - timedelta(minutes=72)
         if next_dawn.second >= 30:
             next_dawn += timedelta(minutes=1)
         next_dawn = next_dawn.replace(second=0, microsecond=0)
-        
+
         # Do not show a new "starts in" countdown if any fast flag is currently active.
         # This prevents the countdown from reappearing right after a fast ends.
         no_fast_active_now = not any(attrs.get(f) for f in self.FAST_FLAGS)
-        
-        # Show "starts in" only within the last 6 hours before next dawn of a minor fast day,
-        # and only when there isn't an active fast now.
+
+        # Only manage the minor-fast pre-window here; never clobber a countdown that was already set earlier
         if no_fast_active_now and is_pre_minor_fast and (next_dawn - timedelta(hours=6)) <= now < next_dawn:
             remaining_sec = max(0, (next_dawn - now).total_seconds())
             minutes_remaining = math.ceil(remaining_sec / 60)
             h = minutes_remaining // 60
             m = minutes_remaining % 60
             attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
-        else:
-            # If we’re not in the valid pre-fast window, clear any stale pre-fast value
-            # (this does not affect the “ends in” block below during an actual fast)
-            if not any(attrs.get(f) for f in self.FAST_FLAGS):
-                attrs["מען פאַסט אַן און"] = ""
+        elif not prefast_already:
+            # Clear only if we didn't already set a (non-minor) pre-fast countdown above (e.g., Erev YK)
+            attrs["מען פאַסט אַן און"] = ""
 
         # Filter attrs by windows
         for name, on in list(attrs.items()):
