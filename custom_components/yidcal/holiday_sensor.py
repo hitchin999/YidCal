@@ -198,8 +198,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ב׳ דחול המועד סוכות":               "havdalah_havdalah",
         "ג׳ דחול המועד סוכות":               "havdalah_havdalah",
         "ד׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "חול המועד סוכות":                  "candle_havdalah",
-        "הושענא רבה":                     "havdalah_havdalah",
+        "חול המועד סוכות":                  "havdalah_candle",
+        "הושענא רבה":                     "havdalah_candle",
         "שמיני עצרת":                      "candle_havdalah",
         "שמחת תורה":                     "havdalah_havdalah",
         "אסרו חג סוכות":                   "havdalah_havdalah",
@@ -222,7 +222,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ב׳ דחול המועד פסח":                "havdalah_havdalah",
         "ג׳ דחול המועד פסח":                "havdalah_havdalah",
         "ד׳ דחול המועד פסח":                "havdalah_havdalah",
-        "חול המועד פסח":                  "havdalah_havdalah",
+        "חול המועד פסח":                  "havdalah_candle",
         "שביעי של פסח":                   "candle_havdalah",
         "אחרון של פסח":                   "havdalah_havdalah",
         "אסרו חג פסח":                    "havdalah_havdalah",
@@ -495,7 +495,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Yom Kippur
         if hd_py.month == 7 and hd_py.day == 9:
             attrs["ערב יום כיפור"] = True
-        if hd_fest.month == 7 and hd_fest.day == 10:
+        if (hd_py.month == 7 and hd_py.day == 10) or (hd_fest.month == 7 and hd_fest.day == 10):
             attrs["יום הכיפורים"] = True
 
         # Sukkot
