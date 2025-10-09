@@ -102,20 +102,26 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         for i, name in enumerate(ISHPIZIN_NAMES):
             gdate = PHebrewDate(heb_year, 7, 15 + i).to_pydate()
-            weekday_yi = WEEKDAYS_YI[gdate.weekday()]
+        
+            # Use the PREVIOUS civil day for the start-of-night
+            prev_gdate = gdate - timedelta(days=1)
+        
+            # Weekday label should reflect the night that BEGINS on prev_gdate
+            weekday_yi = WEEKDAYS_YI[prev_gdate.weekday()]
+        
             label = _hebrew_day_label(i)
-
+        
             # Two-line entry per day:
-            # <weekday> <label>:
-            # אושפיזא ד<Name>
             entry = f"{weekday_yi} {label}:\nאושפיזא ד{name}"
             lines.append(entry)
-
-            # Determine active Ushpizin (state must remain a valid enum)
-            s = sun(loc.observer, date=gdate, tzinfo=tz)
-            start = s["sunset"] + timedelta(minutes=self._havdalah_offset)
-            s2 = sun(loc.observer, date=gdate + timedelta(days=1), tzinfo=tz)
-            end = s2["sunset"] + timedelta(minutes=self._havdalah_offset)
+        
+            # Correct night window: [sunset(prev_gdate)+offset, sunset(gdate)+offset)
+            s_prev = sun(loc.observer, date=prev_gdate, tzinfo=tz)
+            start = s_prev["sunset"] + timedelta(minutes=self._havdalah_offset)
+        
+            s_curr = sun(loc.observer, date=gdate, tzinfo=tz)
+            end = s_curr["sunset"] + timedelta(minutes=self._havdalah_offset)
+        
             if start <= now < end:
                 active_state = f"אושפיזא ד{name}"
                 attrs[active_state] = True
