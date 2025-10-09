@@ -123,8 +123,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     ALLOWED_HOLIDAYS: list[str] = [
         "א׳ סליחות",
         "ערב ראש השנה",
-        "ראש השנה א׳",
-        "ראש השנה ב׳",
+        "ראש השנה א׳",   # displayed as: א׳ דראש השנה
+        "ראש השנה ב׳",   # displayed as: ב׳ דראש השנה
         "מוצאי ראש השנה",
         "צום גדליה",
         "שלוש עשרה מדות",
@@ -132,8 +132,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "יום הכיפורים",
         "מוצאי יום הכיפורים",
         "ערב סוכות",
-        "סוכות א׳",
-        "סוכות ב׳",
+        "סוכות א׳",      # displayed as: א׳ דסוכות
+        "סוכות ב׳",      # displayed as: ב׳ דסוכות
         "א׳ דחול המועד סוכות",
         "ב׳ דחול המועד סוכות",
         "ג׳ דחול המועד סוכות",
@@ -153,8 +153,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שושן פורים",
         "ליל בדיקת חמץ",
         "ערב פסח",
-        "פסח א׳",
-        "פסח ב׳",
+        "פסח א׳",        # displayed as: א׳ דפסח
+        "פסח ב׳",        # displayed as: ב׳ דפסח
         "א׳ דחול המועד פסח",
         "ב׳ דחול המועד פסח",
         "ג׳ דחול המועד פסח",
@@ -166,8 +166,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "פסח שני",
         "ל\"ג בעומר",
         "ערב שבועות",
-        "שבועות א׳",
-        "שבועות ב׳",
+        "שבועות א׳",     # displayed as: א׳ דשבועות
+        "שבועות ב׳",     # displayed as: ב׳ דשבועות
         "מוצאי שבועות",
         "אסרו חג שבועות",
         "צום שבעה עשר בתמוז",
@@ -249,7 +249,22 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         attrs["מען פאַסט אַן און"] = ""   # fast starts in
         return attrs
 
-
+    # Two-day chagim where we want "א׳ ד<שם>" instead of "<שם> א׳"
+    _TWO_DAY_BASES = {"ראש השנה", "סוכות", "פסח", "שבועות"}
+    
+    @staticmethod
+    def _flip_two_day_format(name: str) -> str:
+        """
+        Turn '<base> א׳/ב׳' into 'א׳/ב׳ ד<base>' but only for bases in _TWO_DAY_BASES.
+        Leaves anything else unchanged.
+        """
+        # Hebrew geresh is U+05F3 (׳). Your strings already use it, so match that.
+        if name.endswith(" א׳") or name.endswith(" ב׳"):
+            base = name[:-3]           # strip space + letter + geresh
+            day_letter = name[-2]      # 'א' or 'ב'
+            if base in HolidaySensor._TWO_DAY_BASES:
+                return f"{day_letter}׳ ד{base}"
+        return name
 
     def __init__(
         self,
@@ -290,7 +305,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         else:
             self._attr_native_value = ""
             
-        attrs["Possible states"] = list(self.ALLOWED_HOLIDAYS)
+        attrs["Possible states"] = [self._flip_two_day_format(n) for n in self.ALLOWED_HOLIDAYS]
         self._attr_extra_state_attributes = attrs
     
         # schedule minute‐interval updates via base‐class wrapper
@@ -311,8 +326,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     @property
     def options(self) -> list[str]:
         """Return list of possible values for Home Assistant automation UI."""
-        # Return all holidays that can be selected in automations
-        return list(self.ALLOWED_HOLIDAYS) + [""]  # Include empty state
+        # Preserve the original ALLOWED_HOLIDAYS order, but render each through the flip
+        opts = []
+        seen = set()
+        for n in self.ALLOWED_HOLIDAYS:
+            m = self._flip_two_day_format(n)
+            if m not in seen:
+                opts.append(m)
+                seen.add(m)
+    
+        # Include empty state at the end
+        return opts + [""]
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         if self.hass is None:
@@ -801,11 +825,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         combined = next((n for n, on in attrs.items() if n.endswith(" א׳ וב׳") and on), None)
         if combined:
             base = combined[:-len(" א׳ וב׳")]
-            # Updated suffix logic: use the individual day flag to determine first or second day
-            suffix = "א׳" if attrs.get(f"{base} א׳", False) else "ב׳"
-            picked = f"{base} {suffix}"
+            # Decide which day is active
+            is_day1 = attrs.get(f"{base} א׳", False)
+            # Build as "א׳ ד<base>" or "ב׳ ד<base>" but only for the two-day bases
+            if base in self._TWO_DAY_BASES:
+                picked = f"{'א' if is_day1 else 'ב'}׳ ד{base}"
+            else:
+                picked = f"{base} {'א׳' if is_day1 else 'ב׳'}"
+
         elif attrs.get("זאת חנוכה"):
             picked = "זאת חנוכה"
+
         elif any(attrs.get(name) for name in [
             "מוצאי ראש השנה",
             "מוצאי יום הכיפורים",
@@ -825,6 +855,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 "מוצאי תשעה באב",
             ]
             picked = next(n for n in motzei_list if attrs.get(n))
+
         elif any(attrs.get(name) for name in [
             "אסרו חג פסח",
             "אסרו חג שבועות",
@@ -836,9 +867,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 "אסרו חג סוכות",
             ]
             picked = next(n for n in asru_list if attrs.get(n))
+
         else:
             picked = next((n for n in self.ALLOWED_HOLIDAYS if attrs.get(n)), "")
+            # Flip single-day forms like "סוכות א׳" → "א׳ דסוכות" when applicable
+            picked = self._flip_two_day_format(picked)
 
         self._attr_native_value = picked
         self._attr_extra_state_attributes = attrs
-        attrs["Possible states"] = list(self.ALLOWED_HOLIDAYS)
+        attrs["Possible states"] = [self._flip_two_day_format(n) for n in self.ALLOWED_HOLIDAYS]
