@@ -759,11 +759,29 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             # Clear only if we didn't already set a (non-minor) pre-fast countdown above (e.g., Erev YK)
             attrs["מען פאַסט אַן און"] = ""
 
+        # Dynamic window overrides for the generic Chol HaMo'ed flags
+        # Keep them continuous (havdalah→havdalah) on ordinary CH"M days,
+        # but cut at candle time on the last CH"M day (Erev YT).
+        def _dynamic_window(name: str, default_w: str) -> str:
+            # Sukkos: last CH"M day is 21 Tishrei (Erev Shemini Atzeres)
+            if name == "חול המועד סוכות":
+                if hd_fest.month == 7 and hd_fest.day == 21:
+                    return "havdalah_candle"
+                return "havdalah_havdalah"
+
+            # Pesach: last CH"M day is 20 Nisan (Erev Yom Tov Shevii)
+            if name == "חול המועד פסח":
+                if hd_fest.month == 1 and hd_fest.day == 20:
+                    return "havdalah_candle"
+                return "havdalah_havdalah"
+
+            return default_w
+
         # Filter attrs by windows
         for name, on in list(attrs.items()):
             if not on:
                 continue
-            w = self.WINDOW_TYPE.get(name)
+            w = _dynamic_window(name, self.WINDOW_TYPE.get(name))
             if w == "candle_havdalah" and not (candle_havdalah_start <= now <= candle_havdalah_end):
                 attrs[name] = False
             elif w == "havdalah_havdalah" and not (havdalah_havdalah_start <= now <= havdalah_havdalah_end):
