@@ -95,44 +95,43 @@ class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
             longitude=self.hass.config.longitude,
         )
 
+        # Reset attributes/flags
         attrs: dict[str, object] = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
         lines: list[str] = []
-        current_label = ""
         active_state = ""
 
         for i, name in enumerate(ISHPIZIN_NAMES):
+            # Hebrew calendar date for this Ushpizin: 15..21 Tishrei of heb_year
             gdate = PHebrewDate(heb_year, 7, 15 + i).to_pydate()
-        
-            # Use the PREVIOUS civil day for the start-of-night
+
+            # The NIGHT of this Hebrew day begins at sunset of the previous civil day
             prev_gdate = gdate - timedelta(days=1)
-        
-            # Weekday label should reflect the night that BEGINS on prev_gdate
-            weekday_yi = WEEKDAYS_YI[prev_gdate.weekday()]
-        
+
+            # Weekday label should reflect the night start
+            weekday_yi = WEEKDAYS_YI[gdate.weekday()]
             label = _hebrew_day_label(i)
-        
-            # Two-line entry per day:
-            entry = f"{weekday_yi} {label}:\nאושפיזא ד{name}"
+
+            # Build schedule entry aligned to the night start
+            entry = f"{weekday_yi} {label}:\nאושפיזא ד{name}."
             lines.append(entry)
-        
-            # Correct night window: [sunset(prev_gdate)+offset, sunset(gdate)+offset)
+
+            # Correct window: [sunset(prev_gdate)+offset, sunset(gdate)+offset)
             s_prev = sun(loc.observer, date=prev_gdate, tzinfo=tz)
             start = s_prev["sunset"] + timedelta(minutes=self._havdalah_offset)
-        
+
             s_curr = sun(loc.observer, date=gdate, tzinfo=tz)
             end = s_curr["sunset"] + timedelta(minutes=self._havdalah_offset)
-        
+
             if start <= now < end:
                 active_state = f"אושפיזא ד{name}"
                 attrs[active_state] = True
-                current_label = label
 
         # Keep only valid enum state
         self._attr_native_value = active_state if active_state in ISHPIZIN_STATES else ""
-        # Cosmetic title
         self._attr_name = "Ishpizin"
 
-        # Attribute with a blank line between items for "list-like" display
+        # Pretty “list-like” schedule + backward-compat states list
         attrs["Ishpizin Schedule"] = "\n\n".join(lines)
         attrs["Possible states"] = [f"אושפיזא ד{name}" for name in ISHPIZIN_NAMES] + [""]
+
         self._attr_extra_state_attributes = attrs
