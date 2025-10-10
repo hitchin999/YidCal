@@ -83,7 +83,14 @@ A custom Home Assistant integration that provides:
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
 * **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – midnight of night
-* **Upcoming Holiday Sensor** (`binary_sensor.yidcal_upcoming_holiday`)
+* **Upcoming Yom Tov Sensor** (`binary_sensor.yidcal_upcoming_yomtov`)
+  * **What it shows:** ON/OFF for the run-up to the next target.
+    * `Next_Holiday` – one of: **ראש השנה, יום כיפור, סוכות, שבת חול המועד סוכות, שמיני עצרת, שמחת תורה, פסח, שבת חול המועד פסח, שביעי של פסח, אחרון של פסח, שבועות**
+    * `Date` – target civil date
+    * `Next_On` – next future activation (always forward-looking)
+  * **When it turns ON/OFF:**
+    * **ON:** **12:00 AM** after the latest **Motzi** (Shabbos or Yom Tov), leading into the next target (includes **שבת חול המועד**).
+    * **OFF:** At **candle-lighting** of the target’s **erev** (sunset − `candlelighting_offset`).
 * **Sof Zman Achilas Chumetz** (`sensor.yidcal_zman_achilas_chumetz`)
 * **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
