@@ -64,6 +64,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "יום הכיפורים",
         "מוצאי יום הכיפורים",
         "ערב סוכות",
+        "סוכות",
         "סוכות א׳",
         "סוכות ב׳",
         "סוכות א׳ וב׳",
@@ -72,9 +73,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ג׳ דחול המועד סוכות",
         "ד׳ דחול המועד סוכות",
         "חול המועד סוכות",
+        "שבת חול המועד סוכות",
         "הושענא רבה",
         "שמיני עצרת",
         "שמחת תורה",
+        "שמיני עצרת/שמחת תורה",
         "מוצאי סוכות",
         "אסרו חג סוכות",
         "ערב חנוכה",
@@ -89,6 +92,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שושן פורים",
         "ליל בדיקת חמץ",
         "ערב פסח",
+        "פסח",
         "פסח א׳",
         "פסח ב׳",
         "פסח א׳ וב׳",
@@ -97,8 +101,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ג׳ דחול המועד פסח",
         "ד׳ דחול המועד פסח",
         "חול המועד פסח",
+        "שבת חול המועד פסח",
         "שביעי של פסח",
         "אחרון של פסח",
+        "שביעי/אחרון של פסח",
         "מוצאי פסח",
         "אסרו חג פסח",
         "פסח שני",
@@ -117,6 +123,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "מוצאי תשעה באב",
         "יום כיפור קטן",
         "ראש חודש",
+        "שבת ראש חודש",
     ]
 
     # ─── Only these may become the sensor.state ───
@@ -774,6 +781,58 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             elif w == "candle_candle" and not (candle_candle_start <= now <= candle_candle_end):
                 attrs[name] = False
             # others stay full day
+            
+        # ─── Aggregate flags & Shabbos Chol HaMoed (attributes only) ────────
+        # "סוכות": 1st two days + entire Chol HaMoed through הושענא רבה
+        attrs["סוכות"] = any(attrs.get(n) for n in [
+            "סוכות א׳",
+            "סוכות ב׳",
+            "א׳ דחול המועד סוכות",
+            "ב׳ דחול המועד סוכות",
+            "ג׳ דחול המועד סוכות",
+            "ד׳ דחול המועד סוכות",
+            "הושענא רבה",
+        ])
+
+        # Single flag for both days: שמיני עצרת/שמחת תורה
+        attrs["שמיני עצרת/שמחת תורה"] = bool(
+            attrs.get("שמיני עצרת") or attrs.get("שמחת תורה")
+        )
+
+        # "פסח": 1st two days + entire Chol HaMoed + שביעי + אחרון
+        attrs["פסח"] = any(attrs.get(n) for n in [
+            "פסח א׳",
+            "פסח ב׳",
+            "א׳ דחול המועד פסח",
+            "ב׳ דחול המועד פסח",
+            "ג׳ דחול המועד פסח",
+            "ד׳ דחול המועד פסח",
+            "שביעי של פסח",
+            "אחרון של פסח",
+        ])
+
+        # Single flag for both: שביעי/אחרון של פסח
+        attrs["שביעי/אחרון של פסח"] = bool(
+            attrs.get("שביעי של פסח") or attrs.get("אחרון של פסח")
+        )
+
+        # Shabbos Chol HaMoed (halachic Shabbos via wd_fest)
+        attrs["שבת חול המועד סוכות"] = (
+            wd_fest == 5 and hd_fest.month == 7 and hd_fest.day in (17, 18, 19, 20, 21)
+        )
+        attrs["שבת חול המועד פסח"] = (
+            wd_fest == 5 and hd_fest.month == 1 and hd_fest.day in (17, 18, 19, 20)
+        )
+
+        # Shabbos Rosh Chodesh – halachic Shabbos via wd_fest (Mon=0..Sun=6).
+        # True when the halachic Shabbos day is also Rosh Chodesh
+        # (RC days are 30 of the previous month or 1 of the current),
+        # excluding 1 Tishrei (Rosh Hashanah) per your existing RC rule.
+        attrs["שבת ראש חודש"] = (
+            wd_fest == 5
+            and (hd_fest.day in (1, 30))
+            and not (hd_fest.month == 7 and hd_fest.day == 1)  # exclude RH
+        )
 
         # ─── Countdown for fast ends in
         if any(attrs.get(f) for f in self.FAST_FLAGS):
