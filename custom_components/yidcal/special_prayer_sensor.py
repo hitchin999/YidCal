@@ -265,12 +265,31 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
 
             # ---------- אתה חוננתנו ----------
             no_melucha = self.hass.states.get(NO_MELOCHA_SENSOR)
-            was_no_melucha = bool(no_melucha and no_melucha.state == "on")
-            # enable after melacha becomes allowed (no_melucha turns off)
-            is_after_havdala = now >= havdala
             motzash_tog = False
-            if not was_no_melucha and is_after_havdala and now.time() < time(23, 59):
-                motzash_tog = True
+            
+            # Only ever show until (civil) midnight tonight
+            if now.time() < time(23, 59):
+                if no_melucha:
+                    # Turn on only if the prohibition lifted tonight (on -> off after havdala)
+                    try:
+                        nm_is_off = (no_melucha.state == "off")
+                        # HA stores last_changed in UTC; compare in local tz
+                        lc_local = no_melucha.last_changed.astimezone(tz) if no_melucha.last_changed else None
+                        nm_lifted_tonight = (
+                            nm_is_off
+                            and lc_local is not None
+                            and lc_local >= havdala                 # flipped after tonight's havdala
+                            and lc_local.date() == now.date()       # and on this civil date
+                        )
+                        motzash_tog = nm_lifted_tonight
+                    except Exception:
+                        motzash_tog = False
+                else:
+                    # Fallback when no-melucha sensor isn't available:
+                    # only Motzaei Shabbos or Motzaei Yom Tov after havdala
+                    was_shabbos = (now.weekday() == 5)  # Saturday night
+                    was_yomtov_today = bool(st_hol and st_hol.attributes.get("יום טוב"))
+                    motzash_tog = (now >= havdala) and (was_shabbos or was_yomtov_today)
 
             # ---------- Hoshanos ----------
             hd_civil = PHebrewDate.from_pydate(today)
