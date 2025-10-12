@@ -9,13 +9,14 @@ DEFAULT_HAVDALAH_OFFSET = 72
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22 # minutes after Alos
 CONF_INCLUDE_DATE = "include_date"
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
-# New option key
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
 CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"
 CONF_YAHRTZEIT_DATABASE = "yahrtzeit_database"
 DEFAULT_YAHRTZEIT_DATABASE = "standard"
 CONF_SLICHOS_LABEL_ROLLOVER = "slichos_label_rollover"
 DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
+CONF_UPCOMING_LOOKAHEAD_DAYS = "upcoming_lookahead_days"
+DEFAULT_UPCOMING_LOOKAHEAD_DAYS = 2
 
 class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for YidCal."""
@@ -75,6 +76,18 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             ]
                         }
                     }),
+                    vol.Optional(
+                        CONF_UPCOMING_LOOKAHEAD_DAYS,
+                        default=DEFAULT_UPCOMING_LOOKAHEAD_DAYS,
+                    ): selector({
+                        "number": {
+                            "min": 1,          # set 1 if you never want 0
+                            "max": 14,
+                            "step": 1,
+                            "mode": "slider",
+                            "unit_of_measurement": "days",
+                        }
+                    }),
                 }
             )
             return self.async_show_form(step_id="user", data_schema=schema)
@@ -90,6 +103,9 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_ENABLE_WEEKLY_YURTZEIT: user_input.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
             CONF_YAHRTZEIT_DATABASE: user_input.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
             CONF_SLICHOS_LABEL_ROLLOVER: user_input.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
+            CONF_UPCOMING_LOOKAHEAD_DAYS: user_input.get(
+                CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS
+            ),
         }
         return self.async_create_entry(title="YidCal", data=data)
     @staticmethod
@@ -144,6 +160,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_SLICHOS_LABEL_ROLLOVER,
             data.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
         )
+        upcoming_lookahead_default = opts.get(
+            CONF_UPCOMING_LOOKAHEAD_DAYS,
+            data.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
+        )
         if user_input is None:
             schema = vol.Schema(
                 {
@@ -196,6 +216,18 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                                 {"value": "havdalah", "label": "זמן הבדלה"},
                                 {"value": "midnight", "label": "12 AM"},
                             ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_UPCOMING_LOOKAHEAD_DAYS,
+                        default=upcoming_lookahead_default,
+                    ): selector({
+                        "number": {
+                            "min": 1,          # set 1 if you never want 0
+                            "max": 14,
+                            "step": 1,
+                            "mode": "slider",
+                            "unit_of_measurement": "days",
                         }
                     }),
                 }
