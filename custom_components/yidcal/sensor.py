@@ -58,6 +58,7 @@ from .day_label_hebrew import DayLabelHebrewSensor
 from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
 from .zman_tzeis import ZmanTziesSensor
+from .upcoming_holiday_sensor import UpcomingHolidaySensor
 from .yurtzeit_sensor import (
     YurtzeitSensor,
     YurtzeitWeeklySensor,
@@ -116,6 +117,8 @@ async def async_setup_entry(
     opts = hass.data[DOMAIN][entry.entry_id]
     candle_offset = opts.get("candlelighting_offset", 15)
     havdalah_offset = opts.get("havdalah_offset", 72)
+    from .config_flow import CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS
+    lookahead_days = opts.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS)
     # Prepare helpers
     sfirah_helper = SfirahHelper(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
@@ -160,6 +163,14 @@ async def async_setup_entry(
         DayTypeSensor(hass, candle_offset, havdalah_offset),
         YurtzeitSensor(hass, havdalah_offset,),
         ZmanTziesSensor(hass, havdalah_offset),
+        UpcomingHolidaySensor(
+            hass,
+            candle_offset,
+            havdalah_offset,
+            lookahead_days=lookahead_days,
+            horizon_days=14,
+            update_interval_minutes=15,
+        ),
     ]
 
     if opts.get(CONF_ENABLE_WEEKLY_YURTZEIT, True):
