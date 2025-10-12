@@ -12,6 +12,7 @@ from .config_flow import CONF_INCLUDE_DATE
 from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
 from .config_flow import CONF_YAHRTZEIT_DATABASE
 from .config_flow import CONF_SLICHOS_LABEL_ROLLOVER
+from .config_flow import CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
@@ -180,6 +181,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_SLICHOS_LABEL_ROLLOVER,
         initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
     )
+    upcoming_lookahead = opts.get(
+        CONF_UPCOMING_LOOKAHEAD_DAYS,
+        initial.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
+    )
     # Resolve and store geo+tz config
     latitude = hass.config.latitude
     longitude = hass.config.longitude
@@ -199,6 +204,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
         CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
+        CONF_UPCOMING_LOOKAHEAD_DAYS: upcoming_lookahead,
     }
     # Store global config for sensors
     hass.data[DOMAIN]["config"] = {
@@ -262,6 +268,10 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_SLICHOS_LABEL_ROLLOVER,
         initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
     )
+    upcoming_lookahead = opts.get(
+        CONF_UPCOMING_LOOKAHEAD_DAYS,
+        initial.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
+    )
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "strip_nikud": strip,
@@ -274,6 +284,7 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
         CONF_YAHRTZEIT_DATABASE: yahrtzeit_database,
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
+        CONF_UPCOMING_LOOKAHEAD_DAYS: upcoming_lookahead,
     }
     # Schedule the reload shortly after to apply new options
     async_call_later(
