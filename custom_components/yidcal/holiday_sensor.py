@@ -205,7 +205,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ב׳ דחול המועד סוכות":               "havdalah_havdalah",
         "ג׳ דחול המועד סוכות":               "havdalah_havdalah",
         "ד׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "חול המועד סוכות":                  "havdalah_candle",
+        "חול המועד סוכות":                  "havdalah_havdalah",
         "הושענא רבה":                     "havdalah_candle",
         "שמיני עצרת":                      "candle_havdalah",
         "שמחת תורה":                     "havdalah_havdalah",
@@ -553,7 +553,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["חול המועד סוכות"] = True
             if hd_fest.day == 21:
                 attrs["הושענא רבה"] = True
-                attrs["חול המועד סוכות"] = True
             if hd_py.day == 22:
                 attrs["שמיני עצרת"] = True
             if hd_fest.day == 23:
@@ -762,19 +761,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Dynamic window overrides for the generic Chol HaMo'ed flags
         # Keep them continuous (havdalah→havdalah) on ordinary CH"M days,
         # but cut at candle time on the last CH"M day (Erev YT).
-        def _dynamic_window(name: str, default_w: str) -> str:
-            # Sukkos: last CH"M day is 21 Tishrei (Erev Shemini Atzeres)
+        def _dynamic_window(name: str, default_w: str | None) -> str | None:
             if name == "חול המועד סוכות":
-                if hd_fest.month == 7 and hd_fest.day == 21:
-                    return "havdalah_candle"
-                return "havdalah_havdalah"
-
-            # Pesach: last CH"M day is 20 Nisan (Erev Yom Tov Shevii)
+                return "havdalah_havdalah"  # 17–20 Tishrei continuous
             if name == "חול המועד פסח":
-                if hd_fest.month == 1 and hd_fest.day == 20:
-                    return "havdalah_candle"
-                return "havdalah_havdalah"
-
+                # last CH"M day is 20 Nisan → cut at candle that evening
+                return "havdalah_candle" if (hd_fest.month == 1 and hd_fest.day == 20) else "havdalah_havdalah"
             return default_w
 
         # Filter attrs by windows
@@ -836,7 +828,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Shabbos Chol HaMoed (halachic Shabbos via wd_fest)
         attrs["שבת חול המועד סוכות"] = (
-            wd_fest == 5 and hd_fest.month == 7 and hd_fest.day in (17, 18, 19, 20, 21)
+            wd_fest == 5 and hd_fest.month == 7 and hd_fest.day in (17, 18, 19, 20)
         )
         attrs["שבת חול המועד פסח"] = (
             wd_fest == 5 and hd_fest.month == 1 and hd_fest.day in (17, 18, 19, 20)
