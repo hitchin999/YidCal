@@ -134,12 +134,13 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Sukkos aggregates
         sukkos_days = [
             "סוכות א׳", "סוכות ב׳",
-            "א׳ דחול המועד סוכות", "ב׳ דחול המועד סוכות", "ג׳ דחול המועד סוכות", "ד׳ דחול המועד סוכות",
+            "א׳ דחול המועד סוכות", "ב׳ דחול המועד סוכות",
+            "ג׳ דחול המועד סוכות", "ד׳ דחול המועד סוכות",
             "הושענא רבה",
         ]
         if _any_true(sukkos_days):
             flags["סוכות"] = True
-        if _any_true(sukkos_days[2:]):  # any CHM day
+        if _any_true(sukkos_days[2:6]):  # CHM only (stops before הושענא רבה)
             flags["חול המועד סוכות"] = True
 
         # Pesach aggregates
