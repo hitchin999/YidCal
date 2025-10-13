@@ -132,6 +132,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די`        | `yiddish` | Choose Yiddish (`זונטאג, מאנטאג`) or Hebrew (`יום א׳, יום ב׳`) labels for the day-of-week sensor                             |
 | `צולייגען די וועכנטליכע יארצייטן סענסאר`                         | `false`   | Enable the weekly Yahrzeit summary sensor                                                                                      |
 | `ווען זאל זיך די סליחות טאג טוישן`                               | `זמן הבדלה`| When the Selichos label advances to the next day: `havdalah` = after sunset + havdalah-offset; `midnight` = at 12 AM local time |
+| `Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די` | `2` | How many **halachic days** ahead the Upcoming Holiday sensor pre-activates (range **1–14**). Updates nightly at **12:02 AM** and respects your candle-lighting & havdalah offsets.
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. You must manually remove them via **Settings → Entities**, or delete and re-add the integration with the holiday sensors option turned off.
 
 ---
