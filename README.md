@@ -91,6 +91,11 @@ A custom Home Assistant integration that provides:
   * **When it turns ON/OFF:**
     * **ON:** **12:00 AM** after the latest **Motzi** (Shabbos or Yom Tov), leading into the next target (includes **שבת חול המועד**).
     * **OFF:** At **candle-lighting** of the target’s **erev** (sunset − `candlelighting_offset`).
+* **Upcoming Holiday Sensor** * (`sensor.yidcal_upcoming_holiday`)
+* **Exposes:** all holiday flags as **booleans** (True/False). Use these in automations.
+* **State:** a short, readable list of the labels of upcoming holidays that are **active right now** (e.g., `ערב סוכות, סוכות א׳`).
+* **Behavior:** pre-activates up to your **Lookahead days**; updates nightly at **12:02 AM**; honors your candle-lighting & havdalah offsets.
+
 * **Sof Zman Achilas Chumetz** (`sensor.yidcal_zman_achilas_chumetz`)
 * **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
