@@ -173,10 +173,11 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
     def _find_next_event(self, base_date: datetime.date) -> tuple[str, datetime.date | None]:
         """
-        Prefer any Shabbos Chol HaMoed (פסח/סוכות) that falls before the next true Yom Tov.
-        Otherwise, return the next true Yom Tov.
+        Prefer Shabbos Chol HaMoed (פסח/סוכות) ONLY if the Saturday itself is CHM,
+        and it occurs before the next true Yom Tov. Otherwise, return the next true Yom Tov.
         """
-        # 1) Next true Yom Tov
+    
+        # 1) Find the next true Yom Tov
         next_yt_name, next_yt_date = "", None
         for j in range(1, 366):
             d2 = base_date + timedelta(days=j)
@@ -185,54 +186,40 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 if nm:
                     next_yt_name, next_yt_date = nm, d2
                     break
-
-        # 2) If we have a next YT, check ALL Saturdays before it for Chol HaMoed
+    
+        # 2) If we have a next YT, scan Saturdays strictly before it
         if next_yt_date is not None:
             d = base_date + timedelta(days=1)
             while d < next_yt_date:
                 if d.weekday() == 5:  # Saturday
                     cand_info = HDateInfo(d, diaspora=self._diaspora)
-                    cand_base = PHebrewDate.from_pydate(d).holiday(hebrew=True, prefix_day=False) or ""
-                    is_chm_str = ("חול המועד" in cand_base) and (not cand_info.is_yom_tov)
-                    if is_chm_str:
-                        if "סוכות" in cand_base:
-                            return ("שבת חול המועד סוכות", d)
-                        if "פסח" in cand_base:
-                            return ("שבת חול המועד פסח", d)
-
-                    # Fallback: logic-based CHM detection in the surrounding week
+                    # must not be a YT day itself
                     if not cand_info.is_yom_tov:
-                        has_chm_sukkos, has_chm_pesach = self._week_has_chm(d)
-                        if has_chm_sukkos:
-                            return ("שבת חול המועד סוכות", d)
-                        if has_chm_pesach:
-                            return ("שבת חול המועד פסח", d)
+                        is_chm, tag = self._is_chm_day(d)  # checks the Saturday itself
+                        if is_chm:
+                            if tag == "סוכות":
+                                return ("שבת חול המועד סוכות", d)
+                            if tag == "פסח":
+                                return ("שבת חול המועד פסח", d)
                 d += timedelta(days=1)
-
-            # No Chol-HaMoed Shabbos -> return the next YT
+    
+            # No Shabbos CH"M → return the next YT
             return (next_yt_name, next_yt_date)
-
-        # 3) No YT at all (very rare) → search ahead for a Shabbos Chol HaMoed
+    
+        # 3) No YT found (rare) → search ahead up to a year for a CH"M Saturday itself
         d = base_date + timedelta(days=1)
         for _ in range(365):
             if d.weekday() == 5:
                 cand_info = HDateInfo(d, diaspora=self._diaspora)
-                cand_base = PHebrewDate.from_pydate(d).holiday(hebrew=True, prefix_day=False) or ""
-                is_chm_str = ("חול המועד" in cand_base) and (not cand_info.is_yom_tov)
-                if is_chm_str:
-                    if "סוכות" in cand_base:
-                        return ("שבת חול המועד סוכות", d)
-                    if "פסח" in cand_base:
-                        return ("שבת חול המועד פסח", d)
-
                 if not cand_info.is_yom_tov:
-                    has_chm_sukkos, has_chm_pesach = self._week_has_chm(d)
-                    if has_chm_sukkos:
-                        return ("שבת חול המועד סוכות", d)
-                    if has_chm_pesach:
-                        return ("שבת חול המועד פסח", d)
+                    is_chm, tag = self._is_chm_day(d)
+                    if is_chm:
+                        if tag == "סוכות":
+                            return ("שבת חול המועד סוכות", d)
+                        if tag == "פסח":
+                            return ("שבת חול המועד פסח", d)
             d += timedelta(days=1)
-
+    
         return ("", None)
 
     def _candle_lighting_prev_day(self, target: datetime.date) -> datetime.datetime:
