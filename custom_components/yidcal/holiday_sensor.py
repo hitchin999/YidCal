@@ -629,7 +629,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_fest.day == 20:
                 attrs["ד׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
-            if hd_py.day == 21:
+            if hd_fest.month == 1 and hd_fest.day == 21:
                 attrs["שביעי של פסח"] = True
             if hd_fest.day == 22:
                 attrs["אחרון של פסח"] = True
