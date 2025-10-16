@@ -18,8 +18,9 @@ Main state (joined with " - ")
   – Motzaei 5 כסלו (at havdalah offset) → Motzaei 15 ניסן (טל ומטר), otherwise ותן ברכה.
 
 • יעלה ויבוא  
-  – On: כל ראש חודש (חוץ מראש השנה) מן העמוד השחר;  
-  – Also on: יום טוב, חנוכה, חול המועד (any variant).
+  – On: כל ראש חודש (חוץ מראש השנה), יום טוב וחול המועד.  
+  – חלון זמן: מן צאת הכוכבים (אמש) עד צאת הכוכבים (הלילה) — כלומר לילה-עד-לילה (tzeis→tzeis).  
+  – לא נאמר בחנוכה.
 
 • אתה יצרת  
   – When שבת coincides with ראש חודש (from dawn → sunset).
@@ -51,13 +52,19 @@ Extra attributes
     On Shabbos within that window, omit "אבינו מלכנו".
     Example value: "ממעמקים - זכרינו - המלך - אבינו מלכנו"
 • "עשרת ימי תשובה" – Boolean toggle indicating the AYT window is active.
-• הלל / הלל השלם – Toggles derived from holiday context (e.g., חנוכה, סוכות/חוה\"מ, שבועות, פסח day-specific).
+• הלל / הלל השלם – חישוב מדויק:
+    – הלל השלם: כל ימי חנוכה; סוכות וחוה״מ סוכות (כולל שבת חוה״מ); שמיני עצרת/שמחת תורה; שבועות (יום אחד בא״י, שני ימים בחו״ל); יום/יומי הראשון של פסח (א׳ בא״י; א׳-ב׳ בחו״ל).
+    – חצי הלל: ראש חודש; כל שאר ימי פסח (כולל חוה״מ ושביעי/אחרון).
+    – חנוכה גובר על ראש חודש (בר״ח טבת אומרים הלל שלם).
 
 Timing & rollovers
 ------------------
 • Solar times computed per HA location (72-minute dawn, configurable candle/havdalah offsets).  
-• Hebrew date logic generally **rolls at havdalah**; Hoshanos sequence **rolls at civil midnight**.  
-• Fast-day windows and שבת-specific rules (e.g., omit "אבינו מלכנו") are honored.
+• Hebrew date logic generally **rolls at havdalah** (צאת + ההבדלה).  
+• יעלה ויבוא: נבחן בחלון **לילה-עד-לילה** (tzeis→tzeis) עבור ר״ח/יום טוב/חול המועד.  
+• Hoshanos sequence **rolls at civil midnight**.  
+• Fast-day windows and שבת-specific rules (e.g., omit "אבינו מלכנו" on Shabbos during עשי״ת) are honored.  
+• "אתה חוננתנו": לאחר שמלאכה מותרת ועד חצות לילה אזרחית; משתמש ב־`binary_sensor.yidcal_no_melucha` אם קיים, אחרת נופל להבדלה מקומית.
 
 Dependencies
 ------------
@@ -92,6 +99,8 @@ from .device import YidCalDevice
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
 NO_MELOCHA_SENSOR = "binary_sensor.yidcal_no_melucha"
 
+# Hoshanos sequences depend on the weekday of 15 Tishrei (first day of Sukkos, chutz la'aretz).
+# Keys are Python weekday() where Monday=0 ... Sunday=6.
 HOSHANOS_TABLE = {
     0: ["למען אמתך", "אבן שתיה", "אערוך שועי", "אום אני חומה", "אל למושעות", "אום נצורה"],
     1: ["למען אמתך", "אבן שתיה", "אערוך שועי", "אל למושעות", "אום נצורה", "אדון המושיע"],
@@ -108,11 +117,108 @@ HOSH_DAY_LABELS = [
     "הושענות ליום ד׳ דחול המועד סוכות",
 ]
 
+def _as_true(v) -> bool:
+    """Return True only for the boolean True, or the string 'true' (case-insensitive)."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() == "true"
+    return False
 
-def _year_hoshanos_sequence(hd_civil_today: PHebrewDate) -> list[str]:
-    year = hd_civil_today.year
-    first_py = PHebrewDate(year, 7, 15).to_pydate()
+# Days that require FULL Hallel (keys from sensor.yidcal_holiday attributes)
+FULL_HALLEL_ATTR_KEYS = [
+    # Chanukah
+    "חנוכה", "זאת חנוכה",
+    # Sukkos & end days
+    "סוכות", "סוכות א׳", "סוכות ב׳", "סוכות א׳ וב׳",
+    "שבת חול המועד סוכות", "חול המועד סוכות",
+    "שמיני עצרת", "שמחת תורה", "שמיני עצרת/שמחת תורה",
+    # Shavuos
+    "שבועות א׳", "שבועות ב׳", "שבועות א׳ וב׳",
+    # Pesach first day(s)
+    "פסח", "פסח א׳", "פסח ב׳", "פסח א׳ וב׳",
+]
+
+# Days that require HALF Hallel (never when Full already applies)
+HALF_HALLEL_ATTR_KEYS = [
+    "ראש חודש",
+    # Pesach (all non-first-day(s) incl. Shabbos CH”M and last day(s))
+    "א׳ דחול המועד פסח", "ב׳ דחול המועד פסח",
+    "ג׳ דחול המועד פסח", "ד׳ דחול המועד פסח",
+    "שבת חול המועד פסח",
+    "חול המועד פסח",  # in case you also expose a generic CH”M key
+    "שביעי של פסח", "אחרון של פסח", "שביעי/אחרון של פסח",
+    # (Do NOT include "פסח שני" here — no Hallel)
+]
+
+# Attribute keys on sensor.yidcal_holiday that represent actual Yom Tov days (Diaspora)
+YOMTOV_ATTR_KEYS = [
+    # Sukkos & end days
+    "סוכות", "סוכות א׳", "סוכות ב׳", "סוכות א׳ וב׳",
+    "שמיני עצרת", "שמחת תורה", "שמיני עצרת/שמחת תורה",
+    # Pesach & end days
+    "פסח", "פסח א׳", "פסח ב׳", "פסח א׳ וב׳",
+    "שביעי של פסח", "אחרון של פסח", "שביעי/אחרון של פסח",
+    # Shavuos
+    "שבועות א׳", "שבועות ב׳", "שבועות א׳ וב׳",
+    # (Intentionally excluding Rosh Hashanah from YVY)
+]
+
+def _year_hoshanos_sequence(hebrew_year: int) -> list[str]:
+    """Return the Hoshanos sequence for 15–20 Tishrei of the given Hebrew year."""
+    first_py = PHebrewDate(hebrew_year, 7, 15).to_pydate()
     return HOSHANOS_TABLE.get(first_py.weekday(), [])
+
+
+def _format_hebrew_year(year: int) -> str:
+    """
+    Format a Hebrew year like 5787 -> 'תשפ״ז'.
+    Rules:
+    • Drop the thousands (i.e., use year % 1000).
+    • Use special forms for 15 (ט״ו) and 16 (ט״ז).
+    • Add gershayim (״ U+05F4) before the last letter if 2+ letters,
+      or geresh (׳ U+05F3) after the single letter.
+    """
+    GERESH = "׳"      # U+05F3
+    GERSHAYIM = "״"   # U+05F4
+
+    n = year % 1000
+    if n == 0:
+        return "ת״"
+
+    parts: list[str] = []
+
+    # Hundreds
+    while n >= 400:
+        parts.append("ת")
+        n -= 400
+    if n >= 300:
+        parts.append("ש"); n -= 300
+    if n >= 200:
+        parts.append("ר"); n -= 200
+    if n >= 100:
+        parts.append("ק"); n -= 100
+
+    # Tens + Ones with 15/16 exceptions
+    tens = (n // 10) * 10
+    ones = n % 10
+
+    tens_map = {90: "צ", 80: "פ", 70: "ע", 60: "ס", 50: "נ", 40: "מ", 30: "ל", 20: "כ", 10: "י"}
+    ones_map = {9: "ט", 8: "ח", 7: "ז", 6: "ו", 5: "ה", 4: "ד", 3: "ג", 2: "ב", 1: "א"}
+
+    if tens + ones in (15, 16):
+        parts.append("ט")
+        parts.append("ו" if ones == 6 else "ז")
+    else:
+        if tens:
+            parts.append(tens_map[tens])
+        if ones:
+            parts.append(ones_map[ones])
+
+    if len(parts) == 1:
+        return parts[0] + GERESH
+    else:
+        return "".join(parts[:-1]) + GERSHAYIM + parts[-1]
 
 
 class SpecialPrayerSensor(YidCalDevice, SensorEntity):
@@ -153,7 +259,6 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
 
             now = dt_now()
             today = now.date()
-
             tz = ZoneInfo(tzname)
             loc = LocationInfo("home", "", tzname, lat, lon)
             st = sun(loc.observer, date=today, tzinfo=tz)
@@ -163,20 +268,31 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             candle_time = sunset - timedelta(minutes=self._candle)
             havdala = sunset + timedelta(minutes=self._havdalah)
             hal_mid = sunrise + (sunset - sunrise) / 2
+            # Nightfall (tzeis) window boundaries for the *current halachic day*
+            # last_tzeis .. this_tzeis is the full halachic "night→night" span
+            st_yesterday = sun(loc.observer, date=today - timedelta(days=1), tzinfo=tz)
+            last_tzeis = st_yesterday["sunset"] + timedelta(minutes=self._havdalah)
+            this_tzeis = havdala  # today’s sunset + havdalah offset
+            
+            # Windows we’ll use:
+            day_window = (now >= dawn) and (now < this_tzeis)
+            night_inclusive_window = (now >= last_tzeis) and (now < this_tzeis)
 
+            # Hebrew date by halachic rollover (havdalah)
             hd = PHebrewDate.from_pydate(today)
             if now >= havdala:
                 hd = hd + 1
             day = hd.day
             m_he = hd.month_name(hebrew=True)
 
+            # Hebrew date by sunset rollover (used for AYT window boundaries)
             hd_sun = PHebrewDate.from_pydate(today)
             if now >= sunset:
                 hd_sun = hd_sun + 1
             m_num_sun = hd_sun.month
             d_num_sun = hd_sun.day
 
-            # ---------- rain / tal ----------
+            # ---------- מוריד הגשם / מוריד הטל ----------
             is_morid_geshem = (
                 (m_he == "תשרי" and (day > 22 or (day == 22 and now >= dawn)))
                 or m_he in ["חשון", "כסלו", "טבת", "שבט", "אדר", "אדר א", "אדר ב"]
@@ -184,6 +300,7 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             )
             is_morid_tal = not is_morid_geshem
 
+            # ---------- ותן טל ומטר / ותן ברכה ----------
             is_tal_umatar = (
                 (m_he == "כסלו" and (day > 5 or (day == 5 and now >= havdala)))
                 or m_he in ["טבת", "שבט", "אדר", "אדר א", "אדר ב"]
@@ -191,16 +308,29 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             )
             is_ten_beracha = not is_tal_umatar
 
+            # Holiday context
             st_hol = self.hass.states.get(HOLIDAY_SENSOR)
             hol = st_hol.attributes if st_hol else {}
-
+            
             # ---------- יעלה ויבוא ----------
-            text_attrs = " ".join(hol.keys())
-            has_chm = bool(re.search("חול.?המועד", text_attrs))
-            is_yomtov = bool(hol.get("יום טוב"))
-            is_chanukah = bool(hol.get("חנוכה"))
+            # Strict booleans from holiday attributes (ignore strings like "אסרו חג סוכות")
+            is_yomtov = any(_as_true(hol.get(k)) for k in YOMTOV_ATTR_KEYS)
+            
+            # Chol HaMoed — require True values and match key names
+            has_chm = any(
+                re.search(r"חול.?המועד", k) and _as_true(v)
+                for k, v in hol.items()
+            )
+            
+            # Chanukah does NOT trigger YVY (kept for Al HaNissim elsewhere)
+            is_chanukah = _as_true(hol.get("חנוכה"))
+            
+            # Rosh Chodesh (exclude Tishrei to avoid R"H via RC branch; R"H is covered by Yom Tov anyway)
             is_rc = ((day == 1) or (day == 30)) and (m_he != "תשרי")
-            is_yaaleh_veyavo = is_rc or has_chm or is_chanukah or is_yomtov
+            
+            # Final rule: ALL of these use a full halachic night→night window
+            yaaleh_day = (is_rc or is_yomtov or has_chm) and night_inclusive_window
+            is_yaaleh_veyavo = bool(yaaleh_day)
 
             # ---------- אתה יצרת ----------
             is_atah_yatzarta = (
@@ -208,9 +338,11 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             )
 
             # ---------- על הניסים ----------
-            is_al_hanissim = bool(hol.get("חנוכה") or hol.get("פורים"))
+            is_purim = _as_true(hol.get("פורים"))
+            is_chanukah_holiday = _as_true(hol.get("חנוכה"))
+            is_al_hanissim = is_purim or is_chanukah_holiday
 
-            # ---------- fast days ----------
+            # ---------- Fast days ----------
             is_tisha_bav = hd.month == 5 and hd.day == 9
             is_minor_fast = any(
                 bool(v)
@@ -248,58 +380,51 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
                 ayt_str = " - ".join(ayt_list)
 
             # ---------- הלל ----------
-            is_hallel = bool(
-                hol.get("חנוכה")
-                or hol.get("חול המועד")
-                or hol.get("שבועות")
-                or hol.get("סוכות")
-                or hol.get("פסח")
+            # Full Hallel if ANY full key is true
+            is_hallel_shalem = any(_as_true(hol.get(k)) for k in FULL_HALLEL_ATTR_KEYS)
+            
+            # Half Hallel if ANY half key is true, but never when Full already applies
+            is_hallel_half = (not is_hallel_shalem) and any(
+                _as_true(hol.get(k)) for k in HALF_HALLEL_ATTR_KEYS
             )
-            is_hallel_shalem = bool(
-                hol.get("חנוכה")
-                or hol.get("סוכות")
-                or hol.get("חול המועד סוכות")
-                or hol.get("שבועות")
-                or (hol.get("פסח") and day in [15, 16])
-            )
+            
+            # Overall Hallel toggle (either full or half)
+            is_hallel = is_hallel_shalem or is_hallel_half
 
             # ---------- אתה חוננתנו ----------
             no_melucha = self.hass.states.get(NO_MELOCHA_SENSOR)
+            was_no_melucha = bool(no_melucha and no_melucha.state == "on")
+            is_after_havdala = now >= havdala
             motzash_tog = False
-            
-            # Only ever show until (civil) midnight tonight
-            if now.time() < time(23, 59):
-                if no_melucha:
-                    # Turn on only if the prohibition lifted tonight (on -> off after havdala)
-                    try:
-                        nm_is_off = (no_melucha.state == "off")
-                        # HA stores last_changed in UTC; compare in local tz
-                        lc_local = no_melucha.last_changed.astimezone(tz) if no_melucha.last_changed else None
-                        nm_lifted_tonight = (
-                            nm_is_off
-                            and lc_local is not None
-                            and lc_local >= havdala                 # flipped after tonight's havdala
-                            and lc_local.date() == now.date()       # and on this civil date
-                        )
-                        motzash_tog = nm_lifted_tonight
-                    except Exception:
-                        motzash_tog = False
-                else:
-                    # Fallback when no-melucha sensor isn't available:
-                    # only Motzaei Shabbos or Motzaei Yom Tov after havdala
-                    was_shabbos = (now.weekday() == 5)  # Saturday night
-                    was_yomtov_today = bool(st_hol and st_hol.attributes.get("יום טוב"))
-                    motzash_tog = (now >= havdala) and (was_shabbos or was_yomtov_today)
+            if not was_no_melucha and is_after_havdala and now.time() < time(23, 59):
+                motzash_tog = True
 
-            # ---------- Hoshanos ----------
+            # ---------- Hoshanos (always populate future mapping) ----------
+            # Civil-date Hebrew (no halachic rollover) for choosing reference year
             hd_civil = PHebrewDate.from_pydate(today)
-            seq = _year_hoshanos_sequence(hd_civil)
+
+            # Reference year rule (Chutz La'Aretz):
+            # After Simchas Torah (23 Tishrei) at havdalah → next year.
+            # If month > Tishrei OR day > 23 in Tishrei, we’re past Sukkos → next year.
+            # If exactly 23 Tishrei, roll after havdalah.
+            ref_year = hd_civil.year
+            if (
+                hd_civil.month > 7  # Cheshvan..Elul
+                or (hd_civil.month == 7 and hd_civil.day > 23)  # 24+ Tishrei
+                or (hd_civil.month == 7 and hd_civil.day == 23 and now >= havdala)  # motzaei 23
+            ):
+                ref_year = hd_civil.year + 1
+
+            seq = _year_hoshanos_sequence(ref_year)
+
+            # Today's specific Hoshana only during 15–20 Tishrei (civil-day window)
             hosh_today = (
                 seq[hd_civil.day - 15]
                 if (hd_civil.month == 7 and 15 <= hd_civil.day <= 20 and seq)
                 else ""
             )
             is_hoshana_rabba_today = bool(hd_civil.month == 7 and hd_civil.day == 21)
+
             per_day = {
                 label: seq[i - 1]
                 for i, label in enumerate(HOSH_DAY_LABELS, start=1)
@@ -308,6 +433,8 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
 
             # ---------- attributes ----------
             attrs: dict[str, object] = {}
+            # Requested rename: show the reference year under "הושענות פאר יאר"
+            attrs["הושענות פאר יאר"] = _format_hebrew_year(ref_year)
             attrs["הושענות היום"] = hosh_today
             attrs.update(per_day)
             attrs["הושענא רבה"] = is_hoshana_rabba_today
@@ -319,12 +446,17 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             attrs["ותן ברכה"] = is_ten_beracha
             attrs["יעלה ויבוא"] = is_yaaleh_veyavo
             attrs["אתה יצרת"] = is_atah_yatzarta
+            # More detailed Al HaNissim flags with correct spelling
             attrs["על הניסים"] = is_al_hanissim
+            attrs["על הניסים - בימי מרדכי"] = is_purim
+            attrs["על הניסים - בימי מתתיהו"] = is_chanukah_holiday
             attrs["עננו"] = is_anenu
             attrs["נחם"] = is_nachem
             attrs["הלל"] = is_hallel
             attrs["הלל השלם"] = is_hallel_shalem
             attrs["אתה חוננתנו"] = motzash_tog
+
+
 
             self._attr_extra_state_attributes = attrs
 
@@ -336,8 +468,11 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
                 parts.append("יעלה ויבוא")
             if is_atah_yatzarta:
                 parts.append("אתה יצרת")
-            if is_al_hanissim:
-                parts.append("על הניסים")
+            # Show detailed Al HaNissim text with corrected spelling
+            if is_chanukah_holiday:
+                parts.append("על הניסים - בימי מתתיהו")
+            elif is_purim:
+                parts.append("על הניסים - בימי מרדכי")
             if is_anenu:
                 parts.append("עננו")
             if is_nachem:
