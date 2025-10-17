@@ -31,7 +31,11 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """
     ON for any contiguous Yom Tov span:
       candle(before first day) → havdalah(after last day).
-    Includes spans that land on Shabbos. In the diaspora, Shemini Atzeres→Simchas Torah is a single span.
+
+    Special case:
+      • If the span’s LAST day is Friday (YT → Shabbos), end at **Shabbos candle-lighting** (sunset − candle_offset).
+
+    In the diaspora, Shemini Atzeres → Simchas Torah is treated as one span.
 
     Attributes always show the current active span's window, or the next upcoming span if none is active:
       Now, Window_Start, Window_End, Activation_Logic
@@ -60,6 +64,9 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     # ---- helpers ----
+
+    def _sunset(self, d) -> datetime:
+        return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
 
     def _span_end(self, start: datetime.date) -> datetime.date:
         """
@@ -95,8 +102,12 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             if not first:
                 continue
             end = self._span_end(first)
-            sdt = ZmanimCalendar(geo_location=self._geo, date=first - timedelta(days=1)).sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
-            edt = ZmanimCalendar(geo_location=self._geo, date=end).sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
+            sdt = self._sunset(first - timedelta(days=1)) - timedelta(minutes=self._candle)
+            # default end at havdalah…
+            edt = self._sunset(end) + timedelta(minutes=self._havdalah)
+            # …BUT if YT leads into Shabbos (end on Friday), cut at Shabbos candle-lighting
+            if end.weekday() == 4:  # Friday
+                edt = self._sunset(end) - timedelta(minutes=self._candle)
             if sdt <= now_local < edt:
                 return first, end
         return None, None
@@ -127,8 +138,13 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         if start_d is not None and end_d is not None:
             # 2) Build the window for that span
-            start_dt = ZmanimCalendar(geo_location=self._geo, date=start_d - timedelta(days=1)).sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
-            end_dt   = ZmanimCalendar(geo_location=self._geo, date=end_d).sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
+            start_dt = self._sunset(start_d - timedelta(days=1)) - timedelta(minutes=self._candle)
+
+            # default: end at havdalah of last YT day
+            end_dt = self._sunset(end_d) + timedelta(minutes=self._havdalah)
+            # special case: if last YT day is Friday → end at Shabbos candle-lighting
+            if end_d.weekday() == 4:  # Friday
+                end_dt = self._sunset(end_d) - timedelta(minutes=self._candle)
 
             window_start = _round_half_up(start_dt)
             window_end   = _round_ceil(end_dt)
