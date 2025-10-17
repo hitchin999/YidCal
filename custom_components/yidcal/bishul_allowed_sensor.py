@@ -137,10 +137,10 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         next_off_start = _round_half_up(no_start) if no_start else None
         next_off_end   = _round_ceil(no_end) if no_end else None
 
-        # Attributes (only the three you wanted)
-        attrs = {"Now": now.isoformat()}
-        if next_off_start and next_off_end:
-            attrs["Next_Off_Window_Start"] = next_off_start.isoformat()
-            attrs["Next_Off_Window_End"] = next_off_end.isoformat()
-
-        self._attr_extra_state_attributes = attrs
+        # Attributes (publish consistently)
+        self._attr_extra_state_attributes = {
+            "Now": now.isoformat(),
+            "Next_Off_Window_Start": next_off_start.isoformat() if next_off_start else "",
+            "Next_Off_Window_End": next_off_end.isoformat() if next_off_end else "",
+            "Activation_Logic": "Usually ON; Turns OFF on Shabbos and Yom Kippur from Candle lighting till Havdalah.",
+        }
