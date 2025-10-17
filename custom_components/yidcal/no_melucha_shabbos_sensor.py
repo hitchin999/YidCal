@@ -36,11 +36,10 @@ class NoMeluchaShabbosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """
     _attr_name = "No Melucha – Regular Shabbos"
     _attr_icon = "mdi:briefcase-variant-off"
-    _attr_unique_id = "yidcal_no_melucha_shabbos"  # keep same unique_id for seamless migration
+    _attr_unique_id = "yidcal_no_melucha_regular_shabbos"
 
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
-        # New default entity_id (existing installs can rename in UI if needed)
         self.entity_id = "binary_sensor.yidcal_no_melucha_regular_shabbos"
 
         self.hass = hass
