@@ -1,26 +1,18 @@
 # no_music_sensor.py
-"""
-Binary sensor for "נישט הערן מוזיק":
-- Prohibits music during the Omer (days 1‑49) except on Lag BaOmer (33) and the
-  final three days (47‑49).
-- Prohibits music during the Three Weeks period (17 Tammuz – 10 Av).
-- Three Weeks ends at halachic midday on 10 Av, except if 9 Av falls on Shabbat
-  (fast deferred), then ends at sunset + havdalah on 10 Av.
-"""
-from datetime import datetime, timedelta
+from __future__ import annotations
+from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from astral import LocationInfo
 from astral.sun import sun
 from .device import YidCalDevice
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_interval
 from pyluach.hebrewcal import HebrewDate
 
 class NoMusicSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "No Music"
     _attr_icon = "mdi:music-off"
-    
+
     def __init__(self, hass: HomeAssistant, candle: int, havdalah: int) -> None:
         super().__init__()
         slug = "no_music"
@@ -31,93 +23,172 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
         self._added = False
         self._candle = candle
         self._havdalah = havdalah
-        
-        # Cache for Three Weeks end time
-        self._three_weeks_end: datetime | None = None
-        
+
+        self._in_sefirah: bool = False
+        self._in_three_weeks: bool = False
+        self._this_window_ends: datetime | None = None
+        self._next_window_start: datetime | None = None
+        self._next_window_end: datetime | None = None
+
     async def async_added_to_hass(self) -> None:
         self._added = True
         await self.async_update()
-        self._added = True
-        await self.async_update()
-        
-        # Update every minute for precise timing
-        self._register_interval(
-            self.hass,
-            self.async_update,
-            timedelta(minutes=1),
+        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
+
+    # ── Helpers ─────────────────────────────────────────────────────────
+    def _tz(self) -> ZoneInfo:
+        return ZoneInfo(self.hass.config.time_zone)
+
+    def _loc(self) -> LocationInfo:
+        return LocationInfo(
+            latitude=self.hass.config.latitude,
+            longitude=self.hass.config.longitude,
+            timezone=self.hass.config.time_zone,
         )
-        
-    async def async_update(self, now=None) -> None:
-        tz = ZoneInfo(self.hass.config.time_zone)
+
+    def _dt_at_start_of_day(self, d) -> datetime:
+        return datetime.combine(d, time(0, 0, 0), tzinfo=self._tz())
+
+    def _omer_day(self, hd: HebrewDate) -> int:
+        if hd.month == 1 and hd.day >= 16:  # Nisan 16-30
+            return hd.day - 15
+        if hd.month == 2:                   # Iyar
+            return 15 + hd.day
+        if hd.month == 3 and hd.day <= 4:   # Sivan 1-4
+            return 45 + hd.day
+        return 0
+
+    def _is_omer_prohibited(self, day: int) -> bool:
+        # Prohibited: 1–32 and 34–46; Allowed: 33 and 47–49
+        return (1 <= day <= 32) or (34 <= day <= 46)
+
+    def _tzeis_on(self, greg_date) -> datetime:
+        tz = self._tz()
+        s = sun(self._loc().observer, date=greg_date, tzinfo=tz)
+        return s["sunset"] + timedelta(minutes=self._havdalah)
+
+    def _build_sefirah_windows(self, hyear: int) -> list[tuple[datetime, datetime, str]]:
+        """
+        Build Sefirah prohibition windows (two segments typically).
+        start = tzeis (sunset+havdalah) of the *evening that begins* the first prohibited Hebrew day
+              = tzeis(greg of first_prohibited_day - 1)
+        end   = tzeis of the *last prohibited Hebrew day*
+        This naturally carves out Lag BaOmer (day 33) as fully allowed: tzeis(32) -> tzeis(33).
+        """
+        windows: list[tuple[datetime, datetime, str]] = []
+
+        start_hd = HebrewDate(hyear, 1, 16)
+        end_hd = HebrewDate(hyear, 3, 4)
+        cur = start_hd
+        in_block = False
+        block_start: HebrewDate | None = None
+
+        while cur <= end_hd:
+            od = self._omer_day(cur)
+            prohibited = self._is_omer_prohibited(od)
+            if prohibited and not in_block:
+                in_block = True
+                block_start = HebrewDate(cur.year, cur.month, cur.day)
+            if not prohibited and in_block:
+                # Block ends previous Hebrew day -> end at tzeis of that last prohibited day
+                last = cur - 1
+                start_dt = self._tzeis_on(block_start.to_pydate() - timedelta(days=1))
+                end_dt = self._tzeis_on(last.to_pydate())
+                windows.append((start_dt, end_dt, "sefirah"))
+                in_block = False
+                block_start = None
+            cur = cur + 1
+
+        if in_block and block_start:
+            # Runs through Sivan 4 -> end at tzeis of Sivan 4
+            last = end_hd
+            start_dt = self._tzeis_on(block_start.to_pydate() - timedelta(days=1))
+            end_dt = self._tzeis_on(last.to_pydate())
+            windows.append((start_dt, end_dt, "sefirah"))
+
+        return windows
+
+    def _three_weeks_window(self, hyear: int) -> tuple[datetime, datetime, str]:
+        """
+        Start: 17 Tammuz 00:00 local
+        End:   10 Av @ (noon) OR (sunset + havdalah) if 9 Av is Shabbat (nidche)
+        """
+        tz = self._tz()
+        tammuz17 = HebrewDate(hyear, 4, 17).to_pydate()
+        start_dt = self._dt_at_start_of_day(tammuz17)
+
+        av9 = HebrewDate(hyear, 5, 9).to_pydate()
+        av10 = HebrewDate(hyear, 5, 10).to_pydate()
+        if av9.weekday() == 5:  # Saturday -> deferred fast
+            end_dt = self._tzeis_on(av10)
+        else:
+            s = sun(self._loc().observer, date=av10, tzinfo=tz)
+            end_dt = s["noon"]
+        return (start_dt, end_dt, "three_weeks")
+
+    def _build_windows(self, now: datetime) -> list[tuple[datetime, datetime, str]]:
+        """Current Hebrew year + next, sorted by start."""
+        hy = HebrewDate.from_pydate(now.date()).year
+        w = []
+        w.extend(self._build_sefirah_windows(hy))
+        w.append(self._three_weeks_window(hy))
+        w.extend(self._build_sefirah_windows(hy + 1))
+        w.append(self._three_weeks_window(hy + 1))
+        w.sort(key=lambda x: x[0])
+        return w
+
+    # ── Update ──────────────────────────────────────────────────────────
+    async def async_update(self, now: datetime | None = None) -> None:
+        tz = self._tz()
         now = now or datetime.now(tz)
-        today = now.date()
-        hd = HebrewDate.from_pydate(today)
-        
-        # ── Omer count (Nisan 16 – Sivan 4) ─────────────────────────────
-        omer = 0
-        if hd.month == 1 and hd.day >= 16: # 16‑30 Nisan
-            omer = hd.day - 15
-        elif hd.month == 2: # Iyar
-            omer = 15 + hd.day
-        elif hd.month == 3 and hd.day <= 4: # 1‑4 Sivan
-            omer = 45 + hd.day
-            
-        # True for days 1‑49 **except** 33, 47, 48, 49
-        in_omer = 1 <= omer <= 49 and omer not in (33, 47, 48, 49)
-        
-        # ── Three Weeks (17 Tammuz – 10 Av with time awareness) ─────────
+
+        # Build windows and locate where "now" sits
+        windows = self._build_windows(now)
+
+        in_window = False
+        in_sefirah = False
         in_three_weeks = False
-        
-        # Check if we're in the date range for Three Weeks
-        if ((hd.month == 4 and hd.day >= 17) or  # 17‑29 Tammuz
-            (hd.month == 5 and hd.day <= 10)):   # 1‑10 Av
-            
-            # Calculate the end time for Three Weeks
-            year = hd.year
-            
-            # Get 9 Av and 10 Av dates
-            av9_py = HebrewDate(year, 5, 9).to_pydate()
-            av10_py = HebrewDate(year, 5, 10).to_pydate()
-            
-            # Check if 9 Av falls on Shabbat (deferred fast)
-            is_nidche = (av9_py.weekday() == 5)
-            
-            # Location for sun calculations
-            loc = LocationInfo(
-                latitude=self.hass.config.latitude,
-                longitude=self.hass.config.longitude,
-                timezone=self.hass.config.time_zone,
-            )
-            
-            # Calculate end time
-            s_av10 = sun(loc.observer, date=av10_py, tzinfo=tz)
-            if is_nidche:
-                # Deferred: ends at sunset + havdalah on 10 Av
-                three_weeks_end = s_av10["sunset"] + timedelta(minutes=self._havdalah)
-            else:
-                # Regular: ends at halachic midday on 10 Av
-                three_weeks_end = s_av10["noon"]
-            
-            self._three_weeks_end = three_weeks_end
-            
-            # We're in Three Weeks if:
-            # - We're before 10 Av, OR
-            # - We're on 10 Av but before the end time
-            if hd.month == 4 or (hd.month == 5 and hd.day < 10):
-                in_three_weeks = True
-            elif hd.month == 5 and hd.day == 10:
-                in_three_weeks = now < three_weeks_end
-        
-        self._attr_is_on = in_omer or in_three_weeks
-        
+        current_end = None
+        next_start = None
+        next_end = None
+
+        for (ws, we, kind) in windows:
+            if ws <= now < we:
+                in_window = True
+                current_end = we
+                in_sefirah = (kind == "sefirah")
+                in_three_weeks = (kind == "three_weeks")
+                break
+
+        pivot = current_end or now
+        for (ws, we, kind) in windows:
+            if ws > pivot:
+                next_start, next_end = ws, we
+                break
+
+        self._attr_is_on = in_window
+        self._in_sefirah = in_sefirah
+        self._in_three_weeks = in_three_weeks
+        self._this_window_ends = current_end
+        self._next_window_start = next_start
+        self._next_window_end = next_end
+
         if self._added:
             self.async_write_ha_state()
-            
+
+    # ── Attributes ─────────────────────────────────────────────────────
     @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Expose the Three Weeks end time if we're in that period."""
-        attrs: dict[str, str] = {}
-        if self._three_weeks_end:
-            attrs["three_weeks_end"] = self._three_weeks_end.isoformat()
+    def extra_state_attributes(self) -> dict[str, object]:
+        attrs: dict[str, object] = {}
+        attrs["Three Weeks"] = self._in_three_weeks
+        attrs["Sefirah"] = self._in_sefirah
+        attrs["Next Window Start"] = (
+            self._next_window_start.isoformat() if self._next_window_start else "N/A"
+        )
+        attrs["Next Window End"] = (
+            self._next_window_end.isoformat() if self._next_window_end else "N/A"
+        )
+        attrs["This Window End"] = (
+            self._this_window_ends.isoformat() if self._this_window_ends else "N/A"
+        )
         return attrs
