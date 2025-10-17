@@ -7,6 +7,15 @@
 A custom Home Assistant integration that provides:
 
 * **No Melucha** (`binary_sensor.yidcal_no_melucha`) (e.g., on Shabbos and Yom Tov)
+* **No Melucha – Shabbos** (`binary_sensor.yidcal_no_melucha_shabbos`)
+  ON every **Shabbos** from **Friday sunset − candle offset** to **Saturday sunset + havdalah offset** — **even if it’s Yom Tov**.
+  *Attributes:* `Now`, `Window_Start`, `Window_End`
+* **No Melucha – Yom Tov** (`binary_sensor.yidcal_no_melucha_yomtov`)
+  ON for any contiguous **Yom Tov** span from **candle before first day** (sunset of day−1 − candle offset) through **havdalah after last day** (sunset + havdalah offset) — **regardless of weekday**.
+  *Attributes:* `Now`, `Window_Start`, `Window_End`
+* **Bishul Allowed** (`binary_sensor.yidcal_bishul_allowed`)
+  Usually **ON**; **OFF on Shabbos and Yom Kippur**. Perfect for percolators with **auto-fill valves**.
+  *Attributes:* `Now`, `Next_Off_Window_Start`, `Next_Off_Window_End`
 * **Holiday Sensor** (`sensor.yidcal_holiday`) with boolean attributes for every holiday, including:
   א׳ סליחות, ערב ראש השנה, ראש השנה א׳, ראש השנה ב׳, ראש השנה א׳ וב׳, מוצאי ראש השנה, צום גדליה, שלוש עשרה מדות, ערב יום כיפור, יום הכיפורים, מוצאי יום הכיפורים, ערב סוכות, סוכות, סוכות א׳, סוכות ב׳, סוכות א׳ וב׳, א׳ דחול המועד סוכות, ב׳ דחול המועד סוכות, ג׳ דחול המועד סוכות, ד׳ דחול המועד סוכות, חול המועד סוכות, שבת חול המועד סוכות, הושענא רבה, שמיני עצרת, שמחת תורה, שמיני עצרת/שמחת תורה, מוצאי סוכות, אסרו חג סוכות, ערב חנוכה, חנוכה, זאת חנוכה, שובבים, שובבים ת״ת, צום עשרה בטבת, ט״ו בשבט, תענית אסתר, פורים, שושן פורים, ליל בדיקת חמץ, ערב פסח, פסח, פסח א׳, פסח ב׳, פסח א׳ וב׳, א׳ דחול המועד פסח, ב׳ דחול המועד פסח, ג׳ דחול המועד פסח, ד׳ דחול המועד פסח, חול המועד פסח, שבת חול המועד פסח, שביעי של פסח, אחרון של פסח, שביעי/אחרון של פסח, מוצאי פסח, אסרו חג פסח, פסח שני, ל״ג בעומר, ערב שבועות, שבועות א׳, שבועות ב׳, שבועות א׳ וב׳, מוצאי שבועות, אסרו חג שבועות, צום שבעה עשר בתמוז, מוצאי צום שבעה עשר בתמוז, ערב תשעה באב, תשעה באב, תשעה באב נדחה, מוצאי תשעה באב, יום כיפור קטן, ראש חודש, שבת ראש חודש
 * **Erev** (`binary_sensor.yidcal_erev`)
