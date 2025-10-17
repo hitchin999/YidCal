@@ -31,6 +31,9 @@ from .no_music_sensor import NoMusicSensor
 from .upcoming_yomtov_sensor import UpcomingYomTovSensor
 from .slichos_sensor import SlichosSensor 
 from .nine_days_sensor import NineDaysSensor
+from .no_melucha_shabbos_sensor import NoMeluchaShabbosSensor
+from .no_melucha_yomtov_sensor import NoMeluchaYomTovSensor
+from .bishul_allowed_sensor import BishulAllowedSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -494,6 +497,9 @@ async def async_setup_entry(
         ShabbosMevorchimSensor(hass, helper, candle, havdalah),
         UpcomingShabbosMevorchimSensor(hass, helper),
         NoMeluchaSensor(hass, candle, havdalah),
+        NoMeluchaShabbosSensor(hass, candle, havdalah),
+        NoMeluchaYomTovSensor(hass, candle, havdalah),
+        BishulAllowedSensor(hass, candle, havdalah),
         ErevHolidaySensor(hass, candle),
         SlichosSensor(hass, candle, havdalah),
         NoMusicSensor(hass, candle, havdalah),
