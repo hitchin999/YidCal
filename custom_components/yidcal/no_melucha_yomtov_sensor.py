@@ -140,6 +140,11 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             # 2) Build the window for that span
             start_dt = self._sunset(start_d - timedelta(days=1)) - timedelta(minutes=self._candle)
 
+            # --- ADJUSTMENT: YT starting Motza'ei Shabbos ---
+            prev = start_d - timedelta(days=1)
+            if prev.weekday() == 5:  # Saturday → start at Motzi Shabbos (havdalah), not pre-sunset candles
+                start_dt = self._sunset(prev) + timedelta(minutes=self._havdalah)
+    
             # default: end at havdalah of last YT day
             end_dt = self._sunset(end_d) + timedelta(minutes=self._havdalah)
             # special case: if last YT day is Friday → end at Shabbos candle-lighting
