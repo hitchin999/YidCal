@@ -7,8 +7,8 @@
 A custom Home Assistant integration that provides:
 
 * **No Melucha** (`binary_sensor.yidcal_no_melucha`) (e.g., on Shabbos and Yom Tov)
-* **No Melucha – Shabbos** (`binary_sensor.yidcal_no_melucha_shabbos`)
-  ON every **Shabbos** from **Friday sunset − candle offset** to **Saturday sunset + havdalah offset** — **even if it’s Yom Tov**.
+* **No Melucha – Regular Shabbos** (`binary_sensor.yidcal_no_melucha_regular_shabbos`)
+  ON every **regular Shabbos** from **Friday candle lighting** to **Saturday havdalah** — **not** when Shabbos is **Yom Tov** (but **on** for **Shabbos Chol HaMoed**).
   *Attributes:* `Now`, `Window_Start`, `Window_End`
 * **No Melucha – Yom Tov** (`binary_sensor.yidcal_no_melucha_yomtov`)
   ON for any contiguous **Yom Tov** span from **candle before first day** (sunset of day−1 − candle offset) through **havdalah after last day** (sunset + havdalah offset) — **regardless of weekday**.
