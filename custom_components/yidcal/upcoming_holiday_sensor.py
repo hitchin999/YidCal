@@ -204,6 +204,28 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # 0) If *inside* a block, walk backward to Day 1 and use that as D0.
         today_attrs = await self._simulate_attrs_at_midnight(start_hal_day, tz)
 
+        # Handle Isru-Chag days by mapping back to the prior block's D0
+        if today_attrs.get("אסרו חג סוכות"):
+            for back in (1, 2, 3):
+                d = start_hal_day - timedelta(days=back)
+                a = await self._simulate_attrs_at_midnight(d, tz)
+                if a.get("שמיני עצרת"):
+                    return "שמיני עצרת", d, PHebrewDate.from_pydate(d)
+
+        if today_attrs.get("אסרו חג פסח"):
+            for back in range(1, 10):
+                d = start_hal_day - timedelta(days=back)
+                a = await self._simulate_attrs_at_midnight(d, tz)
+                if a.get("פסח א׳"):
+                    return "פסח", d, PHebrewDate.from_pydate(d)
+
+        if today_attrs.get("אסרו חג שבועות"):
+            for back in (1, 2, 3):
+                d = start_hal_day - timedelta(days=back)
+                a = await self._simulate_attrs_at_midnight(d, tz)
+                if a.get("שבועות א׳"):
+                    return "שבועות", d, PHebrewDate.from_pydate(d)
+
         def in_sukkos(a: dict) -> bool:
             return any(a.get(k) for k in [
                 "סוכות א׳", "סוכות ב׳",
@@ -340,6 +362,7 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             buckets = [
                 (0, ["שמיני עצרת", "שמיני עצרת/שמחת תורה"]),
                 (+1, ["שמחת תורה"]),
+                (+2, ["אסרו חג סוכות"]),
             ]
         elif base == "פסח":
             buckets = [
@@ -352,12 +375,14 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 (+5, ["ד׳ דחול המועד פסח"]),
                 (+6, ["שביעי של פסח"]),
                 (+7, ["אחרון של פסח"]),
+                (+8, ["אסרו חג פסח"]),
             ]
         elif base == "שבועות":
             buckets = [
                 (-1, ["ערב שבועות"]),
                 (0, ["שבועות א׳", "שבועות א׳ וב׳"]),
                 (+1, ["שבועות ב׳"]),
+                (+2, ["אסרו חג שבועות"]),
             ]
         elif base == "ראש השנה":
             buckets = [
@@ -482,6 +507,7 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Simple, stable order: sort by appearance in ALL_HOLIDAYS to keep your familiar order
         order_index = {name: i for i, name in enumerate(HolidaySensor.ALL_HOLIDAYS)}
         trues = [k for k in trues if k in order_index]
+        trues.sort(key=lambda k: order_index.get(k, 10_000))
 
         # cap length
         head = trues[:6]
