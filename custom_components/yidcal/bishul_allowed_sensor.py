@@ -81,17 +81,29 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         start_dt = self._sunset(d - timedelta(days=1)) - timedelta(minutes=self._candle)
         end_dt   = self._sunset(d) + timedelta(minutes=self._havdalah)
         return start_dt, end_dt
-
+        
     def _find_current_halachic_day(self, now_local: datetime):
-        """
-        Find halachic day d such that window_for(d) contains now_local.
-        """
         base = now_local.date()
-        for delta in (0, -1, 1, -2, 2):
-            d = base + timedelta(days=delta)
+    
+        # Decide overlap deterministically: if we’re past today’s candle time,
+        # treat "now" as the NEXT halachic day (Shabbos on Erev Shabbos, etc.).
+        today_candle = self._sunset(base) - timedelta(minutes=self._candle)
+        if now_local >= today_candle:
+            first_try = base + timedelta(days=1)   # prefer the later halachic day
+            second_try = base
+        else:
+            first_try = base
+            second_try = base + timedelta(days=1)
+    
+        # Try the chosen day, then nearby fallbacks
+        trial_order = [first_try, second_try, base - timedelta(days=1),
+                       base + timedelta(days=2), base - timedelta(days=2)]
+    
+        for d in trial_order:
             s, e = self._window_for_halachic_day(d)
             if s <= now_local < e:
                 return d, s, e
+    
         # Fallback to today
         d = base
         s, e = self._window_for_halachic_day(d)
