@@ -392,12 +392,19 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             is_hallel = is_hallel_shalem or is_hallel_half
 
             # ---------- אתה חוננתנו ----------
+            # Motzaei Shabbos only: from havdalah until civil midnight.
+            # (Optional refinement with no_melucha sensor below.)
             no_melucha = self.hass.states.get(NO_MELOCHA_SENSOR)
-            was_no_melucha = bool(no_melucha and no_melucha.state == "on")
-            is_after_havdala = now >= havdala
-            motzash_tog = False
-            if not was_no_melucha and is_after_havdala and now.time() < time(23, 59):
-                motzash_tog = True
+            
+            is_motzaei_shabbos = (now.weekday() == 5) and (now >= havdala)  # Saturday night after havdalah
+            motzash_tog = is_motzaei_shabbos and (now.time() < time(23, 59))
+            
+            # If the no-melacha sensor exists, require that prohibition actually lifted after havdalah
+            # to avoid any edge cases (e.g., manual time changes). Safe no-op if attribute missing.
+            if motzash_tog and no_melucha and getattr(no_melucha, "state", None) == "off":
+                last_changed = getattr(no_melucha, "last_changed", None)
+                if last_changed is not None:
+                    motzash_tog = last_changed >= havdala
 
             # ---------- Hoshanos (always populate future mapping) ----------
             # Civil-date Hebrew (no halachic rollover) for choosing reference year
