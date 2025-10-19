@@ -8,7 +8,6 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
 
-from hdate import HDateInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from zmanim.zmanim_calendar import ZmanimCalendar
 
@@ -35,10 +34,10 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         sunset(prev civil day) - candle_offset  →  sunset(today) + havdalah_offset
 
     EXCEPT:
-      • Shabbos (Saturday) — OFF for the whole halachic day.
-      • Yom Kippur — OFF for the whole halachic day.
+      • Shabbos (Saturday) — OFF the whole halachic day.
+      • Yom Kippur — OFF the whole halachic day.
 
-    Attributes: Now, Next_Off_Window_Start, Next_Off_Window_End
+    Attributes: Now, Next_Off_Window_Start, Next_Off_Window_End, Activation_Logic
     """
     _attr_name = "Bishul Allowed"
     _attr_icon = "mdi:pot-steam"
@@ -69,8 +68,9 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
 
     def _is_yom_kippur(self, d) -> bool:
-        name = PHebrewDate.from_pydate(d).holiday(hebrew=True, prefix_day=False) or ""
-        return "יום הכיפורים" in name
+        """Return True if halachic day 'd' is 10 Tishrei (Yom Kippur)."""
+        hd = PHebrewDate.from_pydate(d)
+        return (hd.month == 7 and hd.day == 10)
 
     def _window_for_halachic_day(self, d):
         """
@@ -81,33 +81,66 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         start_dt = self._sunset(d - timedelta(days=1)) - timedelta(minutes=self._candle)
         end_dt   = self._sunset(d) + timedelta(minutes=self._havdalah)
         return start_dt, end_dt
-        
+
     def _find_current_halachic_day(self, now_local: datetime):
+        """
+        Find halachic day d such that window_for(d) contains now_local.
+        Use a *rounded* candle cutoff to disambiguate Erev→Night.
+        """
         base = now_local.date()
-    
-        # Decide overlap deterministically: if we’re past today’s candle time,
-        # treat "now" as the NEXT halachic day (Shabbos on Erev Shabbos, etc.).
-        today_candle = self._sunset(base) - timedelta(minutes=self._candle)
+
+        # *** key fix: round the candle cutoff so we flip exactly at the UI minute ***
+        today_candle = _round_half_up(self._sunset(base) - timedelta(minutes=self._candle))
+
         if now_local >= today_candle:
-            first_try = base + timedelta(days=1)   # prefer the later halachic day
-            second_try = base
+            first_try, second_try = base + timedelta(days=1), base
         else:
-            first_try = base
-            second_try = base + timedelta(days=1)
-    
-        # Try the chosen day, then nearby fallbacks
-        trial_order = [first_try, second_try, base - timedelta(days=1),
-                       base + timedelta(days=2), base - timedelta(days=2)]
-    
+            first_try, second_try = base, base + timedelta(days=1)
+
+        trial_order = [
+            first_try,
+            second_try,
+            base - timedelta(days=1),
+            base + timedelta(days=2),
+            base - timedelta(days=2),
+        ]
+
         for d in trial_order:
             s, e = self._window_for_halachic_day(d)
             if s <= now_local < e:
                 return d, s, e
-    
+
         # Fallback to today
         d = base
         s, e = self._window_for_halachic_day(d)
         return d, s, e
+
+    def _in_shabbos_off_window(self, now_local: datetime) -> bool:
+        """Return True if now is between Fri candle → Sat havdalah for this or adjacent week."""
+        base = now_local.date()
+        wd = base.weekday()  # Mon=0..Sun=6
+        friday0 = base - timedelta(days=(wd - 4) % 7)
+        for week_shift in (-7, 0, 7):
+            f = friday0 + timedelta(days=week_shift)
+            s = self._sunset(f) - timedelta(minutes=self._candle)
+            e = self._sunset(f + timedelta(days=1)) + timedelta(minutes=self._havdalah)
+            if s <= now_local < e:
+                return True
+        return False
+    
+    def _in_yk_off_window(self, now_local: datetime) -> bool:
+        """True if now is inside the Yom Kippur OFF window (candle → havdalah)."""
+        base = now_local.date()
+        for i in range(-3, 4):
+            d = base + timedelta(days=i)
+            if self._is_yom_kippur(d):
+                # For the halachic day 'd' (10 Tishrei), OFF spans:
+                # candle(before) → havdalah(after)
+                start = self._sunset(d - timedelta(days=1)) - timedelta(minutes=self._candle)
+                end   = self._sunset(d) + timedelta(minutes=self._havdalah)
+                if start <= now_local < end:
+                    return True
+        return False
 
     def _next_off_window_after(self, ref_local: datetime):
         """
@@ -139,20 +172,20 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         s = _round_half_up(s_raw)
         e = _round_ceil(e_raw)
 
-        # ON unless Shabbos or Yom Kippur
-        is_shabbos = (d.weekday() == 5)
-        is_yk = self._is_yom_kippur(d)
-        self._attr_is_on = (not is_shabbos) and (not is_yk) and (s <= now < e)
+        # ON unless we're inside a real OFF window (Shabbos or Yom Kippur)
+        in_shabbos_off = self._in_shabbos_off_window(now)
+        in_yk_off = self._in_yk_off_window(now)
+        self._attr_is_on = (not in_shabbos_off) and (not in_yk_off) and (s <= now < e)
 
         # Next OFF window
         no_start, no_end = self._next_off_window_after(now)
         next_off_start = _round_half_up(no_start) if no_start else None
         next_off_end   = _round_ceil(no_end) if no_end else None
 
-        # Attributes (publish consistently)
+        # Attributes
         self._attr_extra_state_attributes = {
             "Now": now.isoformat(),
             "Next_Off_Window_Start": next_off_start.isoformat() if next_off_start else "",
             "Next_Off_Window_End": next_off_end.isoformat() if next_off_end else "",
-            "Activation_Logic": "Usually ON; Turns OFF on Shabbos and Yom Kippur from Candle lighting till Havdalah.",
+            "Activation_Logic": "Usually ON; turns OFF on Shabbos and Yom Kippur from candle-lighting until havdalah.",
         }
