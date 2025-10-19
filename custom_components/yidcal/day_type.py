@@ -208,14 +208,24 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             if fest_start <= now < fest_end:
                 state = "Yom Tov"
                 if shabbos_start <= now < shabbos_end:
-                    state = "Shabbos & Yom Tov"
+                    # Always show Friday night as Shabbos & CH"M if Shabbos day is CH"M
+                    if _is_chol_hamoed(shabbos_day):
+                        state = "Shabbos & Chol Hamoed"
+                    else:
+                        state = "Shabbos & Yom Tov"
                 self._set_state(state)
                 return
             # holiday motzi: immediately after fest_end → 2 AM next day
             motzi_start = fest_end
             motzi_end = datetime.datetime.combine(end_date + timedelta(days=1), time(2, 0)).replace(tzinfo=tz)
             if motzi_start <= now < motzi_end:
-                state = "Chol Hamoed" if _is_chol_hamoed(effective_pydate) else "Motzi"
+                if _is_chol_hamoed(effective_pydate):
+                    # Ensure Shabbos isn't masked during motzi-YT into Shabbos
+                    state = "Chol Hamoed"
+                    if shabbos_start <= now < shabbos_end:
+                        state = "Shabbos & Chol Hamoed"
+                else:
+                    state = "Motzi"
                 self._set_state(state)
                 return
 
@@ -226,7 +236,12 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         motzi_start = prev_sunset + timedelta(minutes=self._havdalah_offset)
         motzi_end = datetime.datetime.combine(today, time(2, 0)).replace(tzinfo=tz)
         if raw_motzi and motzi_start <= now < motzi_end:
-            state = "Chol Hamoed" if _is_chol_hamoed(effective_pydate) else "Motzi"
+            if _is_chol_hamoed(effective_pydate):
+                state = "Chol Hamoed"
+                if shabbos_start <= now < shabbos_end:
+                    state = "Shabbos & Chol Hamoed"
+            else:
+                state = "Motzi"
             self._set_state(state)
             return
 
