@@ -104,7 +104,6 @@ A custom Home Assistant integration that provides:
   * **Exposes:** all holiday flags as **booleans** (True/False). Use these in automations.
   * **State:** a short, readable list of the labels of upcoming holidays that are **active right now** (e.g., `ערב סוכות, סוכות א׳`).
   * **Behavior:** pre-activates up to your **Lookahead days**; updates nightly at **12:02 AM**; honors your candle-lighting & havdalah offsets.
-
 * **Sof Zman Achilas Chumetz** (`sensor.yidcal_zman_achilas_chumetz`)
 * **Sof Zman Sreifes Chumetz** (`sensor.yidcal_zman_sreifes_chumetz`)
 * **Ishpizin** (`sensor.yidcal_ishpizin`) - אושפיזא דאברהם, אושפיזא דיצחק
@@ -112,6 +111,7 @@ A custom Home Assistant integration that provides:
 * **Day Type** (`binary_sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day, Chol Hamoed, Shabbos & Chol Hamoed)
 * **Yurtzeit Sensor** (`sensor.yidcal_yurtzeit`) - Displays today's yurtzeits (flipping at sunset + havdalah_offset), with attributes for each yurtzeit name.
 * **Yurtzeit Weekly Sensor** (`sensor.yidcal_yurtzeits_weekly`) - Displays weekly yurtzeits (flipping at Saturday sunset + havdalah_offset), with attributes for each day's yurtzeits.
+* **Longer Shachris** (`binary_sensor.yidcal_longer_shachris`) – ON **4 AM–2 PM local** on **Rosh Chodesh, Chanukah, Chol Hamoed (Pesach/Sukkos), Purim, and Tisha B’Av (incl. nidcheh)**. Always **OFF on Shabbos or Yom Tov**, and **OFF on all other days**.
   
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
 
