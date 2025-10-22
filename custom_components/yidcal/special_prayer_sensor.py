@@ -326,7 +326,8 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             is_chanukah = _as_true(hol.get("חנוכה"))
             
             # Rosh Chodesh (exclude Tishrei to avoid R"H via RC branch; R"H is covered by Yom Tov anyway)
-            is_rc = ((day == 1) or (day == 30)) and (m_he != "תשרי")
+            is_rh = (hd.month == 7 and hd.day in (1, 2))  # or: _as_true(hol.get("ראש השנה"))
+            is_rc = (day in (1, 30)) and not is_rh
             
             # Final rule: ALL of these use a full halachic night→night window
             yaaleh_day = (is_rc or is_yomtov or has_chm) and night_inclusive_window
