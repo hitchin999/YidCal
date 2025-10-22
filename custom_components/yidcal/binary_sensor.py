@@ -34,6 +34,7 @@ from .nine_days_sensor import NineDaysSensor
 from .no_melucha_shabbos_sensor import NoMeluchaShabbosSensor
 from .no_melucha_yomtov_sensor import NoMeluchaYomTovSensor
 from .bishul_allowed_sensor import BishulAllowedSensor
+from .longer_shachris_sensor import LongerShachrisSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -506,6 +507,7 @@ async def async_setup_entry(
         UpcomingYomTovSensor(hass, candle, havdalah),
         NineDaysSensor(hass, candle, havdalah),
         MotziSensor(hass, candle, havdalah),
+        LongerShachrisSensor(hass, candle, havdalah),
     ]
     if include_attrs:
         for name in SLUG_OVERRIDES:
