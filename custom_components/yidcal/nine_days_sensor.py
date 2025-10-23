@@ -6,7 +6,7 @@ Binary sensor for "תשעת הימים" (The Nine Days):
     • if 9 Av falls on Shabbat (fast deferred to 10 Av),
       deactivates at sunset + havdalah (tzeis) on 10 Av
 
-Attributes (Bishul-style):
+Attributes:
   Now:                 ISO current local time
   Next_Window_Start:   ISO when the current/upcoming Nine Days window starts
   Next_Window_End:     ISO when the current/upcoming Nine Days window ends
