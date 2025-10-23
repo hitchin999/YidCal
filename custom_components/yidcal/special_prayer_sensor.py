@@ -268,15 +268,20 @@ class SpecialPrayerSensor(YidCalDevice, SensorEntity):
             candle_time = sunset - timedelta(minutes=self._candle)
             havdala = sunset + timedelta(minutes=self._havdalah)
             hal_mid = sunrise + (sunset - sunrise) / 2
-            # Nightfall (tzeis) window boundaries for the *current halachic day*
-            # last_tzeis .. this_tzeis is the full halachic "night→night" span
+            # Nightfall (tzeis) window relative to *now*: prev_tzeis .. next_tzeis
             st_yesterday = sun(loc.observer, date=today - timedelta(days=1), tzinfo=tz)
-            last_tzeis = st_yesterday["sunset"] + timedelta(minutes=self._havdalah)
-            this_tzeis = havdala  # today’s sunset + havdalah offset
+            st_tomorrow  = sun(loc.observer, date=today + timedelta(days=1), tzinfo=tz)
             
-            # Windows we’ll use:
-            day_window = (now >= dawn) and (now < this_tzeis)
-            night_inclusive_window = (now >= last_tzeis) and (now < this_tzeis)
+            yest_tzeis = st_yesterday["sunset"] + timedelta(minutes=self._havdalah)
+            tod_tzeis  = havdala  # today’s sunset + havdalah offset
+            tom_tzeis  = st_tomorrow["sunset"] + timedelta(minutes=self._havdalah)
+            
+            if now < tod_tzeis:
+                prev_tzeis, next_tzeis = yest_tzeis, tod_tzeis
+            else:
+                prev_tzeis, next_tzeis = tod_tzeis, tom_tzeis
+            
+            night_inclusive_window = (prev_tzeis <= now < next_tzeis)
 
             # Hebrew date by halachic rollover (havdalah)
             hd = PHebrewDate.from_pydate(today)
