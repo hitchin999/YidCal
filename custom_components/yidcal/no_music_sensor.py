@@ -4,10 +4,16 @@ from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from astral import LocationInfo
 from astral.sun import sun
-from .device import YidCalDevice
+
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from pyluach.hebrewcal import HebrewDate
+
+from .const import DOMAIN
+from .device import YidCalDevice
+from .zman_sensors import get_geo
+from zmanim.zmanim_calendar import ZmanimCalendar
+
 
 class NoMusicSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "No Music"
@@ -24,6 +30,10 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
         self._candle = candle
         self._havdalah = havdalah
 
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._geo = None  # for ZmanimCalendar (used for Chatzos like ChatzosHayomSensor)
+
         self._in_sefirah: bool = False
         self._in_three_weeks: bool = False
         self._this_window_ends: datetime | None = None
@@ -32,22 +42,24 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
 
     async def async_added_to_hass(self) -> None:
         self._added = True
+        self._geo = await get_geo(self.hass)
         await self.async_update()
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     # ── Helpers ─────────────────────────────────────────────────────────
     def _tz(self) -> ZoneInfo:
-        return ZoneInfo(self.hass.config.time_zone)
+        return self._tz
 
     def _loc(self) -> LocationInfo:
+        # astral helper for tzeis (sunset + havdalah offset)
         return LocationInfo(
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
-            timezone=self.hass.config.time_zone,
+            timezone=self._tz.key,
         )
 
     def _dt_at_start_of_day(self, d) -> datetime:
-        return datetime.combine(d, time(0, 0, 0), tzinfo=self._tz())
+        return datetime.combine(d, time(0, 0, 0), tzinfo=self._tz)
 
     def _omer_day(self, hd: HebrewDate) -> int:
         if hd.month == 1 and hd.day >= 16:  # Nisan 16-30
@@ -63,9 +75,24 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
         return (1 <= day <= 32) or (34 <= day <= 46)
 
     def _tzeis_on(self, greg_date) -> datetime:
-        tz = self._tz()
+        tz = self._tz
         s = sun(self._loc().observer, date=greg_date, tzinfo=tz)
         return s["sunset"] + timedelta(minutes=self._havdalah)
+
+    def _compute_chatzos_for_date(self, base_date) -> datetime:
+        """Match ChatzosHayomSensor exactly: MGA day (dawn=sr-72, nightfall=ss+72) with rounding."""
+        assert self._geo is not None
+        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
+        sunrise = cal.sunrise().astimezone(self._tz)
+        sunset = cal.sunset().astimezone(self._tz)
+
+        dawn = sunrise - timedelta(minutes=72)
+        nightfall = sunset + timedelta(minutes=72)
+
+        target = dawn + (nightfall - dawn) / 12 * 6  # 6 sha'os zmanios
+        if target.second >= 30:  # round-half-up to the minute
+            target += timedelta(minutes=1)
+        return target.replace(second=0, microsecond=0)
 
     def _build_sefirah_windows(self, hyear: int) -> list[tuple[datetime, datetime, str]]:
         """
@@ -110,20 +137,28 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
 
     def _three_weeks_window(self, hyear: int) -> tuple[datetime, datetime, str]:
         """
-        Start: 17 Tammuz 00:00 local
-        End:   10 Av @ (noon) OR (sunset + havdalah) if 9 Av is Shabbat (nidche)
+        Start:
+          • Normal year: tzeis that BEGINS 17 Tammuz (tzeis on the civil day before 17 Tammuz)
+          • If 17 Tammuz is Shabbos (nidche): start at tzeis after Shabbos that begins 18 Tammuz
+        End:
+          • Normal year: 10 Av at Chatzos Hayom (MGA 72/72, rounded like Chatzos sensor)
+          • Nidche year (9 Av is Shabbos; fast on 10 Av): tzeis on 10 Av
         """
-        tz = self._tz()
+        # start
         tammuz17 = HebrewDate(hyear, 4, 17).to_pydate()
-        start_dt = self._dt_at_start_of_day(tammuz17)
-
-        av9 = HebrewDate(hyear, 5, 9).to_pydate()
+        if tammuz17.weekday() == 5:
+            start_dt = self._tzeis_on(HebrewDate(hyear, 4, 18).to_pydate() - timedelta(days=1))
+        else:
+            start_dt = self._tzeis_on(tammuz17 - timedelta(days=1))
+    
+        # end (depends on nidche)
+        av9  = HebrewDate(hyear, 5, 9).to_pydate()
         av10 = HebrewDate(hyear, 5, 10).to_pydate()
-        if av9.weekday() == 5:  # Saturday -> deferred fast
+        if av9.weekday() == 5:
             end_dt = self._tzeis_on(av10)
         else:
-            s = sun(self._loc().observer, date=av10, tzinfo=tz)
-            end_dt = s["noon"]
+            end_dt = self._compute_chatzos_for_date(av10)
+    
         return (start_dt, end_dt, "three_weeks")
 
     def _build_windows(self, now: datetime) -> list[tuple[datetime, datetime, str]]:
@@ -139,7 +174,10 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
 
     # ── Update ──────────────────────────────────────────────────────────
     async def async_update(self, now: datetime | None = None) -> None:
-        tz = self._tz()
+        if not self._geo:
+            return  # wait until geo is loaded so Chatzos calc matches ChatzosHayomSensor
+
+        tz = self._tz
         now = now or datetime.now(tz)
 
         # Build windows and locate where "now" sits
@@ -177,6 +215,16 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
             self.async_write_ha_state()
 
     # ── Attributes ─────────────────────────────────────────────────────
+    def _activation_logic_text(self) -> str:
+        return (
+            "ON during two periods: "
+            "• Sefirah — Omer days 1–32 and 34–46, from tzeis that begins the first prohibited day "
+            "through tzeis at the end of the last prohibited day (Lag BaOmer 33 and days 47–49 are allowed); "
+            "• Three Weeks — from tzeis that begins 17 Tammuz (if 17 Tammuz is Shabbos, from tzeis after Shabbos that begins 18 Tammuz) "
+            "until 10 Av at Chatzos Hayom; if 9 Av is Shabbos (nidche), ends at tzeis on 10 Av. "
+            "OFF outside these windows."
+        )
+
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         attrs: dict[str, object] = {}
@@ -191,4 +239,5 @@ class NoMusicSensor(YidCalDevice, BinarySensorEntity):
         attrs["This Window End"] = (
             self._this_window_ends.isoformat() if self._this_window_ends else "N/A"
         )
+        attrs["Activation_Logic"] = self._activation_logic_text()
         return attrs
