@@ -653,16 +653,39 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
         tz = ZoneInfo(self.hass.config.time_zone)
         now = _now or datetime.now(tz)
 
-        main = self.hass.states.get("sensor.yidcal_molad")
-        attr = main.attributes if main else {}
-        nf_list = attr.get("Rosh_Chodesh_Nightfall") or []
-        month = attr.get("Month_Name", "")
+        main   = self.hass.states.get("sensor.yidcal_molad")
+        attr   = main.attributes if main else {}
+        nf_list = (attr.get("Rosh_Chodesh_Nightfall") if main else None) or []
+        month   = (attr.get("Month_Name") if main else "") or ""
 
-        # Convert strings → datetime
-        nf_datetimes: list[datetime] = [
-            dt if isinstance(dt, datetime) else datetime.fromisoformat(dt)
-            for dt in nf_list
-        ]
+        # 1) Use Molad-provided nightfall times if present
+        nf_datetimes: list[datetime] = []
+        if nf_list:
+            nf_datetimes = [
+                dt if isinstance(dt, datetime) else datetime.fromisoformat(dt)
+                for dt in nf_list
+            ]
+        else:
+            # 2) Fallback: compute locally, but FIRST pick base_date like Molad does
+            #    (if Hebrew day < 3, jump ~15 days back to previous month).
+            hd_now = PHebrewDate.from_pydate(now.date())
+            base_date = (now.date() - timedelta(days=15)) if hd_now.day < 3 else now.date()
+            rc = self.helper.get_rosh_chodesh_days(base_date)
+
+            # Derive month name in **Hebrew** from the RC day itself (matches pyluach style)
+            if not month:
+                month = PHebrewDate.from_pydate(rc.gdays[-1]).month_name(True) if rc.gdays else (rc.month or "")
+
+            loc = LocationInfo(
+                latitude=self.hass.config.latitude,
+                longitude=self.hass.config.longitude,
+                timezone=self.hass.config.time_zone,
+            )
+            nf_datetimes = []
+            for gd in rc.gdays:
+                prev = gd - timedelta(days=1)
+                sd = sun(loc.observer, date=prev, tzinfo=tz)
+                nf_datetimes.append(sd["sunset"] + timedelta(minutes=self._havdalah_offset))
 
         # Find which Rosh Chodesh period (if any) is active
         active_index: int | None = None
@@ -690,8 +713,6 @@ class RoshChodeshToday(YidCalDevice, SensorEntity):
 
     @property
     def available(self) -> bool:
-        main = self.hass.states.get("sensor.yidcal_molad")
-        if not main:
-            return False
-        # Consider attribute presence, not truthiness — handles months with no RC (e.g., Tishrei)
-        return "Rosh_Chodesh_Nightfall" in main.attributes
+        # Stay available even if Molad hasn’t computed RC attributes or is missing.
+        return True
+        
