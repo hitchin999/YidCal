@@ -218,8 +218,10 @@ class MoladSensor(YidCalDevice, SensorEntity):
         )
 
     async def async_update(self, now=None) -> None:
-        # 1) Use Home Assistant’s clock for “today”
-        today = dt_util.now().date()
+        # 1) Use Home Assistant’s clock (aware)
+        tz = ZoneInfo(self.hass.config.time_zone)
+        now_local = (now or dt_util.now()).astimezone(tz)
+        today = now_local.date()
         jdn = gdate_to_jdn(today)
         heb = HHebrewDate.from_jdn(jdn)
 
@@ -236,21 +238,39 @@ class MoladSensor(YidCalDevice, SensorEntity):
             self._attr_native_value = None
             return
 
-        # Compute Mevorchim flags for *today*, not for base_date
-        is_mev_today = self.helper.is_shabbos_mevorchim(today)
-        is_upcoming_today = self.helper.is_upcoming_shabbos_mevorchim(today)
+        # ─── Shabbos Mevorchim: ON for the full Shabbos window (Fri candle → Sat havdalah) ───
+        # Identify this Shabbos' Friday/Saturday and the window edges, then ask helper
+        # if that Saturday is Mevorchim. Only then keep the flag ON for the whole window.
+        is_mev_window = False
+        wd = now_local.weekday()  # Mon=0 … Fri=4, Sat=5, Sun=6
+        if wd in (4, 5):  # Friday or Saturday
+            # Determine the Friday/Saturday pair for *this* Shabbos
+            friday = today if wd == 4 else (today - timedelta(days=1))
+            saturday = friday + timedelta(days=1)
+
+            # Location for sun times
+            loc = LocationInfo(
+                latitude=self.hass.config.latitude,
+                longitude=self.hass.config.longitude,
+                timezone=self.hass.config.time_zone,
+            )
+            fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
+            sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
+            shabbos_on  = fri_sunset - timedelta(minutes=self._candle_offset)
+            shabbos_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
+
+            if shabbos_on <= now_local < shabbos_off:
+                # Ask the helper about THIS Saturday (Gregorian) being Mevorchim
+                is_mevorchim_this_week = self.helper.is_shabbos_mevorchim(saturday)
+                is_mev_window = bool(is_mevorchim_this_week)
+        # "Upcoming" should not be true once Shabbos starts
+        is_upcoming_today = False if is_mev_window else self.helper.is_upcoming_shabbos_mevorchim(today)
 
         m = details.molad
         h, mi = m.hours, m.minutes
         tod = TIME_OF_DAY[m.am_or_pm](h)
         chal = m.chalakim
         chal_txt = "חלק" if chal == 1 else "חלקים"
-
-        tz = ZoneInfo(self.hass.config.time_zone)
-        if now:
-            now_local = now.astimezone(tz)
-        else:
-            now_local = dt_util.now().astimezone(tz)
 
         loc = LocationInfo(
             latitude=self.hass.config.latitude,
@@ -335,11 +355,11 @@ class MoladSensor(YidCalDevice, SensorEntity):
             "Chalakim": chal,
             "Friendly": state,
             # "Rosh_Chodesh_Midnight": rc_mid,
-            "Rosh_Chodesh_Nightfall": rc_night,
+            #"Rosh_Chodesh_Nightfall": rc_night,
             "Rosh_Chodesh": rc_text,
             "Rosh_Chodesh_Days": rc_days,
-            # Use TODAY-based flags (fixes mevorchim visibility in attributes)
-            "Is_Shabbos_Mevorchim": is_mev_today,
+            # True for the ENTIRE Shabbos window only when it's a Mevorchim Shabbos
+            "Is_Shabbos_Mevorchim": is_mev_window,
             "Is_Upcoming_Shabbos_Mevorchim": is_upcoming_today,
             "Month_Name": molad_month_name,
             "Full_Molad": full_molad,
