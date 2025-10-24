@@ -83,6 +83,14 @@ class FullDisplaySensor(YidCalDevice, SensorEntity):
         hol = self.hass.states.get("sensor.yidcal_holiday")
         if hol and _ok(hol.state):
             text += f" - {hol.state.strip()}"
+        
+        # 3b) Shabbos Erev Pesach: if this Shabbos is Erev Pesach (מוקדם year),
+        # surface "ערב פסח" throughout Shabbos.
+        if hol and getattr(hol, "attributes", None):
+            if hol.attributes.get("שבת ערב פסח", False):
+                # avoid duplicating if it somehow already appears
+                if "ערב פסח" not in text:
+                    text += " ~ ערב פסח"
 
         # 5) Special Shabbos (after Fri-13:00 or any Sat)
         special = self.hass.states.get("sensor.yidcal_special_shabbos")
