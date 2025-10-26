@@ -22,7 +22,8 @@ from typing import Dict, List, Tuple, Optional
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
+from homeassistant.core import callback
 
 from zmanim.zmanim_calendar import ZmanimCalendar
 from .zman_sensors import get_geo
@@ -68,15 +69,28 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        await self.async_update()
-        # periodic refresh
-        self._register_interval(self.hass, self.async_update, timedelta(minutes=self._interval))
-        # snap update at 00:02 local every day
-        async_track_time_change(
-            self.hass,
-            lambda *_: self.hass.async_create_task(self.async_update()),
-            hour=0, minute=2, second=0,
+        # Initial update (thread-safe schedule; HA will call async_update + write)
+        self.async_schedule_update_ha_state(True)
+
+        # Periodic refresh (HA-managed, no threads)
+        self._unsub_interval = async_track_time_interval(
+            self.hass, self._handle_interval, timedelta(minutes=self._interval)
         )
+        self.async_on_remove(self._unsub_interval)
+
+        # Snap update at 00:02 local
+        self._unsub_midnight = async_track_time_change(
+            self.hass, self._handle_midnight, hour=0, minute=2, second=0
+        )
+        self.async_on_remove(self._unsub_midnight)
+
+    @callback
+    def _handle_interval(self, now) -> None:
+        self.async_schedule_update_ha_state(True)
+
+    @callback
+    def _handle_midnight(self, now) -> None:
+        self.async_schedule_update_ha_state(True)
 
     @property
     def native_value(self) -> str:
