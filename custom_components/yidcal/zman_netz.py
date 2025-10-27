@@ -12,11 +12,11 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class NetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class NetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """נץ החמה עפ\"י המג\"א (0°50′ sunrise)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
@@ -98,3 +98,4 @@ class NetzSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
+
