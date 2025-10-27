@@ -12,7 +12,7 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 from . import DEFAULT_TALLIS_TEFILIN_OFFSET
 
@@ -20,7 +20,7 @@ from . import DEFAULT_TALLIS_TEFILIN_OFFSET
 DEFAULT_ALOS_OFFSET = 72
 
 
-class ZmanTalisTefilinSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class ZmanTalisTefilinSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """זמן נטילת תפילין ותלית ראשונה עפ״י מג״א (Misheyakir)."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -111,3 +111,4 @@ class ZmanTalisTefilinSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
+
