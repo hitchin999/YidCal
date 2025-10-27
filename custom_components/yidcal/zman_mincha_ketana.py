@@ -12,11 +12,11 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class MinchaKetanaSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class MinchaKetanaSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """מנחה קטנה עפ\"י המג\"א (9.5 שעות זמניות)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
