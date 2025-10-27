@@ -94,7 +94,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util.dt import now as dt_now
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
 NO_MELOCHA_SENSOR = "binary_sensor.yidcal_no_melucha"
@@ -221,7 +221,7 @@ def _format_hebrew_year(year: int) -> str:
         return "".join(parts[:-1]) + GERSHAYIM + parts[-1]
 
 
-class SpecialPrayerSensor(YidCalDevice, SensorEntity):
+class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
     _attr_name = "Special Prayer"
 
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int):
