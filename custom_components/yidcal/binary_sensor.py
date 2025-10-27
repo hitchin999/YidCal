@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.const import STATE_ON
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -35,6 +36,7 @@ from .no_melucha_shabbos_sensor import NoMeluchaShabbosSensor
 from .no_melucha_yomtov_sensor import NoMeluchaYomTovSensor
 from .bishul_allowed_sensor import BishulAllowedSensor
 from .longer_shachris_sensor import LongerShachrisSensor
+from .eruv_tavshilin import EruvTavshilinSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -71,6 +73,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ראש השנה ב׳":           "rosh_hashana_2",
     "ראש השנה א׳ וב׳":       "rosh_hashana_1_2",
     "מוצאי ראש השנה":        "motzei_rosh_hashana",
+    "עשרת ימי תשובה":        "aseres_yemei_teshuva",
     "צום גדליה":             "tzom_gedalia",
     "שלוש עשרה מדות":        "shlosh_asrei_midos",
     "ערב יום כיפור":          "erev_yom_kippur",
@@ -95,6 +98,9 @@ SLUG_OVERRIDES: dict[str, str] = {
     "אסרו חג סוכות":         "isri_chag_sukkos",
     "ערב חנוכה":             "erev_chanukah",
     "חנוכה":                 "chanukah",
+    "ערב שבת חנוכה":          "erev_shabbos_chanukah",
+    "שבת חנוכה":             "shabbos_chanukah",
+    "שבת חנוכה ראש חודש":    "shabbos_chanukah_rosh_chodesh", 
     "זאת חנוכה":             "zos_chanukah",
     "שובבים":               "shovavim",
     "שובבים ת\"ת":          "shovavim_tat",
@@ -146,21 +152,32 @@ SLUG_OVERRIDES: dict[str, str] = {
 class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """Mirrors one attribute from sensor.yidcal_holiday, with restore-on-reboot."""
 
+    # All attribute mirrors will live under this separate Device
+    _ATTR_DEVICE_IDENT = (DOMAIN, "yidcal_holiday_attributes")
+
     def __init__(self, hass: HomeAssistant, attr_name: str) -> None:
         super().__init__()
         self.hass = hass
         self.attr_name = attr_name
 
-        # Display info
         self._attr_name = f"{attr_name}"
         slug = SLUG_OVERRIDES.get(attr_name) or (
-            attr_name.lower().replace(" ", "_")
-                      .replace("׳", "").replace('"', "")
+            attr_name.lower().replace(" ", "_").replace("׳", "").replace('"', "")
         )
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"binary_sensor.yidcal_{slug}"
         self._attr_icon = "mdi:checkbox-marked-circle-outline"
         self._attr_extra_state_attributes = {}
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {self._ATTR_DEVICE_IDENT},
+            "name": "YidCal — Holiday Attribute Sensors",
+            "manufacturer": "Yoel Goldstein/Vaayer LLC", 
+            "model": "Holiday Attribute Sensors",
+            "entry_type": DeviceEntryType.SERVICE,
+        }
 
     def _schedule_update(self, *_args) -> None:
         """Thread-safe scheduling of async_update on the event loop."""
@@ -510,6 +527,7 @@ async def async_setup_entry(
         NineDaysSensor(hass, candle, havdalah),
         MotziSensor(hass, candle, havdalah),
         LongerShachrisSensor(hass, candle, havdalah),
+        EruvTavshilinSensor(hass, candle, havdalah),
     ]
     if include_attrs:
         for name in SLUG_OVERRIDES:
