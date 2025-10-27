@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_change
 
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 from .yidcal_lib.helper import int_to_hebrew
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
@@ -18,7 +18,7 @@ BLOCK_SIZE      = 5
 CYCLE_LENGTH    = (CHAPTER_COUNT + BLOCK_SIZE - 1) // BLOCK_SIZE  # = 30
 
 
-class TehilimDailySensor(YidCalDevice, SensorEntity):
+class TehilimDailySensor(YidCalDisplayDevice, SensorEntity):
     """Daily-rotating Tehilim block, skipping Shabbos/Yomtov/Hoshana Rabah."""
 
     _attr_icon               = "mdi:book-open-variant"
