@@ -29,7 +29,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from zmanim.zmanim_calendar import ZmanimCalendar
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
-from .device import YidCalDevice
+from .device import YidCalSpecialDevice
 from .const import DOMAIN
 from .config_flow import CONF_SLICHOS_LABEL_ROLLOVER
 from .config_flow import DEFAULT_SLICHOS_LABEL_ROLLOVER
@@ -73,7 +73,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
 
 
-class SlichosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
+class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
     """Binary sensor for the continuous Selichos period."""
 
     _attr_name = "Slichos"
