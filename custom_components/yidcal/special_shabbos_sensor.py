@@ -4,14 +4,14 @@ from datetime import datetime
 import re
 from homeassistant.components.sensor import SensorEntity
 from .yidcal_lib import specials
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up SpecialShabbosSensor via config entry."""
     async_add_entities([SpecialShabbosSensor()], update_before_add=True)
 
 
-class SpecialShabbosSensor(YidCalDevice, SensorEntity):
+class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
     """Sensor that provides the upcoming special Shabbatot."""
 
     _attr_name = "Special Shabbos"
