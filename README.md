@@ -4,6 +4,12 @@
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hitchin999&repository=YidCal&category=Integration)
 
+> [!WARNING]
+> <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f1ee-1f1f1.svg" alt="Israel flag" width="18"> **Israel locations are not supported (yet).**
+> YidCal currently assumes **diaspora (chutz la’aretz)** halachic rules for all holiday logic.  
+> If your Home Assistant coordinates are in **Israel**, sunrise/sunset and basic zmanim will compute, but
+> **holiday spans and related sensors will be incorrect** (e.g., **one-day Yom-Tov vs two-day**, **Shemini Atzeres/Simchas Torah combined**, **Eruv Tavshilin cases**, **Tal-u’Matar from 7 Cheshvan**).  
+
 A custom Home Assistant integration that provides:
 
 * **No Melucha** (`binary_sensor.yidcal_no_melucha`) (e.g., on Shabbos and Yom Tov)
