@@ -3,7 +3,7 @@ import datetime
 from datetime import time
 from datetime import timedelta
 from zoneinfo import ZoneInfo
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 
 from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
@@ -18,7 +18,7 @@ from zmanim.util.geo_location import GeoLocation
 from .zman_sensors import get_geo
 
 
-class FullDisplaySensor(YidCalDevice, SensorEntity):
+class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
     """
     Combines day label Yiddish, parsha, holiday (from YOUR list via yidcal_holiday attrs),
     R"Chodesh, special Shabbos, and—if any other motzei sensor is ON—adds that as well.
