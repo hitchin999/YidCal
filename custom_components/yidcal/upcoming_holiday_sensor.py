@@ -477,6 +477,23 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             # Optional but useful across blocks
             if attrs_mid.get("שבת ראש חודש"):
                 _append_to_offset(off_to_labels, off, "שבת ראש חודש")
+                
+            # --- Add Aseres Yemei Teshuva + Chanukah + Erev-Pesach-on-Shabbos helpers ---
+            # Aseres Yemei Teshuva (3–9 Tishrei; shows on the relevant offsets we’re already exposing)
+            if attrs_mid.get("עשרת ימי תשובה"):
+                _append_to_offset(off_to_labels, off, "עשרת ימי תשובה")
+    
+            # Chanukah helpers
+            for lbl in ("ערב שבת חנוכה", "שבת חנוכה", "שבת חנוכה ראש חודש"):
+                if attrs_mid.get(lbl):
+                    _append_to_offset(off_to_labels, off, lbl)
+    
+            # Erev Pesach on Shabbos helpers
+            # (When 14 Nissan is Shabbos: you'll see "שבת ערב פסח" on offset -1;
+            #  "ערב פסח מוקדם" lands on the preceding day; see optional tweak below.)
+            for lbl in ("שבת ערב פסח", "ערב פסח מוקדם"):
+                if attrs_mid.get(lbl):
+                    _append_to_offset(off_to_labels, off, lbl)
 
         buckets = [(off, off_to_labels[off]) for off in sorted(off_to_labels.keys())]
         return buckets
