@@ -21,7 +21,7 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 
 
 # ─── Helper: compute holiday duration via pyluach ───────────────────────────
@@ -147,7 +147,7 @@ def label_for_kind_and_context(d: datetime.date, kind: str, *, diaspora: bool) -
 
 # ─── Zman Erev Sensor ───────────────────────────────────────────────────────
 
-class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:candelabra-fire"
     _attr_name = "Zman Erev"
@@ -474,7 +474,7 @@ class ZmanErevSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
 # ─── Zman Motzi Sensor ──────────────────────────────────────────────────────
 
-class ZmanMotziSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:liquor"
     _attr_name = "Zman Motzi"
