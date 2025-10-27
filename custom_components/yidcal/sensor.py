@@ -4,7 +4,7 @@ import logging
 import homeassistant.util.dt as dt_util
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
-from .device import YidCalDevice
+from .device import YidCalDevice, YidCalDisplayDevice
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -54,6 +54,7 @@ from .zman_maariv_60 import ZmanMaariv60Sensor
 from .zman_maariv_rt  import ZmanMaarivRTSensor
 from .zman_chatzos_haleila import ChatzosHaLailaSensor
 from .tehilim_daily_sensor import TehilimDailySensor
+from .tehilim_daily_pupa_sensor import TehilimDailyPupaSensor
 from .day_label_hebrew import DayLabelHebrewSensor
 from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
@@ -156,6 +157,7 @@ async def async_setup_entry(
         ZmanMaarivRTSensor(hass),
         ChatzosHaLailaSensor(hass),
         TehilimDailySensor(hass, yidcal_helper),
+        TehilimDailyPupaSensor(hass, yidcal_helper),
         DayLabelHebrewSensor(hass, candle_offset, havdalah_offset),
         SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
@@ -178,7 +180,7 @@ async def async_setup_entry(
 
     async_add_entities(sensors, update_before_add=True)
 
-class MoladSensor(YidCalDevice, SensorEntity):
+class MoladSensor(YidCalDisplayDevice, SensorEntity):
     _attr_name = "Molad"
 
     def __init__(
@@ -601,7 +603,7 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     def icon(self) -> str:
         return "mdi:star-outline"
 
-class RoshChodeshToday(YidCalDevice, SensorEntity):
+class RoshChodeshToday(YidCalDisplayDevice, SensorEntity):
     """True during each day of Rosh Chodesh; shows א׳/ב׳ when there are two days."""
 
     _attr_name = "Rosh Chodesh Today"
