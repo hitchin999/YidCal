@@ -14,9 +14,9 @@ from homeassistant.util.dt import now as dt_now
 from astral.sun import sun
 from astral import LocationInfo
 from pyluach.dates import HebrewDate as PHebrewDate
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 
-class MoridGeshemSensor(YidCalDevice, SensorEntity):
+class MoridGeshemSensor(YidCalDisplayDevice, SensorEntity):
     """Rain blessing sensor: continuous window at dawn."""
     _attr_name = "Morid Geshem or Tal"
 
@@ -60,7 +60,7 @@ class MoridGeshemSensor(YidCalDevice, SensorEntity):
         else:
             return "מוריד הטל"
 
-class TalUMatarSensor(YidCalDevice, SensorEntity):
+class TalUMatarSensor(YidCalDisplayDevice, SensorEntity):
     """Tal U'Matar sensor: continuous window at havdala."""
     _attr_name = "Tal U'Matar"
 
