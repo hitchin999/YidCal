@@ -10,12 +10,12 @@ from homeassistant.core import HomeAssistant
 from pyluach.hebrewcal import HebrewDate
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalSpecialDevice
 from .zman_sensors import get_geo
 from zmanim.zmanim_calendar import ZmanimCalendar
 
 
-class NoMusicSensor(YidCalDevice, BinarySensorEntity):
+class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
     _attr_name = "No Music"
     _attr_icon = "mdi:music-off"
 
