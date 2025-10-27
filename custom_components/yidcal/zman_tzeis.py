@@ -12,11 +12,11 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class ZmanTziesSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class ZmanTziesSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """Tzies Hakochavim (using Havdalah offset after sunset)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
@@ -97,3 +97,4 @@ class ZmanTziesSensor(YidCalDevice, RestoreEntity, SensorEntity):
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
+
