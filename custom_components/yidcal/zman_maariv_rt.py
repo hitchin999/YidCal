@@ -12,11 +12,11 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class ZmanMaarivRTSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class ZmanMaarivRTSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """זמן ערבית (ר\"ת: 72 דקות אחרי שקיעה)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
