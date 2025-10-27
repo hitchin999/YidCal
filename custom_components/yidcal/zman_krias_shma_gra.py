@@ -12,11 +12,11 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class SofZmanKriasShmaGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
+class SofZmanKriasShmaGRASensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """סוף-זמן קריאת שמע עפ\"י הגר\"א (3 שעות זמניות, no offsets)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
@@ -107,3 +107,4 @@ class SofZmanKriasShmaGRASensor(YidCalDevice, RestoreEntity, SensorEntity):
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
+
