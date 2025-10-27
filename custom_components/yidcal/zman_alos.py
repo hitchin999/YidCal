@@ -12,7 +12,7 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalzmanDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
@@ -102,4 +102,5 @@ class AlosSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
+
 
