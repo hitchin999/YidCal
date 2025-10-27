@@ -13,7 +13,7 @@ from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalSpecialDevice
 from .zman_sensors import get_geo
 
 
@@ -27,7 +27,7 @@ def _round_ceil(dt: datetime) -> datetime:
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
-class LongerShachrisSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
+class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
     """
     ON 04:00–14:00 local on:
       • Rosh Chodesh (exclude 1 Tishrei)
