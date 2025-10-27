@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def _hebrew_year_string(year: int) -> str:
 
 # ------------------------------- Sensor --------------------------------------
 
-class IshpizinSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     """Ishpizin sensor — keeps enum state, exposes schedule in attributes.
 
     • Shows the *next* Hebrew year's schedule right after מוצאי שמחת תורה (diaspora: 23 Tishrei + havdalah offset).
