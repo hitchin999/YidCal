@@ -12,11 +12,11 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
-from .device import YidCalDevice
+from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class ShkiaSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class ShkiaSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """שקיעת השמש עפ\"י המג\"א (0°50′ geometric sunset)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
