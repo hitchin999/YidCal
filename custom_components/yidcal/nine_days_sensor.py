@@ -25,7 +25,7 @@ from pyluach.hebrewcal import HebrewDate
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 
-from .device import YidCalDevice
+from .device import YidCalSpecialDevice
 from .zman_sensors import get_geo
 from zmanim.zmanim_calendar import ZmanimCalendar
 
@@ -40,7 +40,7 @@ def _round_ceil(dt: datetime) -> datetime:
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0) if dt.second or dt.microsecond else dt
 
 
-class NineDaysSensor(YidCalDevice, BinarySensorEntity):
+class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
     _attr_name = "Nine Days"
     _attr_icon = "mdi:calendar-clock"
 
