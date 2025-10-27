@@ -58,6 +58,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ראש השנה ב׳",
         "ראש השנה א׳ וב׳",
         "מוצאי ראש השנה",
+        "עשרת ימי תשובה",
         "צום גדליה",
         "שלוש עשרה מדות",
         "ערב יום כיפור",
@@ -82,6 +83,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "אסרו חג סוכות",
         "ערב חנוכה",
         "חנוכה",
+        "ערב שבת חנוכה",
+        "שבת חנוכה",
+        "שבת חנוכה ראש חודש",
         "זאת חנוכה",
         "שובבים",
         "שובבים ת\"ת",
@@ -214,6 +218,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "אסרו חג סוכות":                   "havdalah_havdalah",
         "ערב חנוכה":                      "alos_havdalah",
         "חנוכה":                         "havdalah_havdalah",
+        "ערב שבת חנוכה":                  "alos_candle",
+        "שבת חנוכה":                      "candle_havdalah", 
+        "שבת חנוכה ראש חודש":              "candle_havdalah",
         "זאת חנוכה":                      "havdalah_havdalah",
         "שובבים":                        "havdalah_havdalah",
         "שובבים ת\"ת":                   "havdalah_havdalah",
@@ -578,6 +585,24 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["חנוכה"] = True
                 attrs["זאת חנוכה"] = True
 
+        # Erev Shabbos Chanukah / Shabbos Chanukah
+        in_chanukah = (
+            (hd_fest.month == 9 and 25 <= hd_fest.day <= 30) or
+            (hd_fest.month == 10 and hd_fest.day in (1, 2))
+        )
+        
+        # Friday daytime of Chanukah: alos → candle
+        if in_chanukah and wd_py == 4:
+            attrs["ערב שבת חנוכה"] = True
+        
+        # Shabbos in Chanukah: candles → havdalah
+        if in_chanukah and wd_fest == 5:
+            attrs["שבת חנוכה"] = True
+        
+        # Shabbos Chanukah that is also Rosh Chodesh (exclude RH 1 Tishrei)
+        if in_chanukah and wd_fest == 5 and (hd_fest.day in (1, 30)) and not (hd_fest.month == 7 and hd_fest.day == 1):
+            attrs["שבת חנוכה ראש חודש"] = True
+
         # Shovavim
         parsha = (getparsha_string(hd_fest) or "").upper()
         #_LOGGER.debug(f"Current parsha: {parsha}")
@@ -770,6 +795,38 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         elif not prefast_already:
             # Clear only if we didn't already set a (non-minor) pre-fast countdown above (e.g., Erev YK)
             attrs["מען פאַסט אַן און"] = ""
+
+
+        # helper: are we inside עשי"ת right now?
+        def _in_ayt_window(now, tz, geo, candle_offset, havdalah_offset) -> bool:
+            today = now.date()
+            cal = ZmanimCalendar(geo_location=geo, date=today)
+            sunrise = cal.sunrise().astimezone(tz)
+            sunset  = cal.sunset().astimezone(tz)
+            havdala = sunset + timedelta(minutes=havdalah_offset)
+            candle  = sunset - timedelta(minutes=candle_offset)
+        
+            # Hebrew date by *sunset* rollover (for spanning days)
+            hd_sun = PHebrewDate.from_pydate(today)
+            if now >= sunset:
+                hd_sun = hd_sun + 1
+        
+            # Only 3–9 Tishrei
+            if hd_sun.month != 7 or not (3 <= hd_sun.day <= 9):
+                return False
+        
+            # Start only *after* havdalah on Motzaei R"H (the early part of 3 Tishrei is still R"H-night)
+            if hd_sun.day == 3 and now < havdala:
+                return False
+        
+            # End at candle-lighting on Erev YK (9 Tishrei)
+            if hd_sun.day == 9 and now >= candle:
+                return False
+        
+            return True
+            
+        if _in_ayt_window(now, tz, geo, self._candle_offset, self._havdalah_offset):
+            attrs["עשרת ימי תשובה"] = True
 
         # Dynamic window overrides for the generic Chol HaMo'ed flags
         # Keep them continuous (havdalah→havdalah) on ordinary CH"M days,
