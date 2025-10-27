@@ -20,7 +20,6 @@ A custom Home Assistant integration that provides:
   א׳ סליחות, ערב ראש השנה, ראש השנה א׳, ראש השנה ב׳, ראש השנה א׳ וב׳, מוצאי ראש השנה, עשרת ימי תשובה, צום גדליה, שלוש עשרה מדות, ערב יום כיפור, יום הכיפורים, מוצאי יום הכיפורים, ערב סוכות, סוכות, סוכות א׳, סוכות ב׳, סוכות א׳ וב׳, א׳ דחול המועד סוכות, ב׳ דחול המועד סוכות, ג׳ דחול המועד סוכות, ד׳ דחול המועד סוכות, חול המועד סוכות, שבת חול המועד סוכות, הושענא רבה, שמיני עצרת, שמחת תורה, שמיני עצרת/שמחת תורה, מוצאי סוכות, אסרו חג סוכות, ערב חנוכה, חנוכה, ערב שבת חנוכה, שבת חנוכה, שבת חנוכה ראש חודש, זאת חנוכה, שובבים, שובבים ת״ת, צום עשרה בטבת, ט״ו בשבט, תענית אסתר, פורים, שושן פורים, ליל בדיקת חמץ, ערב פסח מוקדם, שבת ערב פסח, ערב פסח, פסח, פסח א׳, פסח ב׳, פסח א׳ וב׳, א׳ דחול המועד פסח, ב׳ דחול המועד פסח, ג׳ דחול המועד פסח, ד׳ דחול המועד פסח, חול המועד פסח, שבת חול המועד פסח, שביעי של פסח, אחרון של פסח, שביעי/אחרון של פסח, מוצאי פסח, אסרו חג פסח, פסח שני, ל״ג בעומר, ערב שבועות, שבועות א׳, שבועות ב׳, שבועות א׳ וב׳, מוצאי שבועות, אסרו חג שבועות, צום שבעה עשר בתמוז, מוצאי צום שבעה עשר בתמוז, ערב תשעה באב, תשעה באב, תשעה באב נדחה, מוצאי תשעה באב, יום כיפור קטן, ראש חודש, שבת ראש חודש
 * **Erev** (`binary_sensor.yidcal_erev`)
   Turns **on** at **Alos** on qualifying Erev days (Erev-Shabbos or weekday Erev-Yom-Tov) and **off** at **candle-lighting**.
-  * **Attribute `Eruv_Tavshilin`** – **true only from Alos to Shkiah** on Erev-Yom-Tov.
 * **Motzi** (`binary_sensor.yidcal_motzi`) Turns on at night Motzi Shabbos, Yom Tov. Turns off at 2AM
 * **Molad** (`sensor.yidcal_molad` → `friendly` attribute) Full human-friendly Molad string in Yiddish
 * **Full Display Sensor** (`sensor.yidcal_full_display`) displays it all in one (e.g פרייטאג פרשת קרח ~ ב׳ ד׳ראש חודש תמוז)
@@ -30,7 +29,8 @@ A custom Home Assistant integration that provides:
 * **Sefiras HaOmer** counters in Yiddish with the option to remove nikud (הַיּוֹם אַרְבָּעִים יוֹם שֶׁהֵם חֲמִשָּׁה שָׁבוּעוֹת וַחֲמִשָּׁה יָמִים לָעֹֽמֶר and הוֹד שֶׁבְּיְסוֹד)
 * **Day Label Yiddish** (`sensor.yidcal_day_label_yiddish`) Daily label in Yiddish (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
 * **Day Label Hebrew** (`sensor.yidcal_day_label_hebrew`) Daily label in Hebrew (e.g. יום א' יום ב)
-* **Daily Tehilim** (`sensor.yidcal_tehilim_daily`) Five-chapter rotation of Tehilim (e.g. א–ה, ו–ט)
+* **Tehilim Daily** (`sensor.yidcal_tehilim_daily`) Five-chapter rotation of Tehilim (e.g. א–ה, ו–ט)
+* **Tehilim Daily - Pupa** (`sensor.yidcal_tehilim_daily_pupa`)
 * **Date** (`sensor.yidcal_date`) Current Hebrew date in Yiddish (e.g., כ"ה חשון תשפ"ה)
 * **Zman Erev** (`sensor.yidcal_zman_erev`) — **Next candle-lighting timestamp**
   * **What it shows:** The current day’s candle-lighting for **Shabbos or Yom Tov**.
@@ -112,6 +112,7 @@ A custom Home Assistant integration that provides:
 * **Yurtzeit Sensor** (`sensor.yidcal_yurtzeit`) - Displays today's yurtzeits (flipping at sunset + havdalah_offset), with attributes for each yurtzeit name.
 * **Yurtzeit Weekly Sensor** (`sensor.yidcal_yurtzeits_weekly`) - Displays weekly yurtzeits (flipping at Saturday sunset + havdalah_offset), with attributes for each day's yurtzeits.
 * **Longer Shachris** (`binary_sensor.yidcal_longer_shachris`) – ON **4 AM–2 PM local** on **Rosh Chodesh, Chanukah, Chol Hamoed (Pesach/Sukkos), Purim, and Tisha B’Av (incl. nidcheh)**. Always **OFF on Shabbos or Yom Tov**, and **OFF on all other days**.
+* **Eruv Tavshilin** (`binary_sensor.eruv_tavshilin`) – **On only from Alos to Tzies** on Erev-Yom-Tov for a Yom Tov thats going into a Shabbos.
   
 *All date calculations are standalone (no external Jewish-calendar integration) and use your Home Assistant latitude, longitude & timezone.*
 
