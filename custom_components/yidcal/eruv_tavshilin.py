@@ -6,17 +6,16 @@ Binary sensor for "Eruv Tavshilin":
 - Window: ON from alos (dawn) on the Eruv day until tzeis that evening
           (tzeis = sunset + havdalah_offset). OFF otherwise.
 
-Attributes (same keys as NineDaysSensor):
+Attributes:
   Now:                 ISO current local time (local tz)
   Next_Window_Start:   ISO alos on the Eruv day (local tz)
   Next_Window_End:     ISO tzeis that evening (local tz)
-  Nidche_Year:         Always False (not applicable for Eruv Tavshilin)
   Activation_Logic:    "ON from alos (dawn) on the Eruv day until tzeis that evening. OFF otherwise."
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, date
 from typing import Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -33,7 +32,7 @@ from .zman_sensors import get_geo
 from .const import DOMAIN
 
 
-# --------- rounding helpers (match NineDays style) ---------
+# --------- rounding helpers ---------
 def _round_half_up(dt: datetime) -> datetime:
     if dt.second >= 30:
         dt += timedelta(minutes=1)
@@ -49,9 +48,9 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
 
     def __init__(self, hass: HomeAssistant, candle: int, havdalah: int) -> None:
         """
-        Signature parallel to NineDaysSensor.
+        Signature
         Uses:
-          - candle:   candle-lighting offset (minutes before sunset)  [not used for state end]
+          - candle:   candle-lighting offset (minutes before sunset)  [candle accepted for parity; not used.]
           - havdalah: havdalah offset (minutes after sunset)          [used for state end]
         """
         super().__init__()
@@ -70,11 +69,10 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._tz = ZoneInfo(hass.config.time_zone)
         self._diaspora: bool = True  # read from config on add
 
-        # caches (same keys as NineDays)
+        # caches
         self._now_local: Optional[datetime] = None
         self._next_window_start: Optional[datetime] = None
         self._next_window_end: Optional[datetime] = None
-        self._nidche_year: bool = False  # not applicable; kept for schema parity
 
     async def async_added_to_hass(self) -> None:
         self._added = True
@@ -82,7 +80,7 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         cfg = self.hass.data[DOMAIN]["config"]
         self._diaspora = cfg.get("diaspora", True)
         await self.async_update()
-        # Update every minute (like NineDays)
+        # Update every minute
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     # ------------- helpers -------------
@@ -103,7 +101,7 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         _, sunset = self._sun_times_local(gdate)
         return _round_ceil(sunset + timedelta(minutes=self._havdalah))
 
-    def _yt_span_end(self, start) -> datetime.date:
+    def _yt_span_end(self, start: date) -> date:
         """
         Return the last civil date of the Yom Tov span beginning at `start`.
         In diaspora, treat Shemini Atzeres + Simchas Torah as a continuous span.
@@ -172,7 +170,6 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
             self._attr_is_on = False
             self._next_window_start = None
             self._next_window_end = None
-            self._nidche_year = False
             if self._added:
                 self.async_write_ha_state()
             return
@@ -183,7 +180,6 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._attr_is_on = in_window
         self._next_window_start = win_start
         self._next_window_end = win_end
-        self._nidche_year = False  # not applicable
 
         if self._added:
             self.async_write_ha_state()
@@ -198,6 +194,5 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
             attrs["Next_Window_Start"] = self._next_window_start.isoformat()
         if self._next_window_end:
             attrs["Next_Window_End"] = self._next_window_end.isoformat()
-        #attrs["Nidche_Year"] = self._nidche_year  # kept for schema parity; always False here
         attrs["Activation_Logic"] = self._activation_logic_text()
         return attrs
