@@ -18,7 +18,7 @@ from homeassistant.helpers.event import async_track_sunset
 from homeassistant.helpers.restore_state import RestoreEntity
 from pyluach.hebrewcal import Year, HebrewDate as PHebrewDate
 from .yidcal_lib.helper import int_to_hebrew
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 from .const import DOMAIN
 from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
 from .config_flow import CONF_YAHRTZEIT_DATABASE  # New
@@ -59,7 +59,7 @@ day_labels = [
     "ליום ו'",
     "לשבת קודש"
 ]
-class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
+class YurtzeitSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     """Today's Yurtzeits, flipping at sunset + user-set havdalah_offset."""
     _attr_name = "Yurtzeit"
     _attr_icon = "mdi:candle"
@@ -303,7 +303,7 @@ class YurtzeitSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._attributes = attrs
        
         self.async_write_ha_state()
-class YurtzeitWeeklySensor(YidCalDevice, RestoreEntity, SensorEntity):
+class YurtzeitWeeklySensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     """Weekly Yurtzeits, flipping at Saturday sunset + havdalah_offset."""
     _attr_name = "Yurtzeits Weekly"
     _attr_icon = "mdi:calendar-week"
