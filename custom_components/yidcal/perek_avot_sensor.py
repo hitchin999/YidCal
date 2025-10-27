@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional, Tuple, Union
 
-from .device import YidCalDevice
+from .device import YidCalDisplayDevice
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 ChapterType = Union[int, Tuple[int, int]]
 
-class PerekAvotSensor(YidCalDevice, SensorEntity):
+class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
     """Which פרק of Pirkei Avot is read each week (from Pesach until Rosh Hashanah)."""
 
     _attr_name = "Perek Avos"
