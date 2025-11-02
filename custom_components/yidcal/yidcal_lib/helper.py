@@ -13,8 +13,6 @@ from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
 
-from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -303,15 +301,20 @@ class YidCalHelper:
             molad_date -= timedelta(days=7)
 
         # 5) Build a tz-aware datetime in Jerusalem time
+        jer_tz = ZoneInfo("Asia/Jerusalem")
         jer_dt = datetime(
             molad_date.year,
             molad_date.month,
             molad_date.day,
             ann["hour"],
             ann["minutes"],
-            tzinfo=ZoneInfo("Asia/Jerusalem")
+            tzinfo=jer_tz,
         )
-        jer_dt += jer_dt.dst() or timedelta(0)
+
+        # pyluach gives you “Jerusalem standard” — if that date is in DST, add it
+        dst = jer_dt.dst()
+        if dst:
+            jer_dt += dst
 
         # 6) Format into 12-hour + chalakim (use local time)
         h24 = jer_dt.hour
