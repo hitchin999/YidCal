@@ -1,0 +1,71 @@
+{
+  "title": "YidCal",
+  "config": {
+    "abort": {
+      "single_instance_allowed": "You can only add a single YidCal instance."
+    },
+    "error": {
+      "select_db_required": "If you enable a Yahrtzeit sensor, you must select at least one database."
+    },
+    "step": {
+      "user": {
+        "data": {
+          "is_in_israel": "If you live in Israel, check this",
+          "strip_nikud": "Strip vowel points (nikud) from Hebrew text",
+          "candlelighting_offset": "Minutes before sunset for candle lighting",
+          "havdalah_offset": "Minutes after sunset for Motzaei Shabbos / Yom Tov / Netz/ Havdalah",
+          "tallis_tefilin_offset": "Minutes after dawn for tallis & tefilin",
+          "day_label_language": "Day label language for the Full Display sensor",
+          "include_date": "Include Hebrew date on the Full Display sensor",
+          "include_attribute_sensors": "Create separate sensors for Holiday Sensor attributes",
+          "slichos_label_rollover": "When should the Selichos label roll over",
+          "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
+					"time_format": "Time format (For Simple Zmanim only)"
+        }
+      },
+      "yurtzeit": {
+        "title": "Yahrtzeit sensors",
+        "data": {
+          "enable_yurtzeit_daily": "Create daily Yahrtzeit sensor",
+          "enable_weekly_yurtzeit": "Create weekly Yahrtzeit sensor",
+          "yurtzeit_databases": "Which Yahrtzeit database(s) to use"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "select_db_required": "If you enable a Yahrtzeit sensor, you must select at least one database."
+    },
+    "step": {
+      "init": {
+        "menu_options": {
+          "general": "General settings",
+          "yurtzeit": "Yahrtzeit sensors"
+        }
+      },
+      "general": {
+        "data": {
+          "is_in_israel": "If you live in Israel, check this",
+          "strip_nikud": "Strip vowel points (nikud) from Hebrew text",
+          "candlelighting_offset": "Minutes before sunset for candle lighting",
+          "havdalah_offset": "Minutes after sunset for Motzaei Shabbos / Yom Tov / Netz/ Havdalah",
+          "tallis_tefilin_offset": "Minutes after dawn for tallis & tefilin",
+          "day_label_language": "Day label language for the Full Display sensor",
+          "include_date": "Include Hebrew date on the Full Display sensor",
+          "include_attribute_sensors": "Create separate sensors for Yomim Tovim attributes",
+          "slichos_label_rollover": "When should the Selichos label roll over",
+          "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
+					"time_format": "Time format (For Simple Zmanim only)"
+        }
+      },
+      "yurtzeit": {
+        "data": {
+          "enable_yurtzeit_daily": "Create daily Yahrtzeit sensor",
+          "enable_weekly_yurtzeit": "Create weekly Yahrtzeit sensor",
+          "yurtzeit_databases": "Which Yahrtzeit database(s) to use"
+        }
+      }
+    }
+  }
+}
