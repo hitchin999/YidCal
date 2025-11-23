@@ -2,41 +2,68 @@
   "title": "YidCal",
   "config": {
     "abort": {
-      "single_instance_allowed": "נישט מעגלעך צו צולייגן מער ווי איין מאל"
+      "single_instance_allowed": "ניתן להגדיר מופע אחד בלבד"
+    },
+    "error": {
+      "select_db_required": "אם הופעל חיישן יומי או שבועי – יש לבחור לפחות מאגר אחד"
     },
     "step": {
       "user": {
         "data": {
-          "strip_nikud": "נעם אראפ די נְקֻודּוֹת",
-          "candlelighting_offset": "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
-          "havdalah_offset": "וויפיל מינוט נאכן שקיעה איז מוצאי",
-          "tallis_tefilin_offset": "וויפיל מינוט נאכן עלות איז טלית ותפילין",
-          "day_label_language": "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
-          "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
-          "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
-          "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
-          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן",
-          "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
-          "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די"
+          "is_in_israel": "אם אתה בישראל, סמן אפשרות זו",
+          "strip_nikud": "הסר ניקוד",
+          "candlelighting_offset": "כמה דקות לפני שקיעה להדלקת נרות",
+          "havdalah_offset": "כמה דקות אחרי שקיעה להבדלה",
+          "tallis_tefilin_offset": "כמה דקות אחרי עלות השחר לטלית ותפילין",
+          "day_label_language": "כיצד להציג את שם היום בחיישן התצוגה המלאה (Full Display Sensor)",
+          "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
+          "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
+          "slichos_label_rollover": "מתי מתחלף יום הסליחות",
+          "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
+					"time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+        }
+      },
+      "yurtzeit": {
+        "title": "חיישני יארצייט",
+        "data": {
+          "enable_yurtzeit_daily": "הפעלת חיישן יארצייט יומי",
+          "enable_weekly_yurtzeit": "הפעלת חיישן יארצייט שבועי",
+          "yurtzeit_databases": "באילו מאגרי יארצייטים להשתמש"
         }
       }
     }
   },
   "options": {
+    "error": {
+      "select_db_required": "אם הופעל חיישן יומי או שבועי – יש לבחור לפחות מאגר אחד"
+    },
     "step": {
       "init": {
+        "menu_options": {
+          "general": "הגדרות כלליות",
+          "yurtzeit": "חיישני יארצייט"
+        }
+      },
+      "general": {
         "data": {
-          "strip_nikud": "נעם אראפ די נְקֻודּוֹת",
-          "candlelighting_offset": "וויפיל מינוט פארן שקיעה איז הדלקת הנרות",
-          "havdalah_offset": "וויפיל מינוט נאכן שקיעה איז מוצאי",
-          "tallis_tefilin_offset": "וויפיל מינוט נאכן עלות איז טלית ותפילין",
-          "day_label_language": "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די",
-          "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
-          "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
-          "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
-          "yahrtzeit_database": "וועלכע יארצייטן דאטאבעיס צו נוצן",
-          "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
-          "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די"
+          "is_in_israel": "אם אתה בישראל, סמן אפשרות זו",
+          "strip_nikud": "הסר ניקוד",
+          "candlelighting_offset": "כמה דקות לפני שקיעה להדלקת נרות",
+          "havdalah_offset": "כמה דקות אחרי שקיעה להבדלה",
+          "tallis_tefilin_offset": "כמה דקות אחרי עלות השחר לטלית ותפילין",
+          "day_label_language": "כיצד להציג את שם היום בחיישן התצוגה המלאה (Full Display Sensor)",
+          "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
+          "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
+          "slichos_label_rollover": "מתי מתחלף יום הסליחות",
+          "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
+					"time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+        }
+      },
+      "yurtzeit": {
+        "data": {
+          "enable_yurtzeit_daily": "הפעלת חיישן יארצייט יומי",
+          "enable_weekly_yurtzeit": "הפעלת חיישן יארצייט שבועי",
+          "yurtzeit_databases": "באילו מאגרי יארצייטים להשתמש"
         }
       }
     }
