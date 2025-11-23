@@ -66,8 +66,10 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._havdalah = havdalah
 
         self._geo = None
-        self._tz = ZoneInfo(hass.config.time_zone)
-        self._diaspora: bool = True  # read from config on add
+        # Use integration-normalized tz/flag so we match all other sensors
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg["tzname"])
+        self._diaspora: bool = cfg.get("diaspora", True)
 
         # caches
         self._now_local: Optional[datetime] = None
