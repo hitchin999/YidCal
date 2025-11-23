@@ -11,7 +11,7 @@ from homeassistant.util import dt as dt_util
 from hdate.converters import gdate_to_jdn
 from hdate.hebrew_date import HebrewDate
 from zoneinfo import ZoneInfo
-
+from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,9 +131,18 @@ class SfirahHelper:
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int):
         self.hass = hass
+        # Start with HA's configured coords/tz
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.time_zone = hass.config.time_zone
+        # Prefer YidCal's normalized coords/tz (set in __init__.py after geocoding)
+        try:
+            yidcal_cfg = hass.data.get(DOMAIN, {}).get("config", {}) or {}
+            self.latitude = yidcal_cfg.get("latitude", self.latitude)
+            self.longitude = yidcal_cfg.get("longitude", self.longitude)
+            self.time_zone = yidcal_cfg.get("tzname", self.time_zone)
+        except Exception:
+            pass
         # Store the user’s offset instead of hard-coding 72
         self._havdalah_offset = havdalah_offset
 
@@ -146,7 +155,7 @@ class SfirahHelper:
             latitude=self.latitude,
             longitude=self.longitude,
         )
-        s = sun(loc.observer, date=for_date, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        s = sun(loc.observer, date=for_date, tzinfo=ZoneInfo(self.time_zone))
         return s["sunset"] + timedelta(minutes=self._havdalah_offset)
 
     def _get_raw_omer_day(self, for_date: date) -> int:
@@ -169,22 +178,18 @@ class SfirahHelper:
 
     def get_effective_omer_day(self) -> int:
         """
-        Return the current Omer day (0‑49) based on the halachic day
-        (sunset + user‑defined Havdalah offset).
+        Return the current Omer day (0-49) based on the halachic day
+        (sunset + user-defined Havdalah offset).
         """
         now = dt_util.now().astimezone(ZoneInfo(self.time_zone))
+        threshold = self._get_threshold(now.date())  # today's sunset + offset
 
-        # Before today's sunset + offset?  We're still in yesterday's halachic day.
-        if now < self._get_threshold(now.date()):
-            ref_date = now.date() - timedelta(days=1)
-        else:
-            ref_date = now.date()
+        # Civil date that represents the current halachic day:
+        #  - Before threshold → today's civil date
+        #  - After threshold  → tomorrow's civil date
+        ref_date = now.date() if now < threshold else (now.date() + timedelta(days=1))
 
-        # Map that halachic day to the Omer count (bounded 0‑49)
         return max(0, min(self._get_raw_omer_day(ref_date), 49))
-
-
-
 
     def get_sefirah_text(self) -> str:
         """Return the Hebrew Omer text for the current day."""
