@@ -274,13 +274,17 @@ class YidCalHelper:
         hy, hm = hd.year, hd.month
 
         if hd.day < 3:
-            # molad for the current Hebrew month
+            # Molad for the current Hebrew month
             pass
         else:
-            # molad for the *next* Hebrew month
-            if hm == 6:         # Elul → Tishrei bumps the Hebrew year
+            # Molad for the *next* Hebrew month
+            # Elul (6) -> Tishrei (7) bumps the *year*
+            if hm == 6:
                 hy += 1
                 hm = 7
+            # Adar (12, in non-leap) or Adar II (13, in leap) -> Nissan (1), *same year*
+            elif hm in (12, 13):
+                hm = 1
             else:
                 hm += 1
 
