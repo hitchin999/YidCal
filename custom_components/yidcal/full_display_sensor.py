@@ -7,7 +7,7 @@ from .device import YidCalDisplayDevice
 
 from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import DOMAIN
 from . import DEFAULT_DAY_LABEL_LANGUAGE
@@ -17,6 +17,16 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 from .zman_sensors import get_geo
 
+def _round_half_up(local_dt: datetime.datetime) -> datetime.datetime:
+    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
+    if local_dt.second >= 30:
+        local_dt += timedelta(minutes=1)
+    return local_dt.replace(second=0, microsecond=0)
+
+
+def _round_ceil(local_dt: datetime.datetime) -> datetime.datetime:
+    """Always bump up to the *next* minute (Motzei-style rounding)."""
+    return (local_dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
     """
@@ -39,6 +49,8 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         cfg = hass.data[DOMAIN]["config"]
         self._day_label_language = cfg.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE)
         self._include_date      = cfg.get("include_date", False)
+        self._candle_offset     = cfg.get("candle_offset", 15)
+        self._havdalah_offset = cfg.get("havdalah_offset", 72)
         self._geo: GeoLocation | None = None
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
 
@@ -47,10 +59,15 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        self._register_interval(
-            self.hass,
-            self.async_update,
-            timedelta(minutes=1),
+
+        # Tick exactly at HH:MM:00 so this display follows the same rounded-minute
+        # behavior as the Zman sensors and the other YidCal entities.
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
         )
 
     @property
@@ -65,12 +82,21 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
             if state is None:
                 return False
             s = str(state).strip()
-            return s not in ("", STATE_UNKNOWN, STATE_UNAVAILABLE, "unknown", "unavailable")
+            return s not in (
+                "",
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+                "unknown",
+                "unavailable",
+            )
+
+        text = ""
 
         # 1) Day label (Yiddish or Hebrew per user choice)
         label_entity = f"sensor.yidcal_day_label_{self._day_label_language}"
         day = self.hass.states.get(label_entity)
-        text = day.state.strip() if day and _ok(day.state) else ""
+        if day and _ok(day.state):
+            text = day.state.strip()
 
         # 2) Parsha (suppress sentinel "None")
         parsha = self.hass.states.get("sensor.yidcal_parsha")
@@ -82,34 +108,85 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         # 3) Holiday — single state from sensor.yidcal_holiday
         hol = self.hass.states.get("sensor.yidcal_holiday")
         if hol and _ok(hol.state):
-            text += f" - {hol.state.strip()}"
-        
+            hol_state = hol.state.strip()
+            show_holiday = True
+
+            # Suppress ALL ערב… until alos of the *halachic* day, using
+            # rounded havdalah + rounded alos (aligned with other sensors).
+            if hol_state.startswith("ערב") and self._geo:
+                today = now.date()
+
+                # sunset + havdalah_offset → rounded up (Motzei style)
+                cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
+                sunset_today_raw = cal_today.sunset().astimezone(tz)
+                havdalah_cut = _round_ceil(
+                    sunset_today_raw + timedelta(minutes=self._havdalah_offset)
+                )
+
+                # Halachic date flips at that rounded havdalah point
+                halachic_date = today if now < havdalah_cut else (today + timedelta(days=1))
+
+                # Alos for that halachic day: sunrise - 72, rounded half-up
+                cal_hal = ZmanimCalendar(geo_location=self._geo, date=halachic_date)
+                dawn_raw = cal_hal.sunrise().astimezone(tz) - timedelta(minutes=72)
+                dawn = _round_half_up(dawn_raw)
+
+                # Hide ערב… on display until alos
+                if now < dawn:
+                    show_holiday = False
+
+            if show_holiday:
+                text += f" - {hol_state}"
+
         # 3b) Shabbos Erev Pesach: if this Shabbos is Erev Pesach (מוקדם year),
         # surface "ערב פסח" throughout Shabbos.
         if hol and getattr(hol, "attributes", None):
             if hol.attributes.get("שבת ערב פסח", False):
-                # avoid duplicating if it somehow already appears
                 if "ערב פסח" not in text:
                     text += " ~ ערב פסח"
 
-        # 5) Special Shabbos (after Fri-13:00 or any Sat)
+        # 5) Special Shabbos — show on Fri only after 13:00 (general),
+        # but for "פורים משולש" require candle-lighting; on Shabbos show until havdalah.
         special = self.hass.states.get("sensor.yidcal_special_shabbos")
         show_special = False
         if special and _ok(special.state):
             sstate = str(special.state).strip()
             if sstate.lower() not in ("no data",):
-                wd, hr = now.weekday(), now.hour
-                if wd == 4 and hr >= 13:
-                    show_special = True
-                elif wd == 5 and self._geo:
+                wd = now.weekday()  # Mon=0 .. Sat=5, Sun=6
+
+                if wd == 4:  # Friday
+                    if self._geo:
+                        today = now.date()
+                        cal = ZmanimCalendar(geo_location=self._geo, date=today)
+                        sunset_raw = cal.sunset()
+                        if sunset_raw:
+                            sunset = sunset_raw.astimezone(tz)
+                            candle_raw = sunset - timedelta(minutes=self._candle_offset)
+                            candle = _round_half_up(candle_raw)
+
+                            if "פורים משולש" in sstate:
+                                # For Purim Meshulash, only after (rounded) candles
+                                show_special = now >= candle
+                            else:
+                                # Normal years: from 13:00 or candles, whichever first
+                                show_special = (now.hour >= 13) or (now >= candle)
+                    else:
+                        if "פורים משולש" in sstate:
+                            show_special = False
+                        else:
+                            show_special = now.hour >= 13
+
+                elif wd == 5 and self._geo:  # Shabbos
                     today = now.date()
                     cal = ZmanimCalendar(geo_location=self._geo, date=today)
-                    sunset = cal.sunset()
-                    if sunset:
-                        sunset = sunset.astimezone(tz)
-                        havdalah = sunset + timedelta(minutes=72)
+                    sunset_raw = cal.sunset()
+                    if sunset_raw:
+                        sunset = sunset_raw.astimezone(tz)
+                        havdalah_raw = sunset + timedelta(minutes=self._havdalah_offset)
+                        havdalah = _round_ceil(havdalah_raw)
                         if now < havdalah:
                             show_special = True
+
                 if show_special:
                     text += f" ~ {sstate}"
 
@@ -117,7 +194,12 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         rosh = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
         if rosh and _ok(rosh.state) and rosh.state != "Not Rosh Chodesh Today":
             # only add if not already covered by "שבת ראש חודש"
-            if not (show_special and special and _ok(special.state) and "שבת ראש חודש" in str(special.state)):
+            if not (
+                show_special
+                and special
+                and _ok(special.state)
+                and "שבת ראש חודש" in str(special.state)
+            ):
                 text += f" ~ {rosh.state.strip()}"
 
         # 6) Optional “today’s date”
