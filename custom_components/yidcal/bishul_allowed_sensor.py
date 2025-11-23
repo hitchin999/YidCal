@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
 
@@ -17,12 +18,14 @@ from .zman_sensors import get_geo
 
 
 def _round_half_up(dt: datetime) -> datetime:
+    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
     if dt.second >= 30:
         dt += timedelta(minutes=1)
     return dt.replace(second=0, microsecond=0)
 
 
 def _round_ceil(dt: datetime) -> datetime:
+    """Always bump to the *next* minute (Motzi-style)."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
@@ -60,7 +63,15 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
+
+        # Tick exactly on the minute so OFF/ON flips match rounded Motzi times
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
+        )
 
     # ----- helpers -----
 
@@ -74,9 +85,9 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
     def _window_for_halachic_day(self, d):
         """
-        For halachic day 'd' (evening→evening), return (start_dt, end_dt).
+        For halachic day 'd' (evening→evening), return (start_dt, end_dt) *raw*.
         start = sunset(d-1) - candle_offset
-        end   = sunset(d) + havdalah_offset
+        end   = sunset(d)   + havdalah_offset
         """
         start_dt = self._sunset(d - timedelta(days=1)) - timedelta(minutes=self._candle)
         end_dt   = self._sunset(d) + timedelta(minutes=self._havdalah)
@@ -85,12 +96,13 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     def _find_current_halachic_day(self, now_local: datetime):
         """
         Find halachic day d such that window_for(d) contains now_local.
-        Use a *rounded* candle cutoff to disambiguate Erev→Night.
+        Uses the *rounded* window so we don't flip early compared to other sensors.
         """
         base = now_local.date()
 
-        # *** key fix: round the candle cutoff so we flip exactly at the UI minute ***
-        today_candle = _round_half_up(self._sunset(base) - timedelta(minutes=self._candle))
+        # Rounded candle cutoff for today's civil date
+        today_candle_raw = self._sunset(base) - timedelta(minutes=self._candle)
+        today_candle = _round_half_up(today_candle_raw)
 
         if now_local >= today_candle:
             first_try, second_try = base + timedelta(days=1), base
@@ -106,46 +118,62 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         ]
 
         for d in trial_order:
-            s, e = self._window_for_halachic_day(d)
+            s_raw, e_raw = self._window_for_halachic_day(d)
+            s = _round_half_up(s_raw)
+            e = _round_ceil(e_raw)
             if s <= now_local < e:
-                return d, s, e
+                return d, s_raw, e_raw
 
-        # Fallback to today
+        # Fallback to today if nothing matched (extremely rare)
         d = base
-        s, e = self._window_for_halachic_day(d)
-        return d, s, e
+        s_raw, e_raw = self._window_for_halachic_day(d)
+        return d, s_raw, e_raw
 
     def _in_shabbos_off_window(self, now_local: datetime) -> bool:
-        """Return True if now is between Fri candle → Sat havdalah for this or adjacent week."""
+        """
+        True if now is between Fri candle → Sat havdalah for this or
+        adjacent week, using the same rounded boundaries as the main sensors.
+        """
         base = now_local.date()
         wd = base.weekday()  # Mon=0..Sun=6
         friday0 = base - timedelta(days=(wd - 4) % 7)
+
         for week_shift in (-7, 0, 7):
             f = friday0 + timedelta(days=week_shift)
-            s = self._sunset(f) - timedelta(minutes=self._candle)
-            e = self._sunset(f + timedelta(days=1)) + timedelta(minutes=self._havdalah)
+            s_raw = self._sunset(f) - timedelta(minutes=self._candle)
+            e_raw = self._sunset(f + timedelta(days=1)) + timedelta(minutes=self._havdalah)
+
+            s = _round_half_up(s_raw)
+            e = _round_ceil(e_raw)
+
             if s <= now_local < e:
                 return True
+
         return False
-    
+
     def _in_yk_off_window(self, now_local: datetime) -> bool:
         """True if now is inside the Yom Kippur OFF window (candle → havdalah)."""
         base = now_local.date()
         for i in range(-3, 4):
             d = base + timedelta(days=i)
-            if self._is_yom_kippur(d):
-                # For the halachic day 'd' (10 Tishrei), OFF spans:
-                # candle(before) → havdalah(after)
-                start = self._sunset(d - timedelta(days=1)) - timedelta(minutes=self._candle)
-                end   = self._sunset(d) + timedelta(minutes=self._havdalah)
-                if start <= now_local < end:
-                    return True
+            if not self._is_yom_kippur(d):
+                continue
+
+            # For the halachic day 'd' (10 Tishrei), OFF spans:
+            # candle(before) → havdalah(after), with rounded boundaries.
+            s_raw, e_raw = self._window_for_halachic_day(d)
+            s = _round_half_up(s_raw)
+            e = _round_ceil(e_raw)
+
+            if s <= now_local < e:
+                return True
+
         return False
 
     def _next_off_window_after(self, ref_local: datetime):
         """
         Next OFF window = next Shabbos or Yom Kippur halachic day
-        (candle(before) → havdalah(after)).
+        (candle(before) → havdalah(after)), using rounded boundaries.
         If currently inside such a window, returns the current one.
         """
         for i in range(-2, 90):
@@ -153,10 +181,16 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             is_off_day = (d.weekday() == 5) or self._is_yom_kippur(d)
             if not is_off_day:
                 continue
-            s, e = self._window_for_halachic_day(d)
+
+            s_raw, e_raw = self._window_for_halachic_day(d)
+            s = _round_half_up(s_raw)
+            e = _round_ceil(e_raw)
+
             if e <= ref_local:
                 continue
+
             return s, e
+
         return None, None
 
     # ----- main -----
@@ -177,7 +211,7 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         in_yk_off = self._in_yk_off_window(now)
         self._attr_is_on = (not in_shabbos_off) and (not in_yk_off) and (s <= now < e)
 
-        # Next OFF window
+        # Next OFF window (Shabbos or YK)
         no_start, no_end = self._next_off_window_after(now)
         next_off_start = _round_half_up(no_start) if no_start else None
         next_off_end   = _round_ceil(no_end) if no_end else None
@@ -187,5 +221,8 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Now": now.isoformat(),
             "Next_Off_Window_Start": next_off_start.isoformat() if next_off_start else "",
             "Next_Off_Window_End": next_off_end.isoformat() if next_off_end else "",
-            "Activation_Logic": "Usually ON; turns OFF on Shabbos and Yom Kippur from candle-lighting until havdalah.",
+            "Activation_Logic": (
+                "Usually ON; turns OFF on Shabbos and Yom Kippur from candle-lighting "
+                "until havdalah (using rounded Zman boundaries)."
+            ),
         }
