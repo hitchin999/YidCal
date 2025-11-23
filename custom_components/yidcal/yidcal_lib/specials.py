@@ -15,7 +15,8 @@ def _month_length_safe(y: int, m: int) -> int:
     except Exception:
         return 29
 
-def get_special_shabbos_name(today: date = None) -> str:
+def get_special_shabbos_name(today: date | dates.GregorianDate | dates.HebrewDate | None = None,
+                             is_in_israel: bool = False) -> str:
     # --- normalize 'today' into a Python date ---
     if today is None:
         today_date = date.today()
@@ -83,14 +84,14 @@ def get_special_shabbos_name(today: date = None) -> str:
         events.append("שבת נחמו")
 
     # Shabbos Chazak: Vayechi/Bechukosai/Masei/V'zos HaBracha endings
-    parsha_indices = parshios.getparsha(greg_shabbat)
+    # Use EY/Chul cycle
+    parsha_indices = parshios.getparsha(greg_shabbat, israel=is_in_israel)
     chazak_ports = {11, 22, 32, 42}
     if parsha_indices and any(idx in chazak_ports for idx in parsha_indices):
         events.append("שבת חזק")
 
-    # Purim Meshulash (Yerushalayim etc.):
-    if ((not hebrewcal.Year(Y).leap and shabbat_heb.month == 12 and shabbat_heb.day == 15) or
-        (hebrewcal.Year(Y).leap and shabbat_heb.month == 13 and shabbat_heb.day == 15)):
+    # Purim Meshulash (show everywhere): when the evaluated Shabbos is 15 Adar (or 15 Adar II in a leap year)
+    if shabbat_heb.month == adar_month and shabbat_heb.day == 15:
         events.append("פורים משולש")
 
     # -----------------------------
