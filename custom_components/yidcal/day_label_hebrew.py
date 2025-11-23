@@ -5,10 +5,20 @@ from zoneinfo import ZoneInfo
 from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.helpers.event import async_track_time_change
 from astral import LocationInfo
 from astral.sun import sun
 
 from .device import YidCalDevice
+from .const import DOMAIN
+
+def _round_half_up(dt: datetime) -> datetime:
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
+
+def _round_ceil(dt: datetime) -> datetime:
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 class DayLabelHebrewSensor(YidCalDevice, SensorEntity):
@@ -57,7 +67,8 @@ class DayLabelHebrewSensor(YidCalDevice, SensorEntity):
         return self._state
 
     async def async_update(self, now=None) -> None:
-        tz = ZoneInfo(self.hass.config.time_zone)
+        cfg = self.hass.data[DOMAIN]["config"]
+        tz = ZoneInfo(cfg["tzname"])
         now = datetime.now(tz)
         today = now.date()
 
@@ -65,13 +76,16 @@ class DayLabelHebrewSensor(YidCalDevice, SensorEntity):
         loc = LocationInfo(
             name="home",
             region="",
-            timezone=self.hass.config.time_zone,
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
+            timezone=cfg["tzname"],
+            latitude=cfg["latitude"],
+            longitude=cfg["longitude"],
         )
         s = sun(loc.observer, date=today, tzinfo=tz)
-        candle = s["sunset"] - timedelta(minutes=self._candle_offset)
-        havdalah = s["sunset"] + timedelta(minutes=self._havdalah_offset)
+        raw_candle   = s["sunset"] - timedelta(minutes=self._candle_offset)
+        raw_havdalah = s["sunset"] + timedelta(minutes=self._havdalah_offset)
+
+        candle   = _round_half_up(raw_candle)
+        havdalah = _round_ceil(raw_havdalah)
 
         # determine if in Shabbat window
         wd = now.weekday()  # Monday=0 ... Sunday=6
@@ -106,10 +120,17 @@ class DayLabelHebrewSensor(YidCalDevice, SensorEntity):
         # initial state
         await self.async_update()
 
-        # poll hourly
-        from homeassistant.helpers.event import async_track_time_interval
-        async_track_time_interval(
+        # precise updates: flip at sunset+havdalah
+        self._register_sunset(
             self.hass,
             self.async_update,
-            timedelta(hours=1),
+            offset=timedelta(minutes=self._havdalah_offset),
+        )
+        # and also once per minute *on the minute* so it lines up with Zman Motzi
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
         )
