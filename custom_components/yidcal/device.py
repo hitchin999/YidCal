@@ -1,18 +1,21 @@
 # custom_components/yidcal/device.py
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 from collections.abc import Callable
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_interval, async_track_sunset
 from homeassistant.helpers.entity import Entity
 
-DOMAIN = "yidcal"
+from .const import DOMAIN
+from .config_flow import CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT
 
 
 class YidCalDevice(Entity):
-    """Base mixin for ALL YidCal entities: shared DeviceInfo + listener management."""
+    """Base mixin for ALL YidCal entities: shared DeviceInfo + listener management
+    + shared formatting helpers.
+    """
 
     _attr_device_info = DeviceInfo(
         identifiers={(DOMAIN, "yidcal_main")},
@@ -25,6 +28,39 @@ class YidCalDevice(Entity):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__()
         self._listener_unsubs: list[Callable[[], None]] = []
+
+        # Optional cache. If a subclass sets this, we’ll use it.
+        # Otherwise we will read live from hass.data.
+        self._time_format: str | None = None
+
+    # --- Time format helpers (usable by any subclass) ---
+    def _get_time_format(self) -> str:
+        """Return configured time format ('12' or '24')."""
+        # Priority:
+        # 1) subclass cached value
+        if self._time_format in ("12", "24"):
+            return self._time_format
+
+        # 2) global config set in __init__.py
+        try:
+            cfg = self.hass.data.get(DOMAIN, {}).get("config", {})
+            fmt = cfg.get(CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT)
+            return fmt if fmt in ("12", "24") else DEFAULT_TIME_FORMAT
+        except Exception:
+            return DEFAULT_TIME_FORMAT
+
+    def _format_simple_time(self, dt_local: datetime, fmt: str | None = None) -> str:
+        """Format a local datetime into your *_Simple attrs honoring 12/24 option."""
+        fmt = fmt or self._get_time_format()
+
+        if fmt == "24":
+            return dt_local.strftime("%H:%M")
+
+        # 12-hour (your current style)
+        hour = dt_local.hour % 12 or 12
+        minute = dt_local.minute
+        ampm = "AM" if dt_local.hour < 12 else "PM"
+        return f"{hour}:{minute:02d} {ampm}"
 
     # --- Listener helpers (usable by any subclass) ---
     def _register_listener(self, unsub: Callable[[], None]) -> None:
@@ -63,7 +99,6 @@ class YidCalZmanDevice(YidCalDevice):
         entry_type="service",
     )
 
-
 # Use this for the per-attribute mirror sensors from HolidaySensor
 class YidCalAttrDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
@@ -74,7 +109,6 @@ class YidCalAttrDevice(YidCalDevice):
         entry_type="service",
     )
 
-
 # Display / Rich-label sensors live here
 class YidCalDisplayDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
@@ -84,8 +118,7 @@ class YidCalDisplayDevice(YidCalDevice):
         model="Rich Display & Labels",
         entry_type="service",
     )
-    
-    
+
 # Special policy / operational binary sensors
 class YidCalSpecialDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
