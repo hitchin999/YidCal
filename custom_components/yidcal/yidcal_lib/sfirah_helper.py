@@ -2,15 +2,17 @@
 
 import logging
 from datetime import timedelta, date, datetime
+from zoneinfo import ZoneInfo
 
-from astral import LocationInfo
-from astral.sun import sun
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from hdate.converters import gdate_to_jdn
 from hdate.hebrew_date import HebrewDate
-from zoneinfo import ZoneInfo
+
+from zmanim.zmanim_calendar import ZmanimCalendar
+from zmanim.util.geo_location import GeoLocation
+
 from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -123,6 +125,11 @@ SEFIRA_MIDDOS = [
   "מַלְכוּת שֶׁבְּמַלְכוּת"
 ]
 
+def _round_ceil(dt: datetime) -> datetime:
+    """Always bump to next minute (matches Motzi-style boundaries)."""
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+
 class SfirahHelper:
     """
     Compute Omer count and corresponding Hebrew texts based on Hebrew date
@@ -131,10 +138,12 @@ class SfirahHelper:
 
     def __init__(self, hass: HomeAssistant, havdalah_offset: int):
         self.hass = hass
+
         # Start with HA's configured coords/tz
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.time_zone = hass.config.time_zone
+
         # Prefer YidCal's normalized coords/tz (set in __init__.py after geocoding)
         try:
             yidcal_cfg = hass.data.get(DOMAIN, {}).get("config", {}) or {}
@@ -143,20 +152,26 @@ class SfirahHelper:
             self.time_zone = yidcal_cfg.get("tzname", self.time_zone)
         except Exception:
             pass
-        # Store the user’s offset instead of hard-coding 72
+
         self._havdalah_offset = havdalah_offset
+        self._tz = ZoneInfo(self.time_zone)
+
+        # Build a Zmanim GeoLocation once (same as other zman sensors)
+        self._geo = GeoLocation(
+            name="YidCal",
+            latitude=self.latitude,
+            longitude=self.longitude,
+            time_zone=self.time_zone,
+            elevation=0,
+        )
 
     def _get_threshold(self, for_date: date) -> datetime:
         """Return the datetime of sunset + user-defined offset for the given date."""
-        loc = LocationInfo(
-            name="",
-            region="",
-            timezone=self.time_zone,
-            latitude=self.latitude,
-            longitude=self.longitude,
-        )
-        s = sun(loc.observer, date=for_date, tzinfo=ZoneInfo(self.time_zone))
-        return s["sunset"] + timedelta(minutes=self._havdalah_offset)
+        cal = ZmanimCalendar(geo_location=self._geo, date=for_date)
+        sunset = cal.sunset().astimezone(self._tz)
+
+        raw = sunset + timedelta(minutes=self._havdalah_offset)
+        return _round_ceil(raw)  # ✅ match Motzi/DayType halachic flip
 
     def _get_raw_omer_day(self, for_date: date) -> int:
         """Calculate raw Omer day (1–49) based on the Hebrew date."""
@@ -164,6 +179,7 @@ class SfirahHelper:
         heb = HebrewDate.from_jdn(jdn)
         month_name = str(heb.month)
         day = heb.day
+
         # Nisan 16–30 → 1–15
         if month_name == "ניסן" and day >= 16:
             return day - 15
@@ -175,18 +191,15 @@ class SfirahHelper:
             return 44 + day
         return 0
 
-
     def get_effective_omer_day(self) -> int:
         """
         Return the current Omer day (0-49) based on the halachic day
         (sunset + user-defined Havdalah offset).
         """
-        now = dt_util.now().astimezone(ZoneInfo(self.time_zone))
-        threshold = self._get_threshold(now.date())  # today's sunset + offset
+        now = dt_util.now().astimezone(self._tz)
+        threshold = self._get_threshold(now.date())  # today's sunset + offset (rounded)
 
         # Civil date that represents the current halachic day:
-        #  - Before threshold → today's civil date
-        #  - After threshold  → tomorrow's civil date
         ref_date = now.date() if now < threshold else (now.date() + timedelta(days=1))
 
         return max(0, min(self._get_raw_omer_day(ref_date), 49))
