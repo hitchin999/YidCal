@@ -215,7 +215,7 @@ async def async_setup_entry(
         ZmanTalisTefilinSensor(hass),
         MinchaGedolaSensor(hass),
         MinchaKetanaSensor(hass),
-        PlagHaMinchaSensor(hass),
+        PlagHaMinchaMGASensor(hass),
         PlagHaMinchaGRASensor(hass),
         ShkiaSensor(hass),
         ZmanMaariv60Sensor(hass),
