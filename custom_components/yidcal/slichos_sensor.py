@@ -280,3 +280,5 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
         }
 
         self._attr_extra_state_attributes = attrs
+        # ensure HA sees the new state/attrs
+        self.async_write_ha_state()
