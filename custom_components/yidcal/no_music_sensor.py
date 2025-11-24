@@ -6,6 +6,7 @@ from astral import LocationInfo
 from astral.sun import sun
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.core import HomeAssistant
 from pyluach.hebrewcal import HebrewDate
 
@@ -14,8 +15,16 @@ from .device import YidCalSpecialDevice
 from .zman_sensors import get_geo
 from zmanim.zmanim_calendar import ZmanimCalendar
 
+def _round_half_up(dt: datetime) -> datetime:
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
 
-class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
+def _round_ceil(dt: datetime) -> datetime:
+    # always round up to the next minute if any seconds/micros are present
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0) if (dt.second or dt.microsecond) else dt
+
+class NoMusicSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
     _attr_name = "No Music"
     _attr_icon = "mdi:music-off"
 
@@ -32,10 +41,12 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
 
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._diaspora = cfg.get("diaspora", True)
         self._geo = None  # for ZmanimCalendar (used for Chatzos like ChatzosHayomSensor)
 
         self._in_sefirah: bool = False
         self._in_three_weeks: bool = False
+        self._this_window_starts: datetime | None = None
         self._this_window_ends: datetime | None = None
         self._next_window_start: datetime | None = None
         self._next_window_end: datetime | None = None
@@ -43,12 +54,14 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         self._added = True
         self._geo = await get_geo(self.hass)
+        # restore last state if available
+        last = await self.async_get_last_state()
+        if last:
+            self._attr_is_on = (last.state == "on")
         await self.async_update()
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     # ── Helpers ─────────────────────────────────────────────────────────
-    def _tz(self) -> ZoneInfo:
-        return self._tz
 
     def _loc(self) -> LocationInfo:
         # astral helper for tzeis (sunset + havdalah offset)
@@ -104,7 +117,7 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         """
         windows: list[tuple[datetime, datetime, str]] = []
 
-        start_hd = HebrewDate(hyear, 1, 16)
+        start_hd = HebrewDate(hyear, 1, 23 if self._diaspora else 22)
         end_hd = HebrewDate(hyear, 3, 4)
         cur = start_hd
         in_block = False
@@ -119,8 +132,8 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
             if not prohibited and in_block:
                 # Block ends previous Hebrew day -> end at tzeis of that last prohibited day
                 last = cur - 1
-                start_dt = self._tzeis_on(block_start.to_pydate() - timedelta(days=1))
-                end_dt = self._tzeis_on(last.to_pydate())
+                start_dt = _round_half_up(self._tzeis_on(block_start.to_pydate() - timedelta(days=1)))
+                end_dt = _round_ceil(self._tzeis_on(last.to_pydate()))
                 windows.append((start_dt, end_dt, "sefirah"))
                 in_block = False
                 block_start = None
@@ -129,8 +142,8 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         if in_block and block_start:
             # Runs through Sivan 4 -> end at tzeis of Sivan 4
             last = end_hd
-            start_dt = self._tzeis_on(block_start.to_pydate() - timedelta(days=1))
-            end_dt = self._tzeis_on(last.to_pydate())
+            start_dt = _round_half_up(self._tzeis_on(block_start.to_pydate() - timedelta(days=1)))
+            end_dt = _round_ceil(self._tzeis_on(last.to_pydate()))
             windows.append((start_dt, end_dt, "sefirah"))
 
         return windows
@@ -147,17 +160,17 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         # start
         tammuz17 = HebrewDate(hyear, 4, 17).to_pydate()
         if tammuz17.weekday() == 5:
-            start_dt = self._tzeis_on(HebrewDate(hyear, 4, 18).to_pydate() - timedelta(days=1))
+            start_dt = _round_half_up(self._tzeis_on(HebrewDate(hyear, 4, 18).to_pydate() - timedelta(days=1)))
         else:
-            start_dt = self._tzeis_on(tammuz17 - timedelta(days=1))
+            start_dt = _round_half_up(self._tzeis_on(tammuz17 - timedelta(days=1)))
     
         # end (depends on nidche)
         av9  = HebrewDate(hyear, 5, 9).to_pydate()
         av10 = HebrewDate(hyear, 5, 10).to_pydate()
         if av9.weekday() == 5:
-            end_dt = self._tzeis_on(av10)
+            end_dt = _round_ceil(self._tzeis_on(av10))
         else:
-            end_dt = self._compute_chatzos_for_date(av10)
+            end_dt = _round_ceil(self._compute_chatzos_for_date(av10))
     
         return (start_dt, end_dt, "three_weeks")
 
@@ -186,6 +199,7 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         in_window = False
         in_sefirah = False
         in_three_weeks = False
+        current_start = None
         current_end = None
         next_start = None
         next_end = None
@@ -193,6 +207,7 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         for (ws, we, kind) in windows:
             if ws <= now < we:
                 in_window = True
+                current_start = ws
                 current_end = we
                 in_sefirah = (kind == "sefirah")
                 in_three_weeks = (kind == "three_weeks")
@@ -207,6 +222,7 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._attr_is_on = in_window
         self._in_sefirah = in_sefirah
         self._in_three_weeks = in_three_weeks
+        self._this_window_starts = current_start
         self._this_window_ends = current_end
         self._next_window_start = next_start
         self._next_window_end = next_end
@@ -230,6 +246,9 @@ class NoMusicSensor(YidCalSpecialDevice, BinarySensorEntity):
         attrs: dict[str, object] = {}
         attrs["Three Weeks"] = self._in_three_weeks
         attrs["Sefirah"] = self._in_sefirah
+        attrs["This Window Start"] = (
+            self._this_window_starts.isoformat() if self._this_window_starts else "N/A"
+        )
         attrs["Next Window Start"] = (
             self._next_window_start.isoformat() if self._next_window_start else "N/A"
         )
