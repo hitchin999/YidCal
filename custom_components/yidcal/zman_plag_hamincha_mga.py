@@ -21,7 +21,7 @@ class PlagHaMinchaSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
     _attr_icon          = "mdi:clock-plus"
-    _attr_name          = "Plag HaMincha"
+    _attr_name          = "Plag HaMincha (MGA)"
     _attr_unique_id     = "yidcal_plag_hamincha"
 
     def __init__(self, hass: HomeAssistant) -> None:
