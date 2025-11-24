@@ -1,18 +1,19 @@
 from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional, Tuple, Union
+import logging
 
-from .device import YidCalDisplayDevice
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.util import dt as dt_util
 
 import pyluach.dates as pdates
+from .device import YidCalDisplayDevice
+from .const import DOMAIN
 from .yidcal_lib.helper import int_to_hebrew
-import logging
 
 _LOGGER = logging.getLogger(__name__)
-
 ChapterType = Union[int, Tuple[int, int]]
 
 class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
@@ -30,13 +31,17 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
         self._attr_native_value = "נישט אין די צייט פון פרקי אבות"
         self._attr_extra_state_attributes = {}
 
+        cfg = (hass.data.get(DOMAIN) or {}).get("config") or {}
+        self._diaspora: bool = bool(cfg.get("diaspora", True))
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         await self._update_state()  # immediate
 
         async def _midnight_cb(now):
-            if now.weekday() == 6:  # Sunday
-                await self._update_state(now)
+            # recompute once right after midnight; Sunday check isn’t strictly necessary,
+            # since we also run every minute, but it’s cheap.
+            await self._update_state(now)
 
         unsub_midnight = async_track_time_change(
             self.hass, _midnight_cb, hour=0, minute=0, second=5
@@ -44,11 +49,10 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
         self._register_listener(unsub_midnight)
 
         async def _minute_cb(now):
+            # catch manual clock jumps/time simulation quickly
             await self._update_state(now)
 
-        unsub_minute = async_track_time_change(
-            self.hass, _minute_cb, second=0
-        )
+        unsub_minute = async_track_time_change(self.hass, _minute_cb, second=0)
         self._register_listener(unsub_minute)
 
     # ───────────────── helpers ─────────────────
@@ -57,10 +61,11 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
         """Return the skip reason string if Avos is skipped this Shabbos, else None."""
         sh_hd = pdates.HebrewDate.from_pydate(shabbat_date)
 
-        # Shavuos on Shabbos → skip (6 or 7 Sivan in chutz la'aretz)
-        if sh_hd.month == 3 and sh_hd.day in (6, 7):
-            # Format day as Hebrew numeral (e.g., ו׳ / ז׳)
-            day_lbl = int_to_hebrew(sh_hd.day)
+        # Shavuos on Shabbos → skip
+        if sh_hd.month == 3 and (
+            sh_hd.day == 6 or (self._diaspora and sh_hd.day == 7)
+        ):
+            day_lbl = int_to_hebrew(sh_hd.day)  # e.g., ו׳ / ז׳
             return f"הדלגה — שבועות ({day_lbl} סיון)"
 
         # Shabbos Chazon (Shabbos on/just before 9 Av) → skip
@@ -83,21 +88,22 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
 
     async def _update_state(self, now=None) -> None:
         """Compute which Pirkei Avos chapter will be read on the upcoming Shabbos."""
-        today_py = date.today()
+        today_py = dt_util.now().date()  # timezone-safe
 
-        # Most recent Sunday (Mon=0 … Sun=6)
-        days_since_sunday = (today_py.weekday() - 6) % 7
+        # Week runs Sun→Shabbos; find this week's Shabbos
+        days_since_sunday = (today_py.weekday() - 6) % 7  # Mon=0 … Sun=6
         week_start = today_py - timedelta(days=days_since_sunday)
         shabbat_of_week = week_start + timedelta(days=6)
 
         today_hd = pdates.HebrewDate.from_pydate(today_py)
 
-        # Last day of Pesach (chutz la'aretz): 22 Nisan -> first Shabbos after
-        pesach_py = pdates.HebrewDate(today_hd.year, 1, 22).to_pydate()
-        offset = (5 - pesach_py.weekday()) % 7 or 7  # Saturday=5; ensure after
+        # Last day of Pesach (21 EY, 22 Chul); first Shabbos *after* that day
+        pesach_last_day = 22 if self._diaspora else 21
+        pesach_py = pdates.HebrewDate(today_hd.year, 1, pesach_last_day).to_pydate()
+        offset = (5 - pesach_py.weekday()) % 7 or 7  # Saturday=5; ensure strictly after
         first_shabbos = pesach_py + timedelta(days=offset)
 
-        # Last Shabbos before Rosh Hashanah
+        # Last Shabbos before Rosh Hashanah (1 Tishrei of the *next* Hebrew year)
         rh_py = pdates.HebrewDate(today_hd.year + 1, 7, 1).to_pydate()
         prev_day = rh_py - timedelta(days=1)
         days_to_sat = (prev_day.weekday() - 5) % 7
@@ -107,6 +113,7 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             "first_shabbos": self._fmt_date(first_shabbos),
             "last_shabbos": self._fmt_date(last_shabbos),
             "shabbos_of_week": self._fmt_date(shabbat_of_week),
+            "diaspora": self._diaspora,
             "skipped": False,
             "skipped_reason": None,
             "reading_index": None,
@@ -127,7 +134,7 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
         if reason:
             attrs["skipped"] = True
             attrs["skipped_reason"] = reason
-            state = reason  # user-facing friendly message
+            state = reason
             self._attr_extra_state_attributes = attrs
             self._attr_native_value = state
             self.async_write_ha_state()
@@ -150,7 +157,7 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             d += timedelta(days=7)
 
         # Final three valid Shabbosim → pairs 1-2, 3-4, 5-6
-        if valid_remaining <= 3 and valid_remaining > 0:
+        if 0 < valid_remaining <= 3:
             pairs = [(1, 2), (3, 4), (5, 6)]
             n1, n2 = pairs[3 - valid_remaining]
             chapter: ChapterType = (n1, n2)
@@ -161,7 +168,8 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             chapter_label = f"פרק {int_to_hebrew(n)}"
 
         attrs["reading_index"] = valid_week_count
-        # Compute total reading weeks for the season (for reference)
+
+        # Total valid reading weeks for the season (for reference)
         total = 0
         d = first_shabbos
         while d <= last_shabbos:
