@@ -182,7 +182,7 @@ async def async_setup_entry(
     cfg["tzname"] = hass.config.time_zone
 
     # Prepare helpers
-    sfirah_helper = SfirahHelper(hass, havdalah_offset)
+    sfirah_helper = await SfirahHelper.async_create(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
 
     sensors = [
