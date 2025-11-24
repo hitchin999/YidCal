@@ -18,8 +18,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from astral import LocationInfo
-from astral.sun import sun
 from pyluach.hebrewcal import HebrewDate
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -64,6 +62,8 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._now_local: datetime | None = None
         self._next_window_start: datetime | None = None
         self._next_window_end: datetime | None = None
+        self._window_start: datetime | None = None
+        self._window_end: datetime | None = None
         self._nidche_year: bool = False
 
     async def async_added_to_hass(self) -> None:
@@ -73,16 +73,11 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     # ---- helpers ----
-    def _loc(self) -> LocationInfo:
-        return LocationInfo(
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-            timezone=self.hass.config.time_zone,
-        )
-
     def _tzeis_on(self, greg_date) -> datetime:
-        s = sun(self._loc().observer, date=greg_date, tzinfo=self._tz)
-        return s["sunset"] + timedelta(minutes=self._havdalah)
+        """Use ZmanimCalendar sunset + havdalah offset for consistency with the rest of YidCal."""
+        cal = ZmanimCalendar(geo_location=self._geo, date=greg_date)
+        sunset = cal.sunset().astimezone(self._tz)
+        return sunset + timedelta(minutes=self._havdalah)
 
     def _compute_chatzos_for_date(self, base_date) -> datetime:
         """Match ChatzosHayomSensor exactly: MGA day (sr-72/ss+72) with round-half-up."""
@@ -98,8 +93,7 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
     def _activation_logic_text(self) -> str:
         return (
             "ON from tzeis that begins 1 Av, until 10 Av at Chatzos Hayom; "
-            "if 9 Av is Shabbos (nidche), remains ON until"
-            "tzeis on 10 Av. OFF outside this window."
+            "if 9 Av is Shabbos (nidche), remains ON until tzeis on 10 Av. OFF outside this window."
         )
 
     # ---- update ----
@@ -130,6 +124,11 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
         # State
         in_window = (on_time <= now < off_time)
         self._attr_is_on = in_window
+        # Current window (only when active)
+        if in_window:
+            self._window_start, self._window_end = on_time, off_time
+        else:
+            self._window_start = self._window_end = None
         
         # Pick which window Next_* should represent and compute Nidche accordingly
         if now < on_time or in_window:
@@ -164,6 +163,15 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
         attrs: dict[str, str | bool] = {}
         if self._now_local:
             attrs["Now"] = self._now_local.isoformat()
+        # Current active window (when applicable)
+        if self._window_start:
+            attrs["Window_Start"] = self._window_start.isoformat()
+        else:
+            attrs["Window_Start"] = ""
+        if self._window_end:
+            attrs["Window_End"] = self._window_end.isoformat()
+        else:
+            attrs["Window_End"] = ""
         if self._next_window_start:
             attrs["Next_Window_Start"] = self._next_window_start.isoformat()
         if self._next_window_end:
