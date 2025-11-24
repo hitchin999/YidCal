@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
@@ -86,6 +87,13 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         except Exception:
             self._tz = ZoneInfo(self.hass.config.time_zone)
 
+        # Ensure required keys exist for get_geo() to avoid KeyError
+        cfg_store = self.hass.data.setdefault(DOMAIN, {}).setdefault("config", {})
+        cfg_store.setdefault("tzname", self.hass.config.time_zone)
+        cfg_store.setdefault("latitude", self.hass.config.latitude)
+        cfg_store.setdefault("longitude", self.hass.config.longitude)
+        cfg_store.setdefault("city", getattr(self.hass.config, "location_name", None) or "Home")
+
         self._geo = await get_geo(self.hass)
         self._cfg_sig = new_sig
 
@@ -105,6 +113,19 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
 
+    @property
+    def available(self) -> bool:
+        return self._geo is not None
+
+    # ── Helper: version-safe Yom Tov check ───────────────────────────────────
+    def _is_yomtov(self, d: datetime.date) -> bool:
+        info = HDateInfo(d, diaspora=self._diaspora)
+        try:
+            val = getattr(info, "is_yom_tov")
+            return bool(val() if callable(val) else val)
+        except Exception:
+            return False
+
     # ── Helpers ──────────────────────────────────────────────────────────────
     def _last_motzi_cutoff_date(self, ref: datetime.date) -> datetime.date | None:
         """Civil date when we may advance (the day AFTER the last Motzi)."""
@@ -112,8 +133,16 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             d = ref - timedelta(days=back)
             hd0 = HDateInfo(d, diaspora=self._diaspora)
             hd1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
-            ended_shabbos = (d.weekday() == 5) and (not hd1.is_yom_tov)
-            ended_yomtov  = hd0.is_yom_tov and (not hd1.is_yom_tov)
+
+            def _is_yt(hinfo: HDateInfo) -> bool:
+                try:
+                    v = getattr(hinfo, "is_yom_tov")
+                    return bool(v() if callable(v) else v)
+                except Exception:
+                    return False
+
+            ended_shabbos = (d.weekday() == 5) and (not _is_yt(hd1))
+            ended_yomtov = _is_yt(hd0) and (not _is_yt(hd1))
             if ended_shabbos or ended_yomtov:
                 return d + timedelta(days=1)
         return None
@@ -155,46 +184,29 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         return (False, "")
 
-    def _week_has_chm(self, d: datetime.date) -> tuple[bool, bool]:
-        """
-        Search [d-6 .. d+6] for any CHM day (using _is_chm_day). Returns (has_sukkos, has_pesach).
-        """
-        has_sukkos = False
-        has_pesach = False
-        for delta in range(-6, 7):
-            dd = d + timedelta(days=delta)
-            is_chm, tag = self._is_chm_day(dd)
-            if is_chm:
-                if tag == "סוכות":
-                    has_sukkos = True
-                elif tag == "פסח":
-                    has_pesach = True
-        return (has_sukkos, has_pesach)
-
     def _find_next_event(self, base_date: datetime.date) -> tuple[str, datetime.date | None]:
         """
         Prefer Shabbos Chol HaMoed (פסח/סוכות) ONLY if the Saturday itself is CHM,
         and it occurs before the next true Yom Tov. Otherwise, return the next true Yom Tov.
         """
-    
+
         # 1) Find the next true Yom Tov
         next_yt_name, next_yt_date = "", None
         for j in range(1, 366):
             d2 = base_date + timedelta(days=j)
-            if HDateInfo(d2, diaspora=self._diaspora).is_yom_tov:
+            if self._is_yomtov(d2):
                 nm = PHebrewDate.from_pydate(d2).holiday(hebrew=True) or ""
                 if nm:
                     next_yt_name, next_yt_date = nm, d2
                     break
-    
+
         # 2) If we have a next YT, scan Saturdays strictly before it
         if next_yt_date is not None:
             d = base_date + timedelta(days=1)
             while d < next_yt_date:
                 if d.weekday() == 5:  # Saturday
-                    cand_info = HDateInfo(d, diaspora=self._diaspora)
                     # must not be a YT day itself
-                    if not cand_info.is_yom_tov:
+                    if not self._is_yomtov(d):
                         is_chm, tag = self._is_chm_day(d)  # checks the Saturday itself
                         if is_chm:
                             if tag == "סוכות":
@@ -202,16 +214,15 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                             if tag == "פסח":
                                 return ("שבת חול המועד פסח", d)
                 d += timedelta(days=1)
-    
+
             # No Shabbos CH"M → return the next YT
             return (next_yt_name, next_yt_date)
-    
+
         # 3) No YT found (rare) → search ahead up to a year for a CH"M Saturday itself
         d = base_date + timedelta(days=1)
         for _ in range(365):
             if d.weekday() == 5:
-                cand_info = HDateInfo(d, diaspora=self._diaspora)
-                if not cand_info.is_yom_tov:
+                if not self._is_yomtov(d):
                     is_chm, tag = self._is_chm_day(d)
                     if is_chm:
                         if tag == "סוכות":
@@ -219,7 +230,7 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                         if tag == "פסח":
                             return ("שבת חול המועד פסח", d)
             d += timedelta(days=1)
-    
+
         return ("", None)
 
     def _candle_lighting_prev_day(self, target: datetime.date) -> datetime.datetime:
@@ -251,7 +262,7 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         is_on = False
         next_on_time: datetime.datetime | None = None
         if next_date:
-            # Theoretical 7-days-before midnight (legacy semantics; used only as a floor)
+            # Theoretical 7-days-before midnight
             theoretical_on = datetime.datetime(
                 (next_date - timedelta(days=7)).year,
                 (next_date - timedelta(days=7)).month,
