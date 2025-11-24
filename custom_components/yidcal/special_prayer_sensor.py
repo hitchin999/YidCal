@@ -80,24 +80,47 @@ Attributes include: "הושענות היום", per-day Hoshanos, "הושענא �
 "הלל", "הלל השלם", and boolean flags for each insertion as applicable.
 """
 
-
 from __future__ import annotations
-from datetime import timedelta, time
+
+from datetime import timedelta, time, date, datetime
+import calendar
 from zoneinfo import ZoneInfo
 import re
 
-from astral import LocationInfo
-from astral.sun import sun
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.util.dt import now as dt_now
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+)
+from homeassistant.util import dt as dt_util
+
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from zmanim.zmanim_calendar import ZmanimCalendar
+from zmanim.util.geo_location import GeoLocation
 
 from .device import YidCalDisplayDevice
+from .const import DOMAIN
+from .zman_sensors import get_geo
+
 
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
 NO_MELOCHA_SENSOR = "binary_sensor.yidcal_no_melucha"
+
+
+# ---------- Rounding helpers (same semantics as other YidCal sensors) ----------
+
+def _round_half_up(dt: datetime) -> datetime:
+    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
+
+
+def _round_ceil(dt: datetime) -> datetime:
+    """Always bump to the *next* minute (Motzi-style)."""
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
 
 # Hoshanos sequences depend on the weekday of 15 Tishrei (first day of Sukkos, chutz la'aretz).
 # Keys are Python weekday() where Monday=0 ... Sunday=6.
@@ -117,6 +140,7 @@ HOSH_DAY_LABELS = [
     "הושענות ליום ד׳ דחול המועד סוכות",
 ]
 
+
 def _as_true(v) -> bool:
     """Return True only for the boolean True, or the string 'true' (case-insensitive)."""
     if isinstance(v, bool):
@@ -125,44 +149,75 @@ def _as_true(v) -> bool:
         return v.strip().lower() == "true"
     return False
 
-# Days that require FULL Hallel (keys from sensor.yidcal_holiday attributes)
-FULL_HALLEL_ATTR_KEYS = [
-    # Chanukah
-    "חנוכה", "זאת חנוכה",
-    # Sukkos & end days
-    "סוכות", "סוכות א׳", "סוכות ב׳", "סוכות א׳ וב׳",
-    "שבת חול המועד סוכות", "חול המועד סוכות",
-    "שמיני עצרת", "שמחת תורה", "שמיני עצרת/שמחת תורה",
-    # Shavuos
-    "שבועות א׳", "שבועות ב׳", "שבועות א׳ וב׳",
-    # Pesach first day(s)
-    "פסח", "פסח א׳", "פסח ב׳", "פסח א׳ וב׳",
-]
 
-# Days that require HALF Hallel (never when Full already applies)
-HALF_HALLEL_ATTR_KEYS = [
-    "ראש חודש",
-    # Pesach (all non-first-day(s) incl. Shabbos CH”M and last day(s))
-    "א׳ דחול המועד פסח", "ב׳ דחול המועד פסח",
-    "ג׳ דחול המועד פסח", "ד׳ דחול המועד פסח",
-    "שבת חול המועד פסח",
-    "חול המועד פסח",  # in case you also expose a generic CH”M key
-    "שביעי של פסח", "אחרון של פסח", "שביעי/אחרון של פסח",
-    # (Do NOT include "פסח שני" here — no Hallel)
-]
+def _diaspora_sets(diaspora: bool):
+    """
+    Return (YOMTOV_ATTR_KEYS, FULL_HALLEL_ATTR_KEYS, HALF_HALLEL_ATTR_KEYS, HOSH_DAY_LABELS)
+    per locale.
+    """
+    if diaspora:
+        yomtov_keys = [
+            "סוכות", "סוכות א׳", "סוכות ב׳", "סוכות א׳ וב׳",
+            "שמיני עצרת", "שמחת תורה", "שמיני עצרת/שמחת תורה",
+            "פסח", "פסח א׳", "פסח ב׳", "פסח א׳ וב׳",
+            "שביעי של פסח", "אחרון של פסח", "שביעי/אחרון של פסח",
+            "שבועות א׳", "שבועות ב׳", "שבועות א׳ וב׳",
+        ]
+        full_hallel = [
+            "חנוכה", "זאת חנוכה",
+            "סוכות", "סוכות א׳", "סוכות ב׳", "סוכות א׳ וב׳",
+            "שבת חול המועד סוכות", "חול המועד סוכות",
+            "שמיני עצרת", "שמחת תורה", "שמיני עצרת/שמחת תורה",
+            "שבועות א׳", "שבועות ב׳", "שבועות א׳ וב׳",
+            "פסח א׳", "פסח ב׳", "פסח א׳ וב׳",
+        ]
+        half_hallel = [
+            "ראש חודש",
+            "א׳ דחול המועד פסח", "ב׳ דחול המועד פסח",
+            "ג׳ דחול המועד פסח", "ד׳ דחול המועד פסח",
+            "שבת חול המועד פסח", "חול המועד פסח",
+            "שביעי של פסח", "אחרון של פסח", "שביעי/אחרון של פסח",
+        ]
+        hosh_labels = [
+            "הושענות ליום א׳ דיום טוב",
+            "הושענות ליום ב׳ דיום טוב",
+            "הושענות ליום א׳ דחול המועד סוכות",
+            "הושענות ליום ב׳ דחול המועד סוכות",
+            "הושענות ליום ג׳ דחול המועד סוכות",
+            "הושענות ליום ד׳ דחול המועד סוכות",
+        ]
+    else:
+        # EY: 1 YT day (15 Tishrei), 5 CH"M; one-day Pesach/Shavuos; Simchas Torah = with SA
+        yomtov_keys = [
+            "סוכות",
+            "שמיני עצרת", "שמיני עצרת/שמחת תורה",
+            "פסח", "שביעי של פסח",
+            "שבועות",
+        ]
+        full_hallel = [
+            "חנוכה", "זאת חנוכה",
+            "סוכות", "שבת חול המועד סוכות", "חול המועד סוכות",
+            "שמיני עצרת", "שמיני עצרת/שמחת תורה",
+            "שבועות",
+            "פסח",
+        ]
+        half_hallel = [
+            "ראש חודש",
+            "א׳ דחול המועד פסח", "ב׳ דחול המועד פסח",
+            "ג׳ דחול המועד פסח", "ד׳ דחול המועד פסח",
+            "שבת חול המועד פסח", "חול המועד פסח",
+            "שביעי של פסח",
+        ]
+        hosh_labels = [
+            "הושענות ליום דיום טוב",
+            "הושענות ליום א׳ דחול המועד סוכות",
+            "הושענות ליום ב׳ דחול המועד סוכות",
+            "הושענות ליום ג׳ דחול המועד סוכות",
+            "הושענות ליום ד׳ דחול המועד סוכות",
+            "הושענות ליום ה׳ דחול המועד סוכות",
+        ]
+    return yomtov_keys, full_hallel, half_hallel, hosh_labels
 
-# Attribute keys on sensor.yidcal_holiday that represent actual Yom Tov days (Diaspora)
-YOMTOV_ATTR_KEYS = [
-    # Sukkos & end days
-    "סוכות", "סוכות א׳", "סוכות ב׳", "סוכות א׳ וב׳",
-    "שמיני עצרת", "שמחת תורה", "שמיני עצרת/שמחת תורה",
-    # Pesach & end days
-    "פסח", "פסח א׳", "פסח ב׳", "פסח א׳ וב׳",
-    "שביעי של פסח", "אחרון של פסח", "שביעי/אחרון של פסח",
-    # Shavuos
-    "שבועות א׳", "שבועות ב׳", "שבועות א׳ וב׳",
-    # (Intentionally excluding Rosh Hashanah from YVY)
-]
 
 def _year_hoshanos_sequence(hebrew_year: int) -> list[str]:
     """Return the Hoshanos sequence for 15–20 Tishrei of the given Hebrew year."""
@@ -173,11 +228,6 @@ def _year_hoshanos_sequence(hebrew_year: int) -> list[str]:
 def _format_hebrew_year(year: int) -> str:
     """
     Format a Hebrew year like 5787 -> 'תשפ״ז'.
-    Rules:
-    • Drop the thousands (i.e., use year % 1000).
-    • Use special forms for 15 (ט״ו) and 16 (ט״ז).
-    • Add gershayim (״ U+05F4) before the last letter if 2+ letters,
-      or geresh (׳ U+05F3) after the single letter.
     """
     GERESH = "׳"      # U+05F3
     GERSHAYIM = "״"   # U+05F4
@@ -193,11 +243,14 @@ def _format_hebrew_year(year: int) -> str:
         parts.append("ת")
         n -= 400
     if n >= 300:
-        parts.append("ש"); n -= 300
+        parts.append("ש")
+        n -= 300
     if n >= 200:
-        parts.append("ר"); n -= 200
+        parts.append("ר")
+        n -= 200
     if n >= 100:
-        parts.append("ק"); n -= 100
+        parts.append("ק")
+        n -= 100
 
     # Tens + Ones with 15/16 exceptions
     tens = (n // 10) * 10
@@ -229,68 +282,102 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
         slug = "special_prayer"
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"sensor.yidcal_{slug}"
+
         self.hass = hass
         self._candle = candle_offset
         self._havdalah = havdalah_offset
+
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._diaspora = cfg.get("diaspora", True)
+        self._geo: GeoLocation | None = None
+
         self._attr_extra_state_attributes: dict[str, object] = {}
         self._state = ""
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
+        # Ensure geo is cached for Zmanim
+        self._geo = await get_geo(self.hass)
+
         @callback
         def _refresh(_):
+            # Just push HA to read native_value again
             self.async_write_ha_state()
 
+        # Holiday/no-melucha updates
         unsub = async_track_state_change_event(
             self.hass, [HOLIDAY_SENSOR, NO_MELOCHA_SENSOR], _refresh
         )
         self._register_listener(unsub)
+
+        # Top-of-minute tick (handles dawn/tzeis/havdalah boundaries)
+        unsub_min = async_track_time_change(self.hass, _refresh, second=0)
+        self._register_listener(unsub_min)
+
         _refresh(None)
 
     @property
     def native_value(self) -> str:
         try:
-            tzname = self.hass.config.time_zone
-            lat = self.hass.config.latitude
-            lon = self.hass.config.longitude
-            if not tzname or lat is None or lon is None:
-                return ""
+            # If geo isn't ready yet, don't crash – just keep last state
+            if self._geo is None:
+                return self._state
 
-            now = dt_now()
+            tz = self._tz
+
+            # Snap "now" to the minute so all comparisons line up with rounded Zmanim
+            now = dt_util.now().astimezone(tz)
+            now = now.replace(second=0, microsecond=0)
             today = now.date()
-            tz = ZoneInfo(tzname)
-            loc = LocationInfo("home", "", tzname, lat, lon)
-            st = sun(loc.observer, date=today, tzinfo=tz)
-            sunrise = st["sunrise"]
-            sunset = st["sunset"]
-            dawn = sunrise - timedelta(minutes=72)
-            candle_time = sunset - timedelta(minutes=self._candle)
-            havdala = sunset + timedelta(minutes=self._havdalah)
+
+            yomtov_keys, full_hallel_keys, half_hallel_keys, hosh_labels = _diaspora_sets(
+                self._diaspora
+            )
+
+            # ---------- Zmanim for today / yesterday / tomorrow ----------
+            cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
+            cal_yesterday = ZmanimCalendar(geo_location=self._geo, date=today - timedelta(days=1))
+            cal_tomorrow = ZmanimCalendar(geo_location=self._geo, date=today + timedelta(days=1))
+
+            sunrise = cal_today.sunrise().astimezone(tz)
+            sunset = cal_today.sunset().astimezone(tz)
+
+            # Dawn, candle-lighting, havdalah – with same rounding semantics as other sensors
+            dawn = _round_half_up(sunrise - timedelta(minutes=72))
+            candle_time = _round_half_up(sunset - timedelta(minutes=self._candle))
+            havdala_raw = sunset + timedelta(minutes=self._havdalah)
+            havdala = _round_ceil(havdala_raw)
+
+            # Chatzos (no need for rounding; we never hit it exactly)
             hal_mid = sunrise + (sunset - sunrise) / 2
-            # Nightfall (tzeis) window relative to *now*: prev_tzeis .. next_tzeis
-            st_yesterday = sun(loc.observer, date=today - timedelta(days=1), tzinfo=tz)
-            st_tomorrow  = sun(loc.observer, date=today + timedelta(days=1), tzinfo=tz)
-            
-            yest_tzeis = st_yesterday["sunset"] + timedelta(minutes=self._havdalah)
-            tod_tzeis  = havdala  # today’s sunset + havdalah offset
-            tom_tzeis  = st_tomorrow["sunset"] + timedelta(minutes=self._havdalah)
-            
+
+            # Nightfall (tzeis) window: prev_tzeis .. next_tzeis, round Motzi-style
+            yest_tzeis = _round_ceil(
+                cal_yesterday.sunset().astimezone(tz) + timedelta(minutes=self._havdalah)
+            )
+            tod_tzeis = havdala  # already rounded
+            tom_tzeis = _round_ceil(
+                cal_tomorrow.sunset().astimezone(tz) + timedelta(minutes=self._havdalah)
+            )
+
             if now < tod_tzeis:
                 prev_tzeis, next_tzeis = yest_tzeis, tod_tzeis
             else:
                 prev_tzeis, next_tzeis = tod_tzeis, tom_tzeis
-            
-            night_inclusive_window = (prev_tzeis <= now < next_tzeis)
 
-            # Hebrew date by halachic rollover (havdalah)
+            night_inclusive_window = prev_tzeis <= now < next_tzeis
+
+            # ---------- Hebrew dates (two flavors) ----------
+            # Halachic date: flip at havdalah (rounded)
             hd = PHebrewDate.from_pydate(today)
             if now >= havdala:
                 hd = hd + 1
             day = hd.day
             m_he = hd.month_name(hebrew=True)
 
-            # Hebrew date by sunset rollover (used for AYT window boundaries)
+            # Hebrew date by sunset-only (used for AYT boundaries)
             hd_sun = PHebrewDate.from_pydate(today)
             if now >= sunset:
                 hd_sun = hd_sun + 1
@@ -306,41 +393,71 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             is_morid_tal = not is_morid_geshem
 
             # ---------- ותן טל ומטר / ותן ברכה ----------
-            is_tal_umatar = (
-                (m_he == "כסלו" and (day > 5 or (day == 5 and now >= havdala)))
-                or m_he in ["טבת", "שבט", "אדר", "אדר א", "אדר ב"]
-                or (m_he == "ניסן" and (day < 15 or (day == 15 and now <= havdala)))
-            )
+            # Halachic date (flip at rounded havdalah)
+            halachic_date = today + (timedelta(days=1) if now >= havdala else timedelta(days=0))
+            hd_hal = PHebrewDate.from_pydate(halachic_date)
+
+            # After first night of Pesach we always say "ותן ברכה"
+            if hd_hal.month == 1 and hd_hal.day >= 15:
+                is_tal_umatar = False
+            else:
+                if self._diaspora:
+                    # Chutz LaAretz: Dec 4 (Dec 5 in Gregorian leap years), at Ma'ariv
+                    dec_year = now.year - 1 if now.month <= 4 else now.year
+                    start_day = 5 if calendar.isleap(dec_year) else 4
+                    start_gdate = date(dec_year, 12, start_day)
+                    cal_start = ZmanimCalendar(
+                        geo_location=self._geo,
+                        date=start_gdate,
+                    )
+                    start_sunset = cal_start.sunset().astimezone(tz)
+                    start_dt = _round_ceil(
+                        start_sunset + timedelta(minutes=self._havdalah)
+                    )
+                    is_tal_umatar = now >= start_dt
+                else:
+                    # Eretz Yisrael: from 7 Cheshvan (Ma'ariv) until Pesach
+                    is_tal_umatar = (
+                        (hd_hal.month == 8 and hd_hal.day >= 7)  # from 7 Cheshvan
+                        or (9 <= hd_hal.month <= 13)            # Kislev–Adar/A II
+                        or (hd_hal.month == 1 and hd_hal.day < 15)  # Nisan < 15
+                    )
+
             is_ten_beracha = not is_tal_umatar
 
-            # Holiday context
+            # ---------- Holiday context ----------
             st_hol = self.hass.states.get(HOLIDAY_SENSOR)
-            hol = st_hol.attributes if st_hol else {}
-            
+            hol = st_hol.attributes if st_hol and getattr(st_hol, "attributes", None) else {}
+
             # ---------- יעלה ויבוא ----------
-            # Strict booleans from holiday attributes (ignore strings like "אסרו חג סוכות")
-            is_yomtov = any(_as_true(hol.get(k)) for k in YOMTOV_ATTR_KEYS)
-            
+            is_yomtov = any(_as_true(hol.get(k)) for k in yomtov_keys)
+            is_hallel_shalem = any(_as_true(hol.get(k)) for k in full_hallel_keys)
+            is_hallel_half = (not is_hallel_shalem) and any(
+                _as_true(hol.get(k)) for k in half_hallel_keys
+            )
+            is_hallel = is_hallel_shalem or is_hallel_half
+
             # Chol HaMoed — require True values and match key names
             has_chm = any(
                 re.search(r"חול.?המועד", k) and _as_true(v)
                 for k, v in hol.items()
             )
-            
-            # Chanukah does NOT trigger YVY (kept for Al HaNissim elsewhere)
+
+            # Chanukah does NOT trigger YVY
             is_chanukah = _as_true(hol.get("חנוכה"))
-            
-            # Rosh Chodesh (exclude Tishrei to avoid R"H via RC branch; R"H is covered by Yom Tov anyway)
-            is_rh = (hd.month == 7 and hd.day in (1, 2))  # or: _as_true(hol.get("ראש השנה"))
+
+            # Rosh Chodesh (exclude R"H)
+            is_rh = (hd.month == 7 and hd.day in (1, 2))
             is_rc = (day in (1, 30)) and not is_rh
-            
-            # Final rule: ALL of these use a full halachic night→night window
+
             yaaleh_day = (is_rc or is_yomtov or has_chm) and night_inclusive_window
-            is_yaaleh_veyavo = bool(yaaleh_day)
+            is_yaaleh_veyavo = bool(yaaleh_day) and not is_chanukah
 
             # ---------- אתה יצרת ----------
             is_atah_yatzarta = (
-                is_rc and now.weekday() == 5 and sunrise - timedelta(minutes=72) <= now < sunset
+                is_rc
+                and now.weekday() == 5
+                and dawn <= now < sunset
             )
 
             # ---------- על הניסים ----------
@@ -351,7 +468,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             # ---------- Fast days ----------
             is_tisha_bav = hd.month == 5 and hd.day == 9
             is_minor_fast = any(
-                bool(v)
+                _as_true(v)
                 and ("כיפור" not in k)
                 and (k.startswith("צום") or k.startswith("תענית"))
                 for k, v in hol.items()
@@ -373,6 +490,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             if is_tishrei_sun and 3 <= d_num_sun <= 9:
                 if not (d_num_sun == 3 and now < havdala):
                     is_ayt_toggle = True
+
             if is_ayt_toggle:
                 shabbos_window = (
                     (now.weekday() == 4 and now >= candle_time)
@@ -385,68 +503,43 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                 )
                 ayt_str = " - ".join(ayt_list)
 
-            # ---------- הלל ----------
-            # Full Hallel if ANY full key is true
-            is_hallel_shalem = any(_as_true(hol.get(k)) for k in FULL_HALLEL_ATTR_KEYS)
-            
-            # Half Hallel if ANY half key is true, but never when Full already applies
-            is_hallel_half = (not is_hallel_shalem) and any(
-                _as_true(hol.get(k)) for k in HALF_HALLEL_ATTR_KEYS
-            )
-            
-            # Overall Hallel toggle (either full or half)
-            is_hallel = is_hallel_shalem or is_hallel_half
-
             # ---------- אתה חוננתנו ----------
-            # Motzaei Shabbos only: from havdalah until civil midnight.
-            # (Optional refinement with no_melucha sensor below.)
-            no_melucha = self.hass.states.get(NO_MELOCHA_SENSOR)
-            
-            is_motzaei_shabbos = (now.weekday() == 5) and (now >= havdala)  # Saturday night after havdalah
-            motzash_tog = is_motzaei_shabbos and (now.time() < time(23, 59))
-            
-            # If the no-melacha sensor exists, require that prohibition actually lifted after havdalah
-            # to avoid any edge cases (e.g., manual time changes). Safe no-op if attribute missing.
-            if motzash_tog and no_melucha and getattr(no_melucha, "state", None) == "off":
-                last_changed = getattr(no_melucha, "last_changed", None)
-                if last_changed is not None:
-                    motzash_tog = last_changed >= havdala
+            # Purely local logic: after the rounded havdalah of Shabbos until civil 23:59
+            motzash_tog = False
+            if now.weekday() == 5 and now.time() < time(23, 59):
+                if now >= havdala:
+                    motzash_tog = True
 
-            # ---------- Hoshanos (always populate future mapping) ----------
-            # Civil-date Hebrew (no halachic rollover) for choosing reference year
-            hd_civil = PHebrewDate.from_pydate(today)
-
-            # Reference year rule (Chutz La'Aretz):
-            # After Simchas Torah (23 Tishrei) at havdalah → next year.
-            # If month > Tishrei OR day > 23 in Tishrei, we’re past Sukkos → next year.
-            # If exactly 23 Tishrei, roll after havdalah.
-            ref_year = hd_civil.year
+            # ---------- Hoshanos ----------
+            hd_ref = PHebrewDate.from_pydate(today)
+            ref_year = hd_ref.year
+            boundary = 23 if self._diaspora else 22
             if (
-                hd_civil.month > 7  # Cheshvan..Elul
-                or (hd_civil.month == 7 and hd_civil.day > 23)  # 24+ Tishrei
-                or (hd_civil.month == 7 and hd_civil.day == 23 and now >= havdala)  # motzaei 23
+                hd_ref.month > 7
+                or (hd_ref.month == 7 and hd_ref.day > boundary)
+                or (hd_ref.month == 7 and hd_ref.day == boundary and now >= havdala)
             ):
-                ref_year = hd_civil.year + 1
+                ref_year = hd_ref.year + 1
 
             seq = _year_hoshanos_sequence(ref_year)
 
-            # Today's specific Hoshana only during 15–20 Tishrei (civil-day window)
-            hosh_today = (
-                seq[hd_civil.day - 15]
-                if (hd_civil.month == 7 and 15 <= hd_civil.day <= 20 and seq)
-                else ""
-            )
-            is_hoshana_rabba_today = bool(hd_civil.month == 7 and hd_civil.day == 21)
+            # Use HALACHIC day so the Day-1 Hoshana appears right after tzeis
+            hd_hosh = hd
+            if seq and hd_hosh.month == 7 and 15 <= hd_hosh.day <= 20:
+                hosh_today = seq[hd_hosh.day - 15]
+                is_hoshana_rabba_today = False
+            else:
+                hosh_today = ""
+                is_hoshana_rabba_today = (hd_hosh.month == 7 and hd_hosh.day == 21)
 
             per_day = {
                 label: seq[i - 1]
-                for i, label in enumerate(HOSH_DAY_LABELS, start=1)
+                for i, label in enumerate(hosh_labels, start=1)
                 if seq and i <= len(seq)
             }
 
             # ---------- attributes ----------
             attrs: dict[str, object] = {}
-            # Requested rename: show the reference year under "הושענות פאר יאר"
             attrs["הושענות פאר יאר"] = _format_hebrew_year(ref_year)
             attrs["הושענות היום"] = hosh_today
             attrs.update(per_day)
@@ -459,7 +552,6 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             attrs["ותן ברכה"] = is_ten_beracha
             attrs["יעלה ויבוא"] = is_yaaleh_veyavo
             attrs["אתה יצרת"] = is_atah_yatzarta
-            # More detailed Al HaNissim flags with correct spelling
             attrs["על הניסים"] = is_al_hanissim
             attrs["על הניסים - בימי מרדכי"] = is_purim
             attrs["על הניסים - בימי מתתיהו"] = is_chanukah_holiday
@@ -469,19 +561,16 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             attrs["הלל השלם"] = is_hallel_shalem
             attrs["אתה חוננתנו"] = motzash_tog
 
-
-
             self._attr_extra_state_attributes = attrs
 
             # ---------- state ----------
-            parts = []
+            parts: list[str] = []
             parts.append("מוריד הגשם" if is_morid_geshem else "מוריד הטל")
             parts.append("טל ומטר" if is_tal_umatar else "ותן ברכה")
             if is_yaaleh_veyavo:
                 parts.append("יעלה ויבוא")
             if is_atah_yatzarta:
                 parts.append("אתה יצרת")
-            # Show detailed Al HaNissim text with corrected spelling
             if is_chanukah_holiday:
                 parts.append("על הניסים - בימי מתתיהו")
             elif is_purim:
@@ -499,5 +588,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             return self._state
 
         except Exception as exc:
+            # In case of any bug, expose it as an attribute instead of killing the entity
             self._attr_extra_state_attributes = {"error": repr(exc)}
+            self._state = ""
             return ""
