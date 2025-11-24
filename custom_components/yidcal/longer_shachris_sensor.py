@@ -101,8 +101,16 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         # Chanukah: 25–30 Kislev + 1–2 Tevet
         is_chanukah = (m == 9 and 25 <= day <= 30) or (m == 10 and day in (1, 2))
 
-        # Chol Hamoed
-        is_chm = (m == 1 and day in (17, 18, 19, 20)) or (m == 7 and day in (17, 18, 19, 20))
+        # Chol Hamoed (diaspora/EY differ, and we include הושענא רבה)
+        if self._diaspora:
+            # Pesach: 17–20  | Sukkos: 17–21 (includes הושענא רבה)
+            is_chm_pesach = (m == 1 and 17 <= day <= 20)
+            is_chm_sukkos = (m == 7 and 17 <= day <= 21)
+        else:
+            # Pesach: 16–20  | Sukkos: 16–21 (includes הושענא רבה)
+            is_chm_pesach = (m == 1 and 16 <= day <= 20)
+            is_chm_sukkos = (m == 7 and 16 <= day <= 21)
+        is_chm = is_chm_pesach or is_chm_sukkos
 
         # Purim (Adar II in leap years)
         is_purim = (m == (13 if is_leap else 12) and day == 14)
@@ -164,8 +172,10 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
                 "Window_Start": window_start.isoformat(),
                 "Window_End": window_end.isoformat(),
                 "Activation_Logic": (
-                    "ON from 4 AM–2 PM local on: Rosh Chodesh, Chanukah, Tisha B'Av (incl. nidcheh), "
-                    "Chol Hamoed (Pesach/Sukkos), Purim. OFF on Shabbos or Yom Tov even if these occur."
+                    "ON 4:00–14:00 local on: Rosh Chodesh (except 1 Tishrei), Chanukah, "
+                    "Tisha B'Av (incl. nidcheh), Chol Hamoed (Pesach/Sukkos; includes הושענא רבה; "
+                    "ranges honor your Diaspora/Israel setting), and Purim. "
+                    "Always OFF on Shabbos or Yom Tov."
                 ),
             }
         else:
@@ -174,7 +184,9 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
                 "Window_Start": "",
                 "Window_End": "",
                 "Activation_Logic": (
-                    "ON from 4 AM–2 PM local on: Rosh Chodesh, Chanukah, Tisha B'Av (incl. nidcheh), "
-                    "Chol Hamoed (Pesach/Sukkos), Purim. OFF on Shabbos or Yom Tov even if these occur."
+                    "ON 4:00–14:00 local on: Rosh Chodesh (except 1 Tishrei), Chanukah, "
+                    "Tisha B'Av (incl. nidcheh), Chol Hamoed (Pesach/Sukkos; includes הושענא רבה; "
+                    "ranges honor your Diaspora/Israel setting), and Purim. "
+                    "Always OFF on Shabbos or Yom Tov."
                 ),
             }
