@@ -145,10 +145,7 @@ class SofZmanAchilasChumetzSensor(_BaseChumetzSensor):
         
         # 3. build your human‐readable string
         local = target.astimezone(self._tz)
-        hour   = local.hour % 12 or 12
-        minute = local.minute
-        ampm   = "AM" if local.hour < 12 else "PM"
-        human  = f"{hour}:{minute:02d} {ampm}"
+        human = self._format_simple_time(local)
 
         # 4. merge it into the existing attributes
         attrs = {**(self._attr_extra_state_attributes or {})}
@@ -178,10 +175,7 @@ class SofZmanSriefesChumetzSensor(_BaseChumetzSensor):
 
         # 3. build your human‐readable string
         local = target.astimezone(self._tz)
-        hour   = local.hour % 12 or 12
-        minute = local.minute
-        ampm   = "AM" if local.hour < 12 else "PM"
-        human  = f"{hour}:{minute:02d} {ampm}"
+        human = self._format_simple_time(local)
 
         # 4. merge it into the existing attributes
         attrs = {**(self._attr_extra_state_attributes or {})}
