@@ -2,9 +2,9 @@
 from __future__ import annotations
 from datetime import date, timedelta
 from .device import YidCalDevice
+from .const import DOMAIN
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.event import async_track_time_interval
 from pyluach import dates, parshios
 
 from datetime import timedelta as _timedelta  # to distinguish from pyluach.timedelta
@@ -25,6 +25,10 @@ class ParshaSensor(YidCalDevice, SensorEntity):
         self.hass = hass
         self._state: str | None = None
         self._last_calculated_date: date | None = None
+        # Respect integration setting (default diaspora=True if missing)
+        cfg = getattr(hass.data.get(DOMAIN, {}), "get", lambda *_: {})("config") if hasattr(hass.data.get(DOMAIN, {}), "get") else hass.data.get(DOMAIN, {}).get("config", {})
+        self._diaspora: bool = (cfg.get("diaspora", True) if isinstance(cfg, dict) else True)
+        self._attr_extra_state_attributes = {}
 
     async def async_added_to_hass(self) -> None:
         """Called when Home Assistant has fully started this entity."""
@@ -65,14 +69,22 @@ class ParshaSensor(YidCalDevice, SensorEntity):
 
         # Use pyluach to get that week's Parsha
         greg = dates.GregorianDate(shabbat.year, shabbat.month, shabbat.day)
-        parsha_indices = parshios.getparsha(greg)
+        # pyluach uses israel=True/False (inverse of diaspora)
+        parsha_indices = parshios.getparsha(greg, israel=not self._diaspora)
 
         if parsha_indices:
-            heb = parshios.getparsha_string(greg, hebrew=True)
-            combined = heb.replace(", ", "-")
-            self._state = f"פרשת {combined}"
+            heb = parshios.getparsha_string(greg, israel=not self._diaspora, hebrew=True) or ""
+            # Join double parshiyos with a hyphen for your card formatting
+            combined = heb.replace(", ", "-").strip()
+            self._state = f"פרשת {combined}" if combined else ""
         else:
             self._state = ""
+
+        # A couple of helpful attributes
+        self._attr_extra_state_attributes = {
+            "Next_Shabbos_Date": shabbat.isoformat(),
+            "Diaspora": self._diaspora,
+        }
 
         # Write to Home Assistant
         self.async_write_ha_state()
