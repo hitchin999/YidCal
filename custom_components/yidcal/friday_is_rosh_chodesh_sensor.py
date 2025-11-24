@@ -5,8 +5,6 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import homeassistant.util.dt as dt_util
-from astral import LocationInfo
-from astral.sun import sun
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
@@ -121,8 +119,8 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
     def _alos(self, d: date) -> datetime:
         """
-        Try to get Alos via zmanim calendar.
-        Fallback to astral dawn or sunrise-72 if needed.
+        Get Alos via zmanim calendar.
+        Fallback to sunrise-72 via zmanim (no Astral).
         """
         cal = ZmanimCalendar(geo_location=self._geo, date=d)
 
@@ -135,20 +133,9 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
                 except Exception:
                     pass
 
-        # Fallback: Astral dawn / sunrise-72
-        loc = LocationInfo(
-            name="home",
-            region="",
-            timezone=self.hass.config.time_zone,
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-        )
-        solar = sun(loc.observer, date=d, tzinfo=self._tz)
-        dawn = solar.get("dawn")
-        if dawn is not None:
-            return dawn.astimezone(self._tz)
-
-        return solar["sunrise"].astimezone(self._tz) - timedelta(minutes=72)
+        # Fallback: zmanim sunrise - 72
+        sunrise = cal.sunrise().astimezone(self._tz)
+        return sunrise - timedelta(minutes=72)
 
     def _get_upcoming_rosh_chodesh_gdays(
         self, today: date
@@ -266,9 +253,6 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         self._attr_extra_state_attributes.update(
             {
-                #"Upcoming_Rosh_Chodesh_GDays": [d.isoformat() for d in rc_gdays],
-                #"Upcoming_Rosh_Chodesh_Month_Num": rc_month,
-
                 "Window_Start": window_start.isoformat() if window_start else "",
                 "Window_End": window_end.isoformat() if window_end else "",
 
