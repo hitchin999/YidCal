@@ -8,6 +8,7 @@ import homeassistant.util.dt as dt_util
 from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_state_change_event
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
@@ -65,10 +66,8 @@ def _normal_5_block_labels() -> list[str]:
         labels.append(_label(s, e))
     return labels
 
-
 def _labels_from_ranges(ranges: Iterable[tuple[int, int]]) -> list[str]:
     return [_label(s, e) for (s, e) in ranges]
-
 
 # Precompute label sets
 NORMAL_LABELS = _normal_5_block_labels()
@@ -112,7 +111,14 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
             hass, self._handle_midnight, hour=0, minute=0, second=1
         )
 
-    async def _handle_midnight(self, now):
+        async_track_state_change_event(
+            hass, "binary_sensor.yidcal_no_melucha", self._handle_midnight
+        )
+        async_track_state_change_event(
+            hass, "sensor.yidcal_holiday", self._handle_midnight
+        )
+
+    async def _handle_midnight(self, *_):
         self.async_schedule_update_ha_state(True)
 
     @property
@@ -174,6 +180,43 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
             return False
 
         return True
+        
+    def _is_pupa_extra_skip(self, d: date) -> bool:
+        """Skips independent of melacha (no Shabbos/Yom Tov here)."""
+        hd = PHebrewDate.from_pydate(d)
+
+        # Hoshana Rabba
+        if hd.month == 7 and hd.day == 21:
+            return True
+
+        # Rosh Chodesh (exclude RH 1 Tishrei)
+        if (hd.day in (1, 30)) and not (hd.month == 7 and hd.day == 1):
+            return True
+
+        # Chol HaMoed Sukkos/Pesach
+        if (hd.month == 7 and 17 <= hd.day <= 20) or (hd.month == 1 and 17 <= hd.day == 20):
+            return True
+
+        # Isru Chag
+        if (hd.month, hd.day) in [(1, 23), (3, 8), (7, 24)]:
+            return True
+
+        # Chanukah
+        if (hd.month == 9 and 25 <= hd.day <= 30) or (hd.month == 10 and hd.day in (1, 2)):
+            return True
+
+        # Purim / Shushan Purim
+        if hd.month in (12, 13) and hd.day in (14, 15):
+            return True
+
+        # Erev Sukkos / Erev Pesach (+ מוקדם if 14 Nisan is Shabbos)
+        if (hd.month == 7 and hd.day == 14) or (hd.month == 1 and hd.day == 14):
+            return True
+        nisan14 = PHebrewDate(hd.year, 1, 14).to_pydate()
+        if nisan14.weekday() == 5 and hd.month == 1 and hd.day == 13:
+            return True
+
+        return False
 
     def _first_permitted_on_or_after(self, start: date) -> date:
         d = start
@@ -233,7 +276,14 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
         today = dt_util.now().date()
         hd_today = PHebrewDate.from_pydate(today)
 
-        is_skip_today = not self._is_permitted_date(today)
+        is_skip_today = self.hass.states.is_state("binary_sensor.yidcal_no_melucha", "on")
+        hol = self.hass.states.get("sensor.yidcal_holiday")
+        if hol and hol.attributes.get("hoshana_raba", False):
+            is_skip_today = True
+    
+        # Only apply Pupa extras that are independent of melacha
+        if not is_skip_today and self._is_pupa_extra_skip(today):
+            is_skip_today = True
 
         in_elul = (hd_today.month == 6)
         in_ayt = (hd_today.month == 7 and 3 <= hd_today.day <= 9)
