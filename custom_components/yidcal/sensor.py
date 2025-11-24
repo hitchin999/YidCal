@@ -31,7 +31,7 @@ from .yidcal_lib.sfirah_helper import SfirahHelper
 from .sfirah_sensor import SefirahCounter, SefirahCounterMiddos
 from .special_shabbos_sensor import SpecialShabbosSensor
 from .parsha_sensor import ParshaSensor
-from .date_sensor import DateSensor
+from .date_sensor import DateSensor, ChodeshSensor, YomLChodeshSensor
 from .perek_avot_sensor import PerekAvotSensor
 from .holiday_sensor import HolidaySensor
 from .full_display_sensor import FullDisplaySensor
@@ -60,6 +60,8 @@ from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
 from .zman_tzeis import ZmanTziesSensor
 from .upcoming_holiday_sensor import UpcomingHolidaySensor
+from .fast_timer_sensors import FastStartCountdownSensor, FastEndCountdownSensor
+from .friday_is_rosh_chodesh_sensor import FridayIsRoshChodeshSensor
 from .yurtzeit_sensor import (
     YurtzeitSensor,
     YurtzeitWeeklySensor,
@@ -69,7 +71,13 @@ from .zman_chumetz import (
     SofZmanSriefesChumetzSensor,
 )
 from .const import DOMAIN
-from .config_flow import CONF_ENABLE_WEEKLY_YURTZEIT
+from .config_flow import (
+    CONF_ENABLE_WEEKLY_YURTZEIT,
+    CONF_ENABLE_YURTZEIT_DAILY,
+    CONF_YURTZEIT_DATABASES,
+    CONF_YAHRTZEIT_DATABASE,   # legacy fallback
+    DEFAULT_YAHRTZEIT_DATABASE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,10 +109,38 @@ ENG2HEB = {
     "Adar II": "אדר ב",   # leap year month 13
 }
 
-TIME_OF_DAY = {
-    "am": lambda h: "פארטאגס" if h < 6 else "צופרי" if h < 9 else "פארמיטאג",
-    "pm": lambda h: "נאכמיטאג" if h < 6 else "ביינאכט",
-}
+def _round_half_up(dt: datetime) -> datetime:
+    """Round dt to nearest minute: <30s floor, ≥30s ceil (matches Zman Erev)."""
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
+
+
+def _round_ceil(dt: datetime) -> datetime:
+    """Always bump to the next minute (matches Zman Motzi)."""
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    
+def _molad_time_of_day_jerusalem(jer_dt: datetime, jer_tzeis: datetime) -> str:
+    """
+    Yiddish time-of-day label based on JERUSALEM clock.
+
+    - AM: hour buckets (Jerusalem hour).
+    - PM: 'ביינאכט' only after Jerusalem tzeis; before that is 'נאכמיטאג'.
+    """
+    hour = jer_dt.hour
+
+    # Morning side (Jerusalem)
+    if hour < 12:
+        if hour < 6:
+            return "פארטאגס"
+        if hour < 9:
+            return "אינדערפרי"
+        return "פארמיטאג"
+
+    # PM side (Jerusalem)
+    if jer_dt < jer_tzeis:
+        return "נאכמיטאג"
+    return "ביינאכט"
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -114,12 +150,35 @@ async def async_setup_entry(
     """Set up YidCal and related sensors with user-configurable offsets."""
     yidcal_helper = YidCalHelper(hass.config)
 
-    # Pull user-configured offsets
+    # Pull user-configured offsets/options
     opts = hass.data[DOMAIN][entry.entry_id]
-    candle_offset = opts.get("candlelighting_offset", 15)
+    candle_offset   = opts.get("candlelighting_offset", 15)
     havdalah_offset = opts.get("havdalah_offset", 72)
+
+    # Map config-flow option → integration-wide diaspora flag
+    from .config_flow import CONF_IS_IN_ISRAEL, DEFAULT_IS_IN_ISRAEL
+    is_in_israel = entry.options.get(
+        CONF_IS_IN_ISRAEL,
+        entry.data.get(CONF_IS_IN_ISRAEL, DEFAULT_IS_IN_ISRAEL),
+    )
+    diaspora = not bool(is_in_israel)
+
+    # Upcoming-holiday lookahead
     from .config_flow import CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS
     lookahead_days = opts.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS)
+
+
+    # Don’t overwrite the config prepared in __init__.py; only add missing aliases
+    hass.data.setdefault(DOMAIN, {})
+    cfg = hass.data[DOMAIN].setdefault("config", {})
+    # Keep a single source of truth other sensors can read
+    cfg["candlelighting_offset"] = candle_offset
+    cfg["havdalah_offset"] = havdalah_offset
+    cfg["candle_offset"] = candle_offset
+    cfg["havdalah_offset"] = havdalah_offset
+    cfg["diaspora"] = diaspora
+    cfg["tzname"] = hass.config.time_zone
+
     # Prepare helpers
     sfirah_helper = SfirahHelper(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
@@ -133,6 +192,8 @@ async def async_setup_entry(
         RoshChodeshToday(hass, yidcal_helper, havdalah_offset),
         ParshaSensor(hass),
         DateSensor(hass, havdalah_offset),
+        ChodeshSensor(hass, havdalah_offset),
+        YomLChodeshSensor(hass, havdalah_offset),
         PerekAvotSensor(hass),
         HolidaySensor(hass, candle_offset, havdalah_offset),
         FullDisplaySensor(hass),
@@ -161,10 +222,12 @@ async def async_setup_entry(
         DayLabelHebrewSensor(hass, candle_offset, havdalah_offset),
         SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
-        IshpizinSensor(hass, havdalah_offset),
+        IshpizinSensor(hass, candle_offset, havdalah_offset),
         DayTypeSensor(hass, candle_offset, havdalah_offset),
-        YurtzeitSensor(hass, havdalah_offset,),
         ZmanTziesSensor(hass, havdalah_offset),
+        FastStartCountdownSensor(hass),
+        FastEndCountdownSensor(hass),
+        FridayIsRoshChodeshSensor(hass, yidcal_helper, havdalah_offset),
         UpcomingHolidaySensor(
             hass,
             candle_offset,
@@ -175,8 +238,47 @@ async def async_setup_entry(
         ),
     ]
 
-    if opts.get(CONF_ENABLE_WEEKLY_YURTZEIT, True):
-        sensors.append(YurtzeitWeeklySensor(hass, havdalah_offset,))
+    # ─────────────────────────────────────────────────────────────
+    # Yurtzeit sensors (per database, daily/weekly, legacy-safe)
+    # ─────────────────────────────────────────────────────────────
+    # Determine selected databases (new multi-select or legacy single)
+    databases = (
+        entry.options.get(CONF_YURTZEIT_DATABASES)
+        or entry.data.get(CONF_YURTZEIT_DATABASES)
+    )
+    if not databases:
+        legacy_db = (
+            entry.options.get(CONF_YAHRTZEIT_DATABASE)
+            or entry.data.get(CONF_YAHRTZEIT_DATABASE)
+            or DEFAULT_YAHRTZEIT_DATABASE
+        )
+        databases = [legacy_db]
+
+    enable_daily = entry.options.get(
+        CONF_ENABLE_YURTZEIT_DAILY, entry.data.get(CONF_ENABLE_YURTZEIT_DAILY, True)
+    )
+    enable_weekly = entry.options.get(
+        CONF_ENABLE_WEEKLY_YURTZEIT, entry.data.get(CONF_ENABLE_WEEKLY_YURTZEIT, False)
+    )
+    if enable_daily or enable_weekly:
+        # Always keep legacy IDs for STANDARD, regardless of how many DBs are selected.
+        # Satmar (or any other alt DBs) get suffixed entity_ids/unique_ids.
+        # Ensure we add standard first (nice ordering) if present.
+        ordered_dbs = []
+        if "standard" in databases:
+            ordered_dbs.append("standard")
+        ordered_dbs += [db for db in databases if db != "standard"]
+
+        if enable_daily:
+            for db in ordered_dbs:
+                sensors.append(
+                    YurtzeitSensor(hass, havdalah_offset, database=db, legacy_ids=(db == "standard"))
+                )
+        if enable_weekly:
+            for db in ordered_dbs:
+                sensors.append(
+                    YurtzeitWeeklySensor(hass, havdalah_offset, database=db, legacy_ids=(db == "standard"))
+                )
 
     async_add_entities(sensors, update_before_add=True)
 
@@ -224,6 +326,14 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         tz = ZoneInfo(self.hass.config.time_zone)
         now_local = (now or dt_util.now()).astimezone(tz)
         today = now_local.date()
+        
+        # Local location (for RC nightfall etc.)
+        loc = LocationInfo(
+            latitude=self.hass.config.latitude,
+            longitude=self.hass.config.longitude,
+            timezone=self.hass.config.time_zone,
+        )
+
         jdn = gdate_to_jdn(today)
         heb = HHebrewDate.from_jdn(jdn)
 
@@ -244,12 +354,13 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         # Identify this Shabbos' Friday/Saturday and the window edges, then ask helper
         # if that Saturday is Mevorchim. Only then keep the flag ON for the whole window.
         is_mev_window = False
+        in_shabbos_window = False
         wd = now_local.weekday()  # Mon=0 … Fri=4, Sat=5, Sun=6
         if wd in (4, 5):  # Friday or Saturday
             # Determine the Friday/Saturday pair for *this* Shabbos
             friday = today if wd == 4 else (today - timedelta(days=1))
             saturday = friday + timedelta(days=1)
-
+        
             # Location for sun times
             loc = LocationInfo(
                 latitude=self.hass.config.latitude,
@@ -260,27 +371,25 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
             shabbos_on  = fri_sunset - timedelta(minutes=self._candle_offset)
             shabbos_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
-
+        
             if shabbos_on <= now_local < shabbos_off:
+                in_shabbos_window = True
                 # Ask the helper about THIS Saturday (Gregorian) being Mevorchim
                 is_mevorchim_this_week = self.helper.is_shabbos_mevorchim(saturday)
                 is_mev_window = bool(is_mevorchim_this_week)
-        # "Upcoming" should not be true once Shabbos starts
-        is_upcoming_today = False if is_mev_window else self.helper.is_upcoming_shabbos_mevorchim(today)
+        
+        # Forbid "upcoming" during the full Shabbos window; only compute it outside Shabbos
+        if in_shabbos_window:
+            is_upcoming_today = False
+        else:
+            is_upcoming_today = self.helper.is_upcoming_shabbos_mevorchim(today)
 
         m = details.molad
         h, mi = m.hours, m.minutes
-        tod = TIME_OF_DAY[m.am_or_pm](h)
         chal = m.chalakim
         chal_txt = "חלק" if chal == 1 else "חלקים"
 
-        loc = LocationInfo(
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-            timezone=self.hass.config.time_zone,
-        )
-        
-        # Check if molad time is during motzei Shabbos (after havdalah) till Sunday 4am
+        # Check if molad time is during motzei Shabbos (after havdalah) till Sunday 4am (Israel)
         is_special = False
         jer_tz = ZoneInfo("Asia/Jerusalem")
         jer_loc = LocationInfo(
@@ -289,11 +398,16 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             timezone="Asia/Jerusalem",
         )
         sd = sun(jer_loc.observer, date=m.date, tzinfo=jer_tz)
-        hav_end = sd["sunset"] + timedelta(minutes=self._havdalah_offset)
+        jer_sunset = sd["sunset"]
+        jer_tzeis = jer_sunset + timedelta(minutes=self._havdalah_offset)
+
+        # Dynamic time-of-day label in Jerusalem
+        tod_jer = _molad_time_of_day_jerusalem(m.dt, jer_tzeis)
+
+        hav_end = jer_tzeis  # same boundary you were using, now named
         if m.day == "Shabbos" and m.dt >= hav_end:
             is_special = True
         elif m.day == "Sunday":
-            # before Sunday 4 AM local Jerusalem
             four_am = datetime(
                 m.date.year, m.date.month, m.date.day,
                 4, 0,
@@ -302,13 +416,32 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             if m.dt < four_am:
                 is_special = True
 
-        hh12 = h
-        day_yd = 'מוצש"ק' if is_special else DAY_MAPPING.get(m.day, m.day)
-        tod = TIME_OF_DAY[m.am_or_pm](h)
+        # Friday-night special phrasing (JERUSALEM):
+        # Jerusalem Friday after Jerusalem tzeis → "פרייטאג צונאכטס"
+        friday_night = (
+            not is_special
+            and m.dt.weekday() == 4        # Friday in Jerusalem
+            and m.dt >= jer_tzeis          # after Jerusalem tzeis
+        )
+
+        hh12 = h  # molad hour in Jerusalem
         if is_special:
-            state = f"מולד {day_yd}, {mi} מינוט און {chal} {chal_txt} נאך {hh12}"
+            day_yd = 'מוצש"ק'
+            tod_for_state = ""
+        elif friday_night:
+            day_yd = "פרייטאג"
+            tod_for_state = "צונאכטס"
         else:
-            state = f"מולד {day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {hh12}"
+            day_yd = DAY_MAPPING.get(m.day, m.day)
+            tod_for_state = tod_jer
+
+        chal_phrase = "" if chal == 0 else f" און {chal} {'חלק' if chal == 1 else 'חלקים'}"
+
+        if is_special:
+            state = f"מולד {day_yd}, {mi} מינוט{chal_phrase} נאך {hh12}"
+        else:
+            state = f"מולד {day_yd} {tod_for_state}, {mi} מינוט{chal_phrase} נאך {hh12}"
+
         self._attr_native_value = state
 
         # 2) Rosh Chodesh attributes (unchanged)
@@ -324,25 +457,25 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         rc_days = [DAY_MAPPING.get(d, d) for d in rc.days]
         rc_text = rc_days[0] if len(rc_days) == 1 else " & ".join(rc_days)
 
-        # 3) Compute the molad’s Hebrew‐month via pyluach
+        # 3) Compute the molad’s Hebrew month name using the same rollover rules as helper
         hd = PHebrewDate.from_pydate(today)
         if hd.day < 3:
             target_year, target_month = hd.year, hd.month
         else:
-            try:
-                PHebrewDate(hd.year, hd.month + 1, 1)
-                target_year, target_month = hd.year, hd.month + 1
-            except ValueError:
-                target_year, target_month = hd.year + 1, 1
+            # Use helper’s next-month logic so we don’t mis-bump the year
+            nxt = self.helper.get_next_numeric_month_year(today)
+            target_year, target_month = nxt["year"], nxt["month"]
 
         molad_month_name = PHebrewDate(target_year, target_month, 1).month_name(True)
         
-        # 4) Add Full_Molad attribute
-        original_day_yd = DAY_MAPPING.get(m.day, m.day)
+        # 4) Add Full_Molad attribute (use the same Yiddish phrasing as state)
+        chal_phrase = "" if chal == 0 else f" און {chal} {'חלק' if chal == 1 else 'חלקים'}"
+
         if is_special:
-            molad_part = f"מוצש\"ק, {mi} מינוט און {chal} {chal_txt} נאך {h}"
+            molad_part = f"מוצש\"ק, {mi} מינוט{chal_phrase} נאך {h}"
         else:
-            molad_part = f"{original_day_yd} {tod}, {mi} מינוט און {chal} {chal_txt} נאך {h}"
+            molad_part = f"{day_yd} {tod_for_state}, {mi} מינוט{chal_phrase} נאך {h}"
+
         rc_text_yd = rc_days[0] if len(rc_days) == 1 else " און ".join(rc_days)
         if rc_days:
             full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part} - ראש חודש, {rc_text_yd}"
@@ -353,7 +486,7 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             "Day": day_yd,
             "Hours": h,
             "Minutes": mi,
-            "Time_Of_Day": "" if is_special else tod,
+            "Time_Of_Day": "" if is_special else tod_for_state,
             "Chalakim": chal,
             "Friendly": state,
             # "Rosh_Chodesh_Midnight": rc_mid,
@@ -405,19 +538,21 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
             longitude=self.hass.config.longitude,
             timezone=self.hass.config.time_zone,
         )
-        current = datetime.now(tz)
-        s = sun(loc.observer, date=current.date(), tzinfo=tz)
-        candle = s["sunset"] - timedelta(minutes=self._candle)
-        havdalah = s["sunset"] + timedelta(minutes=self._havdalah)
 
-        # Hebrew date
-        g = pdates.GregorianDate(current.year, current.month, current.day)
-        hdate = g.to_heb()
-        if current >= s["sunset"]:
-            hdate = PHebrewDate(hdate.year, hdate.month, hdate.day) + 1
+        # Use HA clock and align to the minute
+        current = (now or dt_util.now()).astimezone(tz)
 
-        # Shabbos
-        wd = current.weekday()
+        solar = sun(loc.observer, date=current.date(), tzinfo=tz)
+        raw_sunset   = solar["sunset"]
+        raw_candle   = raw_sunset - timedelta(minutes=self._candle)
+        raw_havdalah = raw_sunset + timedelta(minutes=self._havdalah)
+
+        # Match Zman Erev / Motzi rounding
+        candle   = _round_half_up(raw_candle)
+        havdalah = _round_ceil(raw_havdalah)
+
+        # Shabbos detection based on **rounded** window
+        wd = current.weekday()  # Mon=0 … Fri=4, Sat=5, Sun=6
         is_shab = (wd == 4 and current >= candle) or (wd == 5 and current < havdalah)
 
         if is_shab:
@@ -427,25 +562,35 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         elif wd == 5 and current >= havdalah:
             lbl = 'מוצש\"ק'
         else:
-            days = ["זונטאג","מאנטאג","דינסטאג","מיטוואך","דאנערשטאג","פרייטאג","שבת"]
-            idx = {6:0,0:1,1:2,2:3,3:4,4:5,5:6}[wd]
+            days = ["זונטאג", "מאנטאג", "דינסטאג", "מיטוואך", "דאנערשטאג", "פרייטאג", "שבת"]
+            idx = {6: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6}[wd]
             lbl = days[idx]
 
         self._state = lbl
 
     async def async_added_to_hass(self) -> None:
-        """Register initial update and hourly polling via async_track_time_interval."""
+        """Initial update + minute-precision tracking."""
         await super().async_added_to_hass()
 
-        # 1) Initial state calculation
+        # Initial state
         await self.async_update()
 
-        # 2) Poll once every hour on the event loop
-        async_track_time_interval(
+        # Flip at the *rounded* Motzi boundary (sunset + havdalah_offset)
+        self._register_sunset(
             self.hass,
             self.async_update,
-            timedelta(hours=1),
+            offset=timedelta(minutes=self._havdalah),
         )
+
+        # And stay synced every HH:MM:00, same as No-Melucha / Motzi
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
+        )
+
 
 class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Shabbos Mevorchim"
@@ -531,8 +676,12 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
             sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
 
-            on_time = fri_sunset - timedelta(minutes=self._candle_offset)
-            off_time = sat_sunset + timedelta(minutes=self._havdalah_offset)
+            raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
+            raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
+
+            on_time  = _round_half_up(raw_on)
+            off_time = _round_ceil(raw_off)
+
             now_local = (now or datetime.now(tz))
 
             self._attr_is_on = (on_time <= now_local < off_time)
@@ -547,16 +696,16 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
 
 class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Upcoming Shabbos Mevorchim"
-    _attr_unique_id = "yidcal_upcoming_shabbos_mevorchim"
-    _attr_entity_id = "binary_sensor.yidcal_upcoming_shabbos_mevorchim"
 
-    def __init__(self, hass: HomeAssistant, helper: YidCalHelper) -> None:
+    def __init__(self, hass: HomeAssistant, helper: YidCalHelper, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
         slug = "upcoming_shabbos_mevorchim"
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id       = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
+        self._candle_offset = candle_offset
+        self._havdalah_offset = havdalah_offset
         self._attr_is_on = False
         
     async def async_added_to_hass(self) -> None:
@@ -566,34 +715,55 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         await self.async_update()
 
         # 2) Poll every hour
-        async_track_time_interval(
-            self.hass,
-            self.async_update,
-            timedelta(hours=1),
-        )
+        async_track_time_interval(self.hass, self.async_update, timedelta(hours=1))
 
-        # 3) Also re-check at Friday candle-lighting
-        async_track_sunset(
-            self.hass,
-            self.async_update,
-            offset=timedelta(minutes=-self.helper._candle_offset),
-        )
+        # 3) Re-check exactly at Friday candle-lighting and Motzei Shabbos (havdalah offset)
+        async_track_sunset(self.hass, self.async_update, offset=timedelta(minutes=-self._candle_offset))
+        async_track_sunset(self.hass, self.async_update, offset=timedelta(minutes=self._havdalah_offset))
     
     async def async_update(self, now=None) -> None:
         tz = ZoneInfo(self.hass.config.time_zone)
-        today = date.today()
+        now_local = (now or datetime.now(tz))
+        today = now_local.date()
+
+        # Compute this week's Shabbos window
+        wd = today.weekday()  # 0=Mon … 4=Fri, 5=Sat
+        if wd in (4, 5):
+            friday = today if wd == 4 else (today - timedelta(days=1))
+            saturday = friday + timedelta(days=1)
+
+            loc = LocationInfo(
+                latitude=self.hass.config.latitude,
+                longitude=self.hass.config.longitude,
+                timezone=self.hass.config.time_zone,
+            )
+            fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
+            sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
+
+            raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
+            raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
+
+            shabbos_on  = _round_half_up(raw_on)
+            shabbos_off = _round_ceil(raw_off)
+
+            # Force OFF during the entire Shabbos window
+            if shabbos_on <= now_local < shabbos_off:
+                self._attr_is_on = False
+                return
+
+        # Outside Shabbos, compute normally
         flag = self.helper.get_molad(today).is_upcoming_shabbos_mevorchim
 
-        if flag and today.weekday() == 4:
-            # after Friday candle-lighting → go OFF
+        # Also: on Friday after candle-lighting, this must be OFF
+        if wd == 4:
             loc = LocationInfo(
                 latitude=self.hass.config.latitude,
                 longitude=self.hass.config.longitude,
                 timezone=self.hass.config.time_zone,
             )
             sun_today = sun(loc.observer, date=today, tzinfo=tz)
-            candle = sun_today["sunset"] - timedelta(minutes=self.helper._candle_offset)
-            now_local = (now or datetime.now(tz))
+            raw_candle = sun_today["sunset"] - timedelta(minutes=self._candle_offset)
+            candle = _round_half_up(raw_candle)
             if now_local >= candle:
                 flag = False
 
