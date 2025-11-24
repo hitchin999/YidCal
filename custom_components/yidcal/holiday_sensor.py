@@ -532,6 +532,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         tomorrow_cal = ZmanimCalendar(geo_location=self._geo, date=actual_date + timedelta(days=1))
         tomorrow_sunset_raw = tomorrow_cal.sunset().astimezone(tz)
+        
+        # Convenience aliases (raw sunsets)
+        prev_sunset = prev_sunset_raw
+        festival_sunset = festival_sunset_raw
+        next_sunset = next_sunset_raw
+        tomorrow_sunset = tomorrow_sunset_raw
+
         # Align dawn with the festival day for consistent daytime windows
         dawn = cal_fest.sunrise().astimezone(tz) - timedelta(minutes=72)
         # Round dawn as per zman_alos.py
