@@ -5,6 +5,8 @@ import homeassistant.util.dt as dt_util
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from .device import YidCalDevice, YidCalDisplayDevice
+from zmanim.zmanim_calendar import ZmanimCalendar
+from .zman_sensors import get_geo
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -526,32 +528,32 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         self._candle = candle_offset
         self._havdalah = havdalah_offset
         self._state: str | None = None
+        self._geo = None
+        self._tz = ZoneInfo(self.hass.config.time_zone)
 
     @property
     def native_value(self) -> str | None:
         return self._state
 
     async def async_update(self, now=None) -> None:
-        tz = ZoneInfo(self.hass.config.time_zone)
-        loc = LocationInfo(
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-            timezone=self.hass.config.time_zone,
+        if not self._geo:
+            return
+
+        current = (now or dt_util.now()).astimezone(self._tz)
+        today = current.date()
+
+        sunset = (
+            ZmanimCalendar(geo_location=self._geo, date=today)
+            .sunset()
+            .astimezone(self._tz)
         )
 
-        # Use HA clock and align to the minute
-        current = (now or dt_util.now()).astimezone(tz)
+        raw_candle   = sunset - timedelta(minutes=self._candle)
+        raw_havdalah = sunset + timedelta(minutes=self._havdalah)
 
-        solar = sun(loc.observer, date=current.date(), tzinfo=tz)
-        raw_sunset   = solar["sunset"]
-        raw_candle   = raw_sunset - timedelta(minutes=self._candle)
-        raw_havdalah = raw_sunset + timedelta(minutes=self._havdalah)
-
-        # Match Zman Erev / Motzi rounding
         candle   = _round_half_up(raw_candle)
         havdalah = _round_ceil(raw_havdalah)
 
-        # Shabbos detection based on **rounded** window
         wd = current.weekday()  # Mon=0 … Fri=4, Sat=5, Sun=6
         is_shab = (wd == 4 and current >= candle) or (wd == 5 and current < havdalah)
 
@@ -569,20 +571,18 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         self._state = lbl
 
     async def async_added_to_hass(self) -> None:
-        """Initial update + minute-precision tracking."""
         await super().async_added_to_hass()
 
-        # Initial state
+        self._geo = await get_geo(self.hass)
+
         await self.async_update()
 
-        # Flip at the *rounded* Motzi boundary (sunset + havdalah_offset)
         self._register_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=self._havdalah),
         )
 
-        # And stay synced every HH:MM:00, same as No-Melucha / Motzi
         self._register_listener(
             async_track_time_change(
                 self.hass,
@@ -590,7 +590,6 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
                 second=0,
             )
         )
-
 
 class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
     _attr_name = "Shabbos Mevorchim"
@@ -613,48 +612,57 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self._havdalah_offset = havdalah_offset
 
         self._attr_is_on = False
+        self._geo = None
+        self._tz = ZoneInfo(self.hass.config.time_zone)
 
     async def async_added_to_hass(self) -> None:
-        """Register update triggers (hourly + sunset offsets)."""
         await super().async_added_to_hass()
 
-        # 1) Immediate update on startup
+        self._geo = await get_geo(self.hass)
+
         await self.async_update()
 
-        # 2) Hourly refresh (on event loop)
         async_track_time_interval(
             self.hass,
             self.async_update,
             timedelta(hours=1),
         )
 
-        # 3a) Sunset – candle_offset (on event loop)
         async_track_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=-self._candle_offset),
         )
 
-        # 3b) Sunset + havdalah_offset (on event loop)
         async_track_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
         )
 
+        # NEW: keep in lockstep on the minute
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
+        )
+
     async def async_update(self, now: datetime | None = None) -> None:
-        """ON from Fri candle-lighting until Sat havdalah, only for a Mevorchim Shabbos."""
         try:
-            tz = ZoneInfo(self.hass.config.time_zone)
-            today = date.today()
+            if not self._geo:
+                return
+
+            now_local = (now or dt_util.now()).astimezone(self._tz)
+            today = now_local.date()
             wd = today.weekday()  # 0=Mon … 4=Fri, 5=Sat
 
-            # Which Shabbos are we talking about, and is it Mevorchim?
-            if wd == 4:          # Friday → tomorrow is Shabbos
+            if wd == 4:
                 shabbos = today + timedelta(days=1)
                 friday = today
                 saturday = shabbos
-            elif wd == 5:        # Saturday
+            elif wd == 5:
                 shabbos = today
                 friday = today - timedelta(days=1)
                 saturday = today
@@ -662,27 +670,26 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
                 self._attr_is_on = False
                 return
 
-            is_mev = self.helper.is_shabbos_mevorchim(shabbos)
-            if not is_mev:
+            if not self.helper.is_shabbos_mevorchim(shabbos):
                 self._attr_is_on = False
                 return
 
-            # Use Friday for candle-lighting and Saturday for havdalah (bug fix)
-            loc = LocationInfo(
-                latitude=self.hass.config.latitude,
-                longitude=self.hass.config.longitude,
-                timezone=self.hass.config.time_zone,
+            fri_sunset = (
+                ZmanimCalendar(geo_location=self._geo, date=friday)
+                .sunset()
+                .astimezone(self._tz)
             )
-            fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
-            sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
+            sat_sunset = (
+                ZmanimCalendar(geo_location=self._geo, date=saturday)
+                .sunset()
+                .astimezone(self._tz)
+            )
 
             raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
             raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
 
             on_time  = _round_half_up(raw_on)
             off_time = _round_ceil(raw_off)
-
-            now_local = (now or datetime.now(tz))
 
             self._attr_is_on = (on_time <= now_local < off_time)
 
@@ -707,38 +714,53 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
         self._attr_is_on = False
-        
+        self._geo = None
+        self._tz = ZoneInfo(self.hass.config.time_zone)
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
-        # 1) Initial state
+        self._geo = await get_geo(self.hass)
+
         await self.async_update()
 
-        # 2) Poll every hour
         async_track_time_interval(self.hass, self.async_update, timedelta(hours=1))
 
-        # 3) Re-check exactly at Friday candle-lighting and Motzei Shabbos (havdalah offset)
         async_track_sunset(self.hass, self.async_update, offset=timedelta(minutes=-self._candle_offset))
         async_track_sunset(self.hass, self.async_update, offset=timedelta(minutes=self._havdalah_offset))
-    
-    async def async_update(self, now=None) -> None:
-        tz = ZoneInfo(self.hass.config.time_zone)
-        now_local = (now or datetime.now(tz))
-        today = now_local.date()
 
-        # Compute this week's Shabbos window
-        wd = today.weekday()  # 0=Mon … 4=Fri, 5=Sat
+        # NEW: lockstep minute beat
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
+        )
+
+    async def async_update(self, now=None) -> None:
+        if not self._geo:
+            return
+
+        now_local = (now or dt_util.now()).astimezone(self._tz)
+        today = now_local.date()
+        wd = today.weekday()
+
+        # If we're inside Shabbos window, force OFF
         if wd in (4, 5):
             friday = today if wd == 4 else (today - timedelta(days=1))
             saturday = friday + timedelta(days=1)
 
-            loc = LocationInfo(
-                latitude=self.hass.config.latitude,
-                longitude=self.hass.config.longitude,
-                timezone=self.hass.config.time_zone,
+            fri_sunset = (
+                ZmanimCalendar(geo_location=self._geo, date=friday)
+                .sunset()
+                .astimezone(self._tz)
             )
-            fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
-            sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
+            sat_sunset = (
+                ZmanimCalendar(geo_location=self._geo, date=saturday)
+                .sunset()
+                .astimezone(self._tz)
+            )
 
             raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
             raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
@@ -746,24 +768,20 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             shabbos_on  = _round_half_up(raw_on)
             shabbos_off = _round_ceil(raw_off)
 
-            # Force OFF during the entire Shabbos window
             if shabbos_on <= now_local < shabbos_off:
                 self._attr_is_on = False
                 return
 
-        # Outside Shabbos, compute normally
         flag = self.helper.get_molad(today).is_upcoming_shabbos_mevorchim
 
-        # Also: on Friday after candle-lighting, this must be OFF
+        # After candles Friday, must be OFF
         if wd == 4:
-            loc = LocationInfo(
-                latitude=self.hass.config.latitude,
-                longitude=self.hass.config.longitude,
-                timezone=self.hass.config.time_zone,
+            sunset_today = (
+                ZmanimCalendar(geo_location=self._geo, date=today)
+                .sunset()
+                .astimezone(self._tz)
             )
-            sun_today = sun(loc.observer, date=today, tzinfo=tz)
-            raw_candle = sun_today["sunset"] - timedelta(minutes=self._candle_offset)
-            candle = _round_half_up(raw_candle)
+            candle = _round_half_up(sunset_today - timedelta(minutes=self._candle_offset))
             if now_local >= candle:
                 flag = False
 
