@@ -50,7 +50,7 @@ from .zman_krias_shma_gra import SofZmanKriasShmaGRASensor
 from .zman_talis_tefilin import ZmanTalisTefilinSensor
 from .zman_mincha_gedola import MinchaGedolaSensor
 from .zman_mincha_ketana import MinchaKetanaSensor
-from .zman_plag_hamincha import PlagHaMinchaSensor
+from .zman_plag_hamincha_mga import PlagHaMinchaMGASensor
 from .zman_plag_hamincha_gra import PlagHaMinchaGRASensor
 from .zman_shkia import ShkiaSensor
 from .zman_maariv_60 import ZmanMaariv60Sensor
