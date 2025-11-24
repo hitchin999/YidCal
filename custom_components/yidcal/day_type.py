@@ -4,8 +4,6 @@ from datetime import timedelta, time
 from zoneinfo import ZoneInfo
 import logging
 
-from astral import LocationInfo
-from astral.sun import sun
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from hdate import HDateInfo
 
@@ -13,6 +11,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity
+import homeassistant.util.dt as dt_util
+
+from zmanim.zmanim_calendar import ZmanimCalendar
+from .zman_sensors import get_geo
 
 from .device import YidCalDevice
 from .const import DOMAIN
@@ -53,7 +55,6 @@ def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
         dt += timedelta(minutes=1)
     return dt.replace(second=0, microsecond=0)
 
-
 def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
@@ -63,12 +64,9 @@ def _is_yomtov(pydate: datetime.date) -> bool:
         name = PHebrewDate.from_pydate(pydate).festival(
             hebrew=True, include_working_days=False
         )
-        if name:
-            return True
-        return False
+        return bool(name)
     except Exception:
         return False
-
 
 def _is_chol_hamoed(pydate: datetime.date) -> bool:
     """Check if the given date is Chol Hamoed."""
@@ -83,7 +81,6 @@ def _is_chol_hamoed(pydate: datetime.date) -> bool:
     except Exception:
         return False
 
-
 def _is_fast_day(pydate: datetime.date) -> bool:
     """Check if the given date is a fast day."""
     try:
@@ -93,9 +90,7 @@ def _is_fast_day(pydate: datetime.date) -> bool:
         return False
 
 def _attrs_for_state(state: str) -> dict:
-    # Flags first…
     flags = {name: (name == state) for name in POSSIBLE_STATES}
-    # …then "Possible states" last so it shows after the booleans
     return {
         **flags,
         "Possible states": POSSIBLE_STATES,
@@ -115,35 +110,36 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._havdalah_offset = havdalah_offset
         self._attr_native_value = "Any Other Day"
         self._attr_extra_state_attributes = _attrs_for_state(self._attr_native_value)
+
         cfg = hass.data[DOMAIN]["config"]
         self._diaspora = cfg.get("diaspora", True)
-
+        self._geo = None
 
     @property
     def options(self) -> list[str]:
-        """Return list of possible values for Home Assistant automation UI."""
         return POSSIBLE_STATES
 
     @property
     def native_value(self) -> str:
-        """Return the current state value."""
         return self._attr_native_value
 
     def _set_state(self, state: str) -> None:
-        """Atomic state+attributes setter to avoid dropping keys."""
         self._attr_native_value = state
         self._attr_extra_state_attributes = _attrs_for_state(state)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+
+        self._geo = await get_geo(self.hass)
+
         last = await self.async_get_last_state()
         if last and last.state in POSSIBLE_STATES:
             self._set_state(last.state)
         else:
             self._set_state("Any Other Day")
+
         await self.async_update()
 
-        # Evaluate exactly once per minute at HH:MM:00 so it syncs with Zman Erev/Motzi
         self._register_listener(
             async_track_time_change(
                 self.hass,
@@ -182,26 +178,27 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         return False
 
     def _is_minor_fast(self, hd: PHebrewDate) -> bool:
-        return self._check_is_fast(hd) and hd.month != 5  # Excludes Tisha B'Av (Av/5)
+        return self._check_is_fast(hd) and hd.month != 5
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
+        if not self._geo:
+            return
+
         cfg = self.hass.data[DOMAIN]["config"]
         tz = ZoneInfo(cfg["tzname"])
-        now = now or datetime.datetime.now(tz)
-        today = now.date()
+        now_local = (now or dt_util.now()).astimezone(tz)
+        today = now_local.date()
 
-        # Civil sun times for today, then ROUND them
-        loc = LocationInfo(
-            name="home",
-            region="",
-            timezone=cfg["tzname"],
-            latitude=cfg["latitude"],
-            longitude=cfg["longitude"],
-        )
-        solar = sun(loc.observer, date=today, tzinfo=tz)
+        diaspora = cfg.get("diaspora", True)
 
-        raw_dawn = solar["sunrise"] - timedelta(minutes=72)
-        raw_sunset_today = solar["sunset"]
+        def sunset_on(d: datetime.date) -> datetime.datetime:
+            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(tz)
+
+        def sunrise_on(d: datetime.date) -> datetime.datetime:
+            return ZmanimCalendar(geo_location=self._geo, date=d).sunrise().astimezone(tz)
+
+        raw_dawn = sunrise_on(today) - timedelta(minutes=72)
+        raw_sunset_today = sunset_on(today)
         raw_candle_cut = raw_sunset_today - timedelta(minutes=self._candle_offset)
         raw_havdalah_today = raw_sunset_today + timedelta(minutes=self._havdalah_offset)
 
@@ -209,34 +206,22 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         candle_cut = _round_half_up(raw_candle_cut)
         havdalah_today = _round_ceil(raw_havdalah_today)
 
-        # EY/Chutz toggle via HDateInfo
-        diaspora = cfg.get("diaspora", True)
-
         def is_yomtov(pydate: datetime.date) -> bool:
-            """Reliable YT detector (excludes Shabbos and CH”M)."""
             try:
                 return HDateInfo(pydate, diaspora=diaspora).is_yom_tov
             except Exception:
                 return False
 
-        # Effective pydate for current Hebrew day (rounded havdalah)
-        effective_pydate = today if now < havdalah_today else today + timedelta(days=1)
+        effective_pydate = today if now_local < havdalah_today else today + timedelta(days=1)
 
         # --- Shabbos window (nearest current Shabbos), with rounding ---
         shabbos_eve = today
-        while shabbos_eve.weekday() != 4:  # Friday
+        while shabbos_eve.weekday() != 4:
             shabbos_eve -= timedelta(days=1)
         shabbos_day = shabbos_eve + timedelta(days=1)
 
-        shabbos_eve_solar = sun(loc.observer, date=shabbos_eve, tzinfo=tz)
-        shabbos_day_solar = sun(loc.observer, date=shabbos_day, tzinfo=tz)
-
-        raw_shabbos_start = (
-            shabbos_eve_solar["sunset"] - timedelta(minutes=self._candle_offset)
-        )
-        raw_shabbos_end = (
-            shabbos_day_solar["sunset"] + timedelta(minutes=self._havdalah_offset)
-        )
+        raw_shabbos_start = sunset_on(shabbos_eve) - timedelta(minutes=self._candle_offset)
+        raw_shabbos_end = sunset_on(shabbos_day) + timedelta(minutes=self._havdalah_offset)
 
         shabbos_start = _round_half_up(raw_shabbos_start)
         shabbos_end = _round_ceil(raw_shabbos_end)
@@ -248,78 +233,62 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             start_date = fest_dates[0]
             end_date = fest_dates[-1]
 
-            # festival start: eve of first festival day
             eve = start_date - timedelta(days=1)
-            eve_solar = sun(loc.observer, date=eve, tzinfo=tz)
 
-            if eve.weekday() == 5:  # Shabbos → YT starts at Motzi Shabbos (havdalah)
-                raw_fest_start = eve_solar["sunset"] + timedelta(
-                    minutes=self._havdalah_offset
-                )
+            if eve.weekday() == 5:
+                raw_fest_start = sunset_on(eve) + timedelta(minutes=self._havdalah_offset)
                 fest_start = _round_ceil(raw_fest_start)
-            else:  # regular Erev-YT at candles
-                raw_fest_start = eve_solar["sunset"] - timedelta(
-                    minutes=self._candle_offset
-                )
+            else:
+                raw_fest_start = sunset_on(eve) - timedelta(minutes=self._candle_offset)
                 fest_start = _round_half_up(raw_fest_start)
 
-            # festival end: sunset+havdalah of last festival day (rounded)
-            raw_fest_end = sun(
-                loc.observer, date=end_date, tzinfo=tz
-            )["sunset"] + timedelta(minutes=self._havdalah_offset)
+            raw_fest_end = sunset_on(end_date) + timedelta(minutes=self._havdalah_offset)
             fest_end = _round_ceil(raw_fest_end)
 
-            # if within festival window
-            if fest_start <= now < fest_end:
-                if shabbos_start <= now < shabbos_end:
+            if fest_start <= now_local < fest_end:
+                if shabbos_start <= now_local < shabbos_end:
                     if _is_chol_hamoed(shabbos_day):
                         state = "Shabbos & Chol Hamoed"
-                    elif is_yomtov(shabbos_day):   # real overlap: Shabbos day is YT
+                    elif is_yomtov(shabbos_day):
                         state = "Shabbos & Yom Tov"
-                    else:                          # overhang (e.g., RH day 2 → Shabbos)
+                    else:
                         state = "Shabbos"
                 else:
                     state = "Yom Tov"
                 self._set_state(state)
                 return
 
-            # holiday motzi: immediately after fest_end → 2 AM next day
             motzi_start = fest_end
             motzi_end = datetime.datetime.combine(
                 end_date + timedelta(days=1), time(2, 0), tz
             )
-            if motzi_start <= now < motzi_end:
+            if motzi_start <= now_local < motzi_end:
                 if _is_chol_hamoed(effective_pydate):
-                    # Keep Shabbos visible during motzi-YT into Shabbos
                     state = "Chol Hamoed"
-                    if shabbos_start <= now < shabbos_end:
+                    if shabbos_start <= now_local < shabbos_end:
                         state = "Shabbos & Chol Hamoed"
                 else:
-                    # 🔑 Shabbos beats Motzi after YT ends
-                    if shabbos_start <= now < shabbos_end:
+                    if shabbos_start <= now_local < shabbos_end:
                         state = "Shabbos"
                     else:
                         state = "Motzi"
                 self._set_state(state)
                 return
 
-        # --- Standard Motzi: only if yesterday was Yom Tov (rounded start) ---
+        # --- Standard Motzi: only if yesterday was Yom Tov ---
         prev_date = today - timedelta(days=1)
         raw_motzi = is_yomtov(prev_date)
-        prev_solar = sun(loc.observer, date=prev_date, tzinfo=tz)
-        raw_motzi_start = prev_solar["sunset"] + timedelta(
-            minutes=self._havdalah_offset
-        )
+        raw_motzi_start = sunset_on(prev_date) + timedelta(minutes=self._havdalah_offset)
         motzi_start = _round_ceil(raw_motzi_start)
         motzi_end = datetime.datetime.combine(today, time(2, 0), tz)
-        if raw_motzi and motzi_start <= now < motzi_end:
+
+        if raw_motzi and motzi_start <= now_local < motzi_end:
             if _is_chol_hamoed(effective_pydate):
                 state = "Chol Hamoed"
-                if shabbos_start <= now < shabbos_end:
+                if shabbos_start <= now_local < shabbos_end:
                     state = "Shabbos & Chol Hamoed"
             else:
-                # 🔑 Shabbos beats Motzi
-                if shabbos_start <= now < shabbos_end:
+                if shabbos_start <= now_local < shabbos_end:
                     state = "Shabbos"
                 else:
                     state = "Motzi"
@@ -332,7 +301,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         is_shabbos_today = (today.weekday() == 5)
 
         if (
-            dawn <= now < candle_cut
+            dawn <= now_local < candle_cut
             and not is_fast_tomorrow
             and not is_shabbos_today
             and ((today.weekday() == 4 and not is_yomtov(today)) or is_yom_tom)
@@ -341,10 +310,10 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             return
 
         # --- Shabbos on Friday evening or Saturday day ---
-        if shabbos_start <= now < shabbos_end:
+        if shabbos_start <= now_local < shabbos_end:
             if _is_chol_hamoed(shabbos_day):
                 state = "Shabbos & Chol Hamoed"
-            elif is_yomtov(shabbos_day):       # real overlap
+            elif is_yomtov(shabbos_day):
                 state = "Shabbos & Yom Tov"
             else:
                 state = "Shabbos"
@@ -357,37 +326,24 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             return
 
         # --- Fast days ---
-        # Use halachic-day anchor (same rule used above)
-        effective_pydate = today if now < havdalah_today else today + timedelta(days=1)
+        effective_pydate = today if now_local < havdalah_today else today + timedelta(days=1)
         effective_hd = PHebrewDate.from_pydate(effective_pydate)
         is_fast = self._check_is_fast(effective_hd)
 
         if is_fast:
-            # Fast ends at sunset + havdalah of the FAST DAY (rounded)
-            end_solar = sun(loc.observer, date=effective_pydate, tzinfo=tz)
-            raw_end_time = end_solar["sunset"] + timedelta(
-                minutes=self._havdalah_offset
-            )
+            raw_end_time = sunset_on(effective_pydate) + timedelta(minutes=self._havdalah_offset)
             end_time = _round_ceil(raw_end_time)
 
-            # Start threshold:
-            # - Minor fasts: SHOW "Fast Day" only from 02:00 local on the fast day.
-            # - Tisha B'Av (and any non-minor fast): begins at shkiah (sunset) of the previous day.
             if self._is_minor_fast(effective_hd):
                 start_time = datetime.datetime.combine(
                     effective_pydate, time(2, 0), tz
                 )
             else:
-                prev_solar = sun(
-                    loc.observer, date=effective_pydate - timedelta(days=1), tzinfo=tz
-                )
-                raw_start_time = prev_solar["sunset"]
+                raw_start_time = sunset_on(effective_pydate - timedelta(days=1))
                 start_time = _round_half_up(raw_start_time)
 
-            # Decide state within [start_time, end_time)
-            if start_time <= now < end_time:
-                # Never mask Shabbos visuals while inside Shabbos window
-                if shabbos_start <= now < shabbos_end:
+            if start_time <= now_local < end_time:
+                if shabbos_start <= now_local < shabbos_end:
                     if _is_chol_hamoed(shabbos_day):
                         state = "Shabbos & Chol Hamoed"
                     elif is_yomtov(shabbos_day):
@@ -403,9 +359,8 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         motzi_end_shabbos = datetime.datetime.combine(
             shabbos_day + timedelta(days=1), time(2, 0), tz
         )
-        if shabbos_end <= now < motzi_end_shabbos:
+        if shabbos_end <= now_local < motzi_end_shabbos:
             self._set_state("Motzi")
             return
 
-        # --- Default: Any Other Day ---
         self._set_state("Any Other Day")
