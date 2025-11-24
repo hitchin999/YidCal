@@ -46,12 +46,6 @@ class ZmanTziesSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     async def _midnight_update(self, now: datetime) -> None:
         await self.async_update()
 
-    def _format_human(self, dt_local: datetime) -> str:
-        hour = dt_local.hour % 12 or 12
-        minute = dt_local.minute
-        ampm = "AM" if dt_local.hour < 12 else "PM"
-        return f"{hour}:{minute:02d} {ampm}"
-
     def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
         """
         Tzies for base_date = sunset(base_date) + havdalah_offset.
@@ -86,9 +80,9 @@ class ZmanTziesSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         self._attr_native_value = local_today_dt.astimezone(timezone.utc)
 
         # human strings
-        human_today = self._format_human(local_today_dt)
-        human_tom   = self._format_human(local_tom_dt)
-        human_yest  = self._format_human(local_yest_dt)
+        human_today = self._format_simple_time(local_today_dt)
+        human_tom   = self._format_simple_time(local_tom_dt)
+        human_yest  = self._format_simple_time(local_yest_dt)
 
         # attributes (Tomorrow before Yesterday)
         self._attr_extra_state_attributes = {
