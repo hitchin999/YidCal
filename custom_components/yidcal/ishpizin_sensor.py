@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import datetime
 import logging
-from datetime import timedelta
+from datetime import timedelta, date
 from zoneinfo import ZoneInfo
 
-from astral import LocationInfo
-from astral.sun import sun
+import homeassistant.util.dt as dt_util
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
@@ -14,8 +13,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from zmanim.zmanim_calendar import ZmanimCalendar
+
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
+from .zman_sensors import get_geo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,15 +59,23 @@ def _hebrew_day_label(i: int, diaspora: bool) -> str:
             return f"{('א','ב')[i]}׳ דיום טוב"
         if i == 6:
             return "הושענא רבה"
-        # i = 2..5 -> א..ד
         return f"{('א','ב','ג','ד')[i-2]}׳ דחול המועד"
     else:
         if i == 0:
             return "א׳ דיום טוב"
         if i == 6:
             return "הושענא רבה"
-        # i = 1..5 -> א..ה
         return f"{('א','ב','ג','ד','ה')[i-1]}׳ דחול המועד"
+
+def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
+    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
+
+def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
+    """Always bump to the next minute (Motzi-style)."""
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 # ------------------------------- Sensor --------------------------------------
 
@@ -85,7 +95,9 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         self._attr_extra_state_attributes = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
 
         cfg = hass.data[DOMAIN]["config"]
-        self._diaspora: bool = cfg.get("diaspora", True)  # <-- NEW
+        self._diaspora: bool = cfg.get("diaspora", True)
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._geo = None
 
     @property
     def options(self) -> list[str]:
@@ -95,38 +107,40 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     def native_value(self) -> str:
         return self._attr_native_value
 
+    def _sunset_on(self, d: date) -> datetime.datetime:
+        """Zmanim sunset using shared geo."""
+        return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+
+        self._geo = await get_geo(self.hass)
+
         last = await self.async_get_last_state()
         if last and last.state in ISHPIZIN_STATES:
             self._attr_native_value = last.state
             for key in self._attr_extra_state_attributes:
                 if key in last.attributes:
                     self._attr_extra_state_attributes[key] = last.attributes.get(key, False)
+
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
-        tz = ZoneInfo(self.hass.config.time_zone)
-        now = (now or datetime.datetime.now(tz)).astimezone(tz)
-        today = now.date()
-        heb_year_now = PHebrewDate.from_pydate(today).year
+        if not self._geo:
+            return
 
-        loc = LocationInfo(
-            name="home",
-            region="",
-            timezone=self.hass.config.time_zone,
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-        )
+        now_local = (now or dt_util.now()).astimezone(self._tz)
+        today = now_local.date()
+        heb_year_now = PHebrewDate.from_pydate(today).year
 
         # Flip schedule to NEXT YEAR after Motza'ei Simchas Torah:
         #   galus → 23 Tishrei; EY → 22 Tishrei
         st_day = 23 if self._diaspora else 22
         st_gdate = PHebrewDate(heb_year_now, 7, st_day).to_pydate()
-        st_sun = sun(loc.observer, date=st_gdate, tzinfo=tz)
-        motzaei_st = st_sun["sunset"] + timedelta(minutes=self._havdalah_offset)
-        schedule_year = heb_year_now + 1 if now >= motzaei_st else heb_year_now
+        motzaei_st_raw = self._sunset_on(st_gdate) + timedelta(minutes=self._havdalah_offset)
+        motzaei_st = _round_ceil(motzaei_st_raw)
+        schedule_year = heb_year_now + 1 if now_local >= motzaei_st else heb_year_now
 
         attrs: dict[str, object] = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
         lines: list[str] = []
@@ -138,25 +152,30 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             prev_gdate = gdate - timedelta(days=1)
 
             weekday_yi = WEEKDAYS_YI[gdate.weekday()]
-            label = _hebrew_day_label(i, self._diaspora)  # <-- UPDATED
+            label = _hebrew_day_label(i, self._diaspora)
 
             lines.append(f"{weekday_yi} {label}:\nאושפיזא ד{name}.")
 
             # Active window for *current* year's state (not the displayed schedule):
-            s_prev = sun(loc.observer, date=prev_gdate, tzinfo=tz)
-            # Night 1 begins at candle-lighting (unless Erev Sukkos is Shabbos → then start at havdalah)
-            if i == 0:
-                if prev_gdate.weekday() == 5:  # Erev Sukkos fell on Shabbos
-                    start = s_prev["sunset"] + timedelta(minutes=self._havdalah_offset)
-                else:
-                    start = s_prev["sunset"] - timedelta(minutes=self._candle_offset)
-            else:
-                # Nights 2–7 start at tzeis
-                start = s_prev["sunset"] + timedelta(minutes=self._havdalah_offset)
-            s_curr = sun(loc.observer, date=gdate, tzinfo=tz)
-            end = s_curr["sunset"] + timedelta(minutes=self._havdalah_offset)
+            prev_sunset = self._sunset_on(prev_gdate)
 
-            if schedule_year == heb_year_now and start <= now < end:
+            if i == 0:
+                # Night 1 begins at candle-lighting (unless Erev Sukkos is Shabbos → start at havdalah)
+                if prev_gdate.weekday() == 5:  # Erev Sukkos fell on Shabbos
+                    start_raw = prev_sunset + timedelta(minutes=self._havdalah_offset)
+                    start = _round_ceil(start_raw)
+                else:
+                    start_raw = prev_sunset - timedelta(minutes=self._candle_offset)
+                    start = _round_half_up(start_raw)
+            else:
+                # Nights 2–7 start at tzeis (havdalah-offset sunset)
+                start_raw = prev_sunset + timedelta(minutes=self._havdalah_offset)
+                start = _round_ceil(start_raw)
+
+            end_raw = self._sunset_on(gdate) + timedelta(minutes=self._havdalah_offset)
+            end = _round_ceil(end_raw)
+
+            if schedule_year == heb_year_now and start <= now_local < end:
                 active_state = f"אושפיזא ד{name}"
                 attrs[active_state] = True
 
