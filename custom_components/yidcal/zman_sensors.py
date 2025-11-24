@@ -26,12 +26,12 @@ from .device import YidCalZmanDevice
 
 # ─── Helper: compute holiday duration via pyluach ───────────────────────────
 
-def get_holiday_duration(pydate: datetime.date) -> int:
+def get_holiday_duration(pydate: datetime.date, *, diaspora: bool) -> int:
     """
     Return the number of consecutive Yom Tov days starting at `pydate`,
     using pyluach to detect the festival name.
     """
-    hd0 = HDateInfo(pydate, diaspora=True)
+    hd0 = HDateInfo(pydate, diaspora=diaspora)
     if not hd0.is_yom_tov:
         return 0  # not a festival
 
@@ -56,19 +56,22 @@ def get_holiday_duration(pydate: datetime.date) -> int:
 
 # ─── Geo helpers ────────────────────────────────────────────────────────────
 
-def _create_geo(config) -> GeoLocation:
+def _create_geo(hass: HomeAssistant) -> GeoLocation:
+    cfg = (hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
+    lat = cfg.get("latitude",  hass.config.latitude)
+    lon = cfg.get("longitude", hass.config.longitude)
+    tz  = cfg.get("tzname",    hass.config.time_zone)
     return GeoLocation(
         name="YidCal",
-        latitude=config["latitude"],
-        longitude=config["longitude"],
-        time_zone=config["tzname"],
+        latitude=lat,
+        longitude=lon,
+        time_zone=tz,
         elevation=0,
     )
 
 async def get_geo(hass: HomeAssistant) -> GeoLocation:
-    config = hass.data[DOMAIN]["config"]
-    return await hass.async_add_executor_job(_create_geo, config)
-
+    # Build from shared config with safe fallbacks to HA’s core config
+    return await hass.async_add_executor_job(_create_geo, hass)
 
 # ─── Lighting helpers for multi-day schedules ───────────────────────────────
 
@@ -150,7 +153,7 @@ def label_for_kind_and_context(d: datetime.date, kind: str, *, diaspora: bool) -
 class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:candelabra-fire"
-    _attr_name = "Zman Erev"
+    _attr_name = "Zman Erev (Candle Lighting)"
     _attr_unique_id = "yidcal_zman_erev"
 
     def __init__(
@@ -195,11 +198,6 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             if dt_local.second >= 30:
                 dt_local += timedelta(minutes=1)
             return dt_local.replace(second=0, microsecond=0)
-
-        def fmt_simple(dt_local: datetime.datetime) -> str:
-            h, m = dt_local.hour % 12 or 12, dt_local.minute
-            ampm = "AM" if dt_local.hour < 12 else "PM"
-            return f"{h}:{m:02d} {ampm}"
 
         cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
         sunset_today = cal_today.sunset().astimezone(self._tz)
@@ -342,7 +340,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             "Latitude": self._geo.latitude,
             "Longitude": self._geo.longitude,
             "Zman_Erev_With_Seconds": (chosen_unrounded or chosen).astimezone(self._tz).isoformat(),
-            "Zman_Erev_Simple": fmt_simple(chosen.astimezone(self._tz)),
+            "Zman_Erev_Simple": self._format_simple_time(chosen.astimezone(self._tz)),
         }
 
         # Build events list for [today-2 .. today+7]
@@ -452,7 +450,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                     attrs[f"Day_{idx}_Label"]  = label
                     #attrs[f"Day_{idx}_Date"] = (ev_unrounded_local + timedelta(days=1)).date().isoformat()
                     #attrs[f"Day_{idx}_With_Seconds"] = ev_unrounded_local.isoformat()
-                    attrs[f"Day_{idx}_Simple"] = fmt_simple(ev_rounded_local)
+                    attrs[f"Day_{idx}_Simple"] = self._format_simple_time(ev_rounded_local)
                     
         # ---- Next/Last Zman Erev (first-night only; ignores Day_1/2/3) ----
         ref_dt = (chosen_unrounded or chosen)  # current target datetime (aware)
@@ -461,13 +459,13 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         if next_ev is not None:
             nl = next_ev.astimezone(self._tz)
             attrs["Next_Zman_Erev_Date"]   = (nl + timedelta(days=1)).date().isoformat()  # date it ushers in
-            attrs["Next_Zman_Erev_Simple"] = fmt_simple(half_up(nl))
+            attrs["Next_Zman_Erev_Simple"] = self._format_simple_time(half_up(nl))
 
         last_ev = _last_erev_before_sunset_before(ref_dt)
         if last_ev is not None:
             ll = last_ev.astimezone(self._tz)
             attrs["Last_Zman_Erev_Date"]   = (ll + timedelta(days=1)).date().isoformat()  # date it ushered in
-            attrs["Last_Zman_Erev_Simple"] = fmt_simple(half_up(ll))
+            attrs["Last_Zman_Erev_Simple"] = self._format_simple_time(half_up(ll))
 
         self._attr_extra_state_attributes = attrs
 
@@ -477,7 +475,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:liquor"
-    _attr_name = "Zman Motzi"
+    _attr_name = "Zman Motzi (Havdalah)"
     _attr_unique_id = "yidcal_zman_motzi"
 
     def __init__(
@@ -539,33 +537,8 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         def ceil_minute(dt_local: datetime.datetime) -> datetime.datetime:
             return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-        def fmt_simple(dt_local: datetime.datetime) -> str:
-            h, m = dt_local.hour % 12 or 12, dt_local.minute
-            ampm = "AM" if dt_local.hour < 12 else "PM"
-            return f"{h}:{m:02d} {ampm}"
-
         def sunset_on(d: datetime.date) -> datetime.datetime:
             return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
-            
-        # Helper: nearest earlier Motzi (Shabbos havdalah or YT-span end) before a reference datetime
-        def _last_motzi_before(ref_dt: datetime.datetime) -> datetime.datetime | None:
-            best: datetime.datetime | None = None
-            for i in range(1, 30):  # look back up to ~1 month
-                d = ref_dt.date() - timedelta(days=i)
-
-                # Shabbos cand
-                if d.weekday() == 5:
-                    cand = sunset_on(d) + timedelta(minutes=self._havdalah)
-                    if cand < ref_dt and (best is None or cand > best):
-                        best = cand
-
-                # YT span end cand (first YT day → walk to end)
-                if HDateInfo(d, diaspora=self._diaspora).is_yom_tov and not HDateInfo(d - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                    span_end = self._yt_span_end(d)  # handles SA→ST in diaspora
-                    end_dt = sunset_on(span_end) + timedelta(minutes=self._havdalah)
-                    if end_dt < ref_dt and (best is None or end_dt > best):
-                        best = end_dt
-            return best
             
         # Helper: nearest earlier Motzi (Shabbos havdalah or YT-span end) before a reference datetime
         def _last_motzi_before(ref_dt: datetime.datetime) -> datetime.datetime | None:
@@ -645,7 +618,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             last_dt = _last_motzi_before(ref_dt)
 
             lt = target.astimezone(self._tz)
-            human = fmt_simple(lt)
+            human = self._format_simple_time(lt)
             self._attr_extra_state_attributes = {
                 "Zman_Motzi_With_Seconds": full_iso,
                 "Zman_Motzi_Simple": human,
@@ -653,9 +626,9 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 "Latitude": self._geo.latitude,
                 "Longitude": self._geo.longitude,
                 "Next_Zman_Motzi_Date": (next_dt + timedelta(days=1)).date().isoformat(),
-                "Next_Zman_Motzi_Simple": fmt_simple(ceil_minute(next_dt).astimezone(self._tz)),
+                "Next_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(next_dt).astimezone(self._tz)),
                 "Last_Zman_Motzi_Date": (last_dt + timedelta(days=1)).date().isoformat() if last_dt else "",
-                "Last_Zman_Motzi_Simple": fmt_simple(ceil_minute(last_dt).astimezone(self._tz)) if last_dt else "",
+                "Last_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(last_dt).astimezone(self._tz)) if last_dt else "",
             }
             return
 
@@ -722,7 +695,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         self._attr_native_value = target.astimezone(timezone.utc)
 
         lt = target.astimezone(self._tz)
-        human = fmt_simple(lt)
+        human = self._format_simple_time(lt)
 
         # --------- also compute the NEXT after the chosen ----------
         ref_dt = chosen_unrounded
@@ -767,7 +740,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             "Latitude": self._geo.latitude,
             "Longitude": self._geo.longitude,
             "Next_Zman_Motzi_Date": (next_dt + timedelta(days=1)).date().isoformat(),
-            "Next_Zman_Motzi_Simple": fmt_simple(ceil_minute(next_dt).astimezone(self._tz)),
+            "Next_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(next_dt).astimezone(self._tz)),
             "Last_Zman_Motzi_Date": (last_dt + timedelta(days=1)).date().isoformat() if last_dt else "",
-            "Last_Zman_Motzi_Simple": fmt_simple(ceil_minute(last_dt).astimezone(self._tz)) if last_dt else "",
+            "Last_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(last_dt).astimezone(self._tz)) if last_dt else "",
         }
