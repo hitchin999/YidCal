@@ -14,6 +14,7 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from ..const import DOMAIN
+from ..zman_sensors import get_geo  # <-- reuse your async geo builder
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -129,14 +130,13 @@ def _round_ceil(dt: datetime) -> datetime:
     """Always bump to next minute (matches Motzi-style boundaries)."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-
 class SfirahHelper:
     """
     Compute Omer count and corresponding Hebrew texts based on Hebrew date
     and sunset + user-defined Havdalah offset.
     """
 
-    def __init__(self, hass: HomeAssistant, havdalah_offset: int):
+    def __init__(self, hass: HomeAssistant, havdalah_offset: int) -> None:
         self.hass = hass
 
         # Start with HA's configured coords/tz
@@ -144,7 +144,7 @@ class SfirahHelper:
         self.longitude = hass.config.longitude
         self.time_zone = hass.config.time_zone
 
-        # Prefer YidCal's normalized coords/tz (set in __init__.py after geocoding)
+        # Prefer YidCal's normalized coords/tz
         try:
             yidcal_cfg = hass.data.get(DOMAIN, {}).get("config", {}) or {}
             self.latitude = yidcal_cfg.get("latitude", self.latitude)
@@ -156,58 +156,54 @@ class SfirahHelper:
         self._havdalah_offset = havdalah_offset
         self._tz = ZoneInfo(self.time_zone)
 
-        # Build a Zmanim GeoLocation once (same as other zman sensors)
-        self._geo = GeoLocation(
-            name="YidCal",
-            latitude=self.latitude,
-            longitude=self.longitude,
-            time_zone=self.time_zone,
-            elevation=0,
-        )
+        # IMPORTANT: do NOT construct GeoLocation here (blocking open)
+        self._geo: GeoLocation | None = None
+
+    @classmethod
+    async def async_create(cls, hass: HomeAssistant, havdalah_offset: int) -> "SfirahHelper":
+        """HA-safe async factory that builds GeoLocation off the event loop."""
+        self = cls(hass, havdalah_offset)
+        self._geo = await get_geo(hass)  # built in executor already in your codebase
+        return self
+
+    def _ensure_geo(self) -> None:
+        """Defensive fallback if someone creates without async_create()."""
+        if self._geo is None:
+            # no blocking I/O here; just fail loud so you notice in dev
+            raise RuntimeError("SfirahHelper._geo not initialized. Use SfirahHelper.async_create().")
 
     def _get_threshold(self, for_date: date) -> datetime:
-        """Return the datetime of sunset + user-defined offset for the given date."""
+        """Return sunset + user-defined offset for that date (rounded)."""
+        self._ensure_geo()
         cal = ZmanimCalendar(geo_location=self._geo, date=for_date)
         sunset = cal.sunset().astimezone(self._tz)
 
         raw = sunset + timedelta(minutes=self._havdalah_offset)
-        return _round_ceil(raw)  # ✅ match Motzi/DayType halachic flip
+        return _round_ceil(raw)
 
     def _get_raw_omer_day(self, for_date: date) -> int:
-        """Calculate raw Omer day (1–49) based on the Hebrew date."""
         jdn = gdate_to_jdn(for_date)
         heb = HebrewDate.from_jdn(jdn)
         month_name = str(heb.month)
         day = heb.day
 
-        # Nisan 16–30 → 1–15
         if month_name == "ניסן" and day >= 16:
             return day - 15
-        # Iyar 1–29 → 16–44
         if month_name == "אייר":
             return 15 + day
-        # Sivan 1–5 → 45–49
         if month_name == "סיון" and day <= 5:
             return 44 + day
         return 0
 
     def get_effective_omer_day(self) -> int:
-        """
-        Return the current Omer day (0-49) based on the halachic day
-        (sunset + user-defined Havdalah offset).
-        """
         now = dt_util.now().astimezone(self._tz)
-        threshold = self._get_threshold(now.date())  # today's sunset + offset (rounded)
+        threshold = self._get_threshold(now.date())
 
-        # Civil date that represents the current halachic day:
         ref_date = now.date() if now < threshold else (now.date() + timedelta(days=1))
-
         return max(0, min(self._get_raw_omer_day(ref_date), 49))
 
     def get_sefirah_text(self) -> str:
-        """Return the Hebrew Omer text for the current day."""
         return SEFIRA_TEXTS[self.get_effective_omer_day()]
 
     def get_middos_text(self) -> str:
-        """Return the Hebrew Middot text for the current Omer day."""
         return SEFIRA_MIDDOS[self.get_effective_omer_day()]
