@@ -61,20 +61,23 @@ class BaseSefirahSensor(YidCalDisplayDevice, SensorEntity):
 
         # Minute tick – SAFE callback
         @callback
-        def _on_minute(_now) -> None:
-            # Ask HA to call async_update() on the event loop
+        def _on_minute(_now=None) -> None:   # <-- make optional (harmless)
             self.async_schedule_update_ha_state(True)
 
-        unsub_min = async_track_time_interval(self.hass, _on_minute, timedelta(minutes=1))
+        unsub_min = async_track_time_interval(
+            self.hass, _on_minute, timedelta(minutes=1)
+        )
         self._register_listener(unsub_min)
 
         # Update each day at tzeis = sunset + havdalah_offset – SAFE callback
         @callback
-        def _on_tzeis(_now) -> None:
+        def _on_tzeis(_now=None) -> None:    # <-- FIX: optional arg
             self.async_schedule_update_ha_state(True)
 
         unsub_tzeis = async_track_sunset(
-            self.hass, _on_tzeis, offset=timedelta(minutes=self._havdalah_offset)
+            self.hass,
+            _on_tzeis,
+            offset=timedelta(minutes=self._havdalah_offset),
         )
         self._register_listener(unsub_tzeis)
 
