@@ -16,7 +16,7 @@ from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-class PlagHaMinchaSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
+class PlagHaMinchaMGASensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     """פלג המנחה עפ\"י המג\"א (10.75 שעות זמניות)."""
 
     _attr_device_class  = SensorDeviceClass.TIMESTAMP
