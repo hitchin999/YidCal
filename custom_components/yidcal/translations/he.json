@@ -20,7 +20,7 @@
           "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
-					"time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+          "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
         }
       },
       "yurtzeit": {
@@ -41,7 +41,8 @@
       "init": {
         "menu_options": {
           "general": "הגדרות כלליות",
-          "yurtzeit": "חיישני יארצייט"
+          "yurtzeit": "חיישני יארצייט",
+          "early_shabbos_yt": "שבת / יום טוב מוקדמים"
         }
       },
       "general": {
@@ -56,7 +57,7 @@
           "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
-					"time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+          "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
         }
       },
       "yurtzeit": {
@@ -64,6 +65,55 @@
           "enable_yurtzeit_daily": "הפעלת חיישן יארצייט יומי",
           "enable_weekly_yurtzeit": "הפעלת חיישן יארצייט שבועי",
           "yurtzeit_databases": "באילו מאגרי יארצייטים להשתמש"
+        }
+      },
+      "early_shabbos_yt": {
+        "title": "שבת / יום טוב מוקדמים",
+        "menu_options": {
+          "early_shabbos": "שבת מוקדמת",
+          "early_yomtov": "יום טוב מוקדם"
+        }
+      },
+      "early_shabbos": {
+        "title": "שבת מוקדמת",
+        "data": {
+          "enable_early_shabbos": "הפעלת שבת מוקדמת",
+          "early_shabbos_mode": "אופן חישוב זמן תחילת שבת מוקדמת",
+          "early_shabbos_plag_method": "איזו שיטת פלג המנחה להשתמש",
+          "early_shabbos_fixed_time": "שעת שעון קבועה לשבת מוקדמת",
+          "early_shabbos_apply_rule": "מתי להחיל שבת מוקדמת",
+          "early_shabbos_sunset_after": "רק כאשר שקיעת יום שישי אחרי…"
+        }
+      },
+      "early_yomtov": {
+        "title": "יום טוב מוקדם",
+        "data": {
+          "enable_early_yomtov": "הפעלת יום טוב מוקדם",
+          "early_yomtov_mode": "אופן חישוב זמן תחילת יום טוב מוקדם",
+          "early_yomtov_plag_method": "איזו שיטת פלג המנחה להשתמש",
+          "early_yomtov_fixed_time": "שעת שעון קבועה ליום טוב מוקדם",
+          "early_yomtov_include": "על אילו חגים להחיל יום טוב מוקדם",
+          "early_yomtov_allow_second_days": "לאפשר יום טוב מוקדם גם ביום השני (בחו״ל)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "early_shabbos_override": {
+        "name": "עקיפת שבת מוקדמת",
+        "state": {
+          "auto": "אוטומטי",
+          "force_early": "כפה מוקדם",
+          "force_regular": "כפה רגיל"
+        }
+      },
+      "early_yomtov_override": {
+        "name": "עקיפת יום טוב מוקדם",
+        "state": {
+          "auto": "אוטומטי",
+          "force_early": "כפה מוקדם",
+          "force_regular": "כפה רגיל"
         }
       }
     }
