@@ -245,7 +245,9 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
         self._attr_is_on = bool(src and src.attributes.get(self.attr_name, False))
 
 class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
-    """True from alos ha-shachar until candle-lighting on Erev-Shabbos or any Erev-Yom-Tov."""
+    """True from alos ha-shachar until entry-time on Erev Shabbos or any Erev-Yom-Tov.
+       Entry-time = candle-lighting unless Early Shabbos / Early YT provides an earlier effective start.
+    """
     _attr_name = "Erev"
     _attr_icon = "mdi:weather-sunset-up"
 
@@ -262,7 +264,6 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         cfg_conf = cfg_root.get("config", {}) or {}
         self._diaspora = cfg_conf.get("diaspora", True)
 
-        # timezone + placeholder geo
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg["tzname"])
         self._geo: GeoLocation | None = None
@@ -280,12 +281,9 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         if last:
             self._attr_is_on = (last.state == STATE_ON)
 
-        # load geo once
         self._geo = await get_geo(self.hass)
-        # initial calculation
         await self.async_update()
 
-        # react instantly when melacha/holiday flips
         self._register_listener(
             async_track_state_change_event(
                 self.hass,
@@ -301,7 +299,6 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             )
         )
 
-        # poll exactly on the minute (aligned with rounded thresholds)
         self._register_listener(
             async_track_time_change(
                 self.hass,
@@ -310,11 +307,83 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             )
         )
 
+    # ---------------- Early-start helpers ----------------
+
+    def _get_early_maps(self) -> tuple[dict, dict]:
+        early_state = self.hass.states.get("sensor.yidcal_early_shabbos_yt_start_time")
+        if not early_state:
+            return {}, {}
+
+        attrs = early_state.attributes or {}
+
+        def pick(*names):
+            for n in names:
+                if n in attrs and isinstance(attrs[n], dict):
+                    return attrs[n]
+            return {}
+
+        eff_shabbos = pick(
+            "Effective shabbos start by date",
+            "Effective_Shabbos_Start_By_Date",
+            "effective_shabbos_start_by_date",
+        )
+        eff_yomtov = pick(
+            "Effective yomtov start by date",
+            "Effective_Yomtov_Start_By_Date",
+            "effective_yomtov_start_by_date",
+        )
+        return eff_shabbos or {}, eff_yomtov or {}
+
+    def _parse_early_dt(self, val):
+        if not val:
+            return None
+        try:
+            if isinstance(val, datetime):
+                dt_local = val
+            else:
+                dt_local = datetime.fromisoformat(str(val))
+            if dt_local.tzinfo is None:
+                dt_local = dt_local.replace(tzinfo=self._tz)
+            return dt_local.astimezone(self._tz)
+        except Exception:
+            return None
+
+    def _effective_erev_end(
+        self,
+        erev_date,
+        candle_end_cut: datetime,
+        is_friday: bool,
+        is_erev_holiday: bool,
+        eff_shabbos_map: dict,
+        eff_yomtov_map: dict,
+    ) -> datetime:
+        """Return earliest of candle_end_cut and any applicable early-start cutoffs."""
+        cuts = [candle_end_cut]
+        key = erev_date.isoformat()
+
+        if is_friday:
+            early_val = eff_shabbos_map.get(key)
+            early_dt = self._parse_early_dt(early_val)
+            if early_dt:
+                cuts.append(round_half_up(early_dt))
+
+        if is_erev_holiday:
+            early_val = eff_yomtov_map.get(key)
+            early_dt = self._parse_early_dt(early_val)
+            if early_dt:
+                cuts.append(round_half_up(early_dt))
+
+        return min(cuts)
+
+    # ---------------- Main update ----------------
+
     async def async_update(self, now: datetime | None = None) -> None:
         now = (now or datetime.now(self._tz)).astimezone(self._tz)
         today = now.date()
         if not self._geo:
             return
+
+        eff_shabbos_map, eff_yomtov_map = self._get_early_maps()
 
         # compute raw dawn & candle thresholds
         cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
@@ -324,47 +393,51 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         raw_alos   = sunrise - timedelta(minutes=72)
         raw_candle = sunset  - timedelta(minutes=self._candle)
 
-        # rounded on/off thresholds (same style as Zman Erev)
-        alos   = round_half_up(raw_alos)
-        candle = round_half_up(raw_candle)
+        alos       = round_half_up(raw_alos)
+        candle_cut = round_half_up(raw_candle)
 
         # ── Festival/weekday facts + melacha status ──
-        hd_today    = HDateInfo(today, diaspora=self._diaspora)
-        is_yomtov_today    = hd_today.is_yom_tov
-        hd_tomorrow = HDateInfo(today + timedelta(days=1), diaspora=self._diaspora)
+        hd_today         = HDateInfo(today, diaspora=self._diaspora)
+        is_yomtov_today  = hd_today.is_yom_tov
+        hd_tomorrow      = HDateInfo(today + timedelta(days=1), diaspora=self._diaspora)
         is_yomtov_tomorrow = hd_tomorrow.is_yom_tov
 
         is_friday_civil  = (today.weekday() == 4)
         is_shabbos_civil = (today.weekday() == 5)
 
-        # Melacha-in-effect sensor (flips at havdalah)
-        is_no_melucha  = self.hass.states.is_state("binary_sensor.yidcal_no_melucha", "on")
+        is_no_melucha    = self.hass.states.is_state("binary_sensor.yidcal_no_melucha", "on")
         is_shabbos_today = is_no_melucha and not is_yomtov_today
 
-        # Raw candidates (calendar-only)
         raw_erev_shabbos = is_friday_civil
         raw_erev_holiday = is_yomtov_tomorrow and not is_yomtov_today
 
-        # Current window (Alos..Candle)
-        in_current = (alos <= now < candle)
+        # Effective end of erev window for today (may be early)
+        erev_end_cut = self._effective_erev_end(
+            erev_date=today,
+            candle_end_cut=candle_cut,
+            is_friday=is_friday_civil,
+            is_erev_holiday=raw_erev_holiday and not is_shabbos_civil,
+            eff_shabbos_map=eff_shabbos_map,
+            eff_yomtov_map=eff_yomtov_map,
+        )
 
-        # Type-specific ON conditions (attrs only true when they "need to be")
+        in_current = (alos <= now < erev_end_cut)
+
         is_erev_shabbos = in_current and raw_erev_shabbos and not is_yomtov_today
         is_erev_holiday = in_current and raw_erev_holiday and not is_shabbos_civil
 
-        # Final sensor state
         self._attr_is_on = (is_erev_shabbos or is_erev_holiday)
 
-        # Blocked diagnostics
-        blocked_shabbos = raw_erev_shabbos and is_yomtov_today    # Friday but YT today
-        blocked_holiday = raw_erev_holiday and is_shabbos_civil   # Erev-YT falls on Saturday
+        blocked_shabbos = raw_erev_shabbos and is_yomtov_today
+        blocked_holiday = raw_erev_holiday and is_shabbos_civil
 
-        # --- Next window finder (respect rounded candle time) ---
+        # --- Next window finder (respect effective early end) ---
         next_start = next_end = None
         for i in range(32):
             d = today + timedelta(days=i)
             hd_d  = HDateInfo(d, diaspora=self._diaspora)
             hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+
             is_yt  = hd_d.is_yom_tov
             is_yt1 = hd_d1.is_yom_tov
             is_fri = (d.weekday() == 4)
@@ -372,6 +445,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
             is_erev_shabbos_d     = is_fri and not is_yt
             is_erev_hol_weekday_d = (not is_sat) and (not is_yt) and is_yt1
+
             if not (is_erev_shabbos_d or is_erev_hol_weekday_d):
                 continue
 
@@ -383,17 +457,25 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             raw_end   = sunset_d  - timedelta(minutes=self._candle)
 
             start_cut = round_half_up(raw_start)
-            end_cut   = round_half_up(raw_end)
+            candle_end_cut = round_half_up(raw_end)
 
-            # If today's Erev window has (rounded) candle-time already passed, skip it
-            if d == today and now >= end_cut:
+            eff_end = self._effective_erev_end(
+                erev_date=d,
+                candle_end_cut=candle_end_cut,
+                is_friday=is_erev_shabbos_d or is_fri,
+                is_erev_holiday=is_erev_hol_weekday_d,
+                eff_shabbos_map=eff_shabbos_map,
+                eff_yomtov_map=eff_yomtov_map,
+            )
+
+            if d == today and now >= eff_end:
                 continue
 
             next_start = start_cut
-            next_end   = end_cut
+            next_end   = eff_end
             break
 
-        # --- Eruv Tavshilin (only when the upcoming YT span includes Friday) ---
+        # --- Eruv Tavshilin (align with erev cutoff when it's an Erev YT day) ---
         eruv_tavshilin = False
         if raw_erev_holiday:
             span_start = today + timedelta(days=1)
@@ -407,19 +489,20 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                     for i in range((span_end - span_start).days + 1)
                 )
                 if includes_friday:
-                    shkiah = round_half_up(sunset)
-                    eruv_tavshilin = (alos <= now < shkiah)
+                    eruv_tavshilin = (alos <= now < erev_end_cut)
 
-        # ── Build attributes ──
         attrs: dict[str, str | bool] = {
             "Now": now.isoformat(),
-            "Is_Erev_Shabbos":  is_erev_shabbos,     # true ONLY inside Alos..Candle on valid Fridays
-            "Is_Erev_Holiday":  is_erev_holiday,     # true ONLY inside Alos..Candle on valid Erev-YT weekdays
+            "Is_Erev_Shabbos":  is_erev_shabbos,
+            "Is_Erev_Holiday":  is_erev_holiday,
             "Blocked_Erev_Shabbos": blocked_shabbos,
             "Blocked_Erev_Holiday": blocked_holiday,
             "Is_Yom_Tov_Today":     is_yomtov_today,
-            "Is_Shabbos_Today":     is_shabbos_today,  # flips at Havdalah
+            "Is_Shabbos_Today":     is_shabbos_today,
             "Eruv_Tavshilin":       eruv_tavshilin,
+            "Erev_Window_Start":    alos.isoformat(),
+            "Erev_Window_End":      erev_end_cut.isoformat(),
+            "Candle_End_Cut":        candle_cut.isoformat(),
         }
         if next_start and next_end:
             attrs.update({
@@ -429,7 +512,12 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._attr_extra_state_attributes = attrs
 
 class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
-    """True from candle-lighting until havdalah on Shabbos & multi-day Yom Tov."""
+    """True from (possibly early) entry until havdalah on Shabbos & multi-day Yom Tov.
+
+    Normal behavior: candle-lighting → havdalah.
+    If Early Shabbos / Early Yom Tov is enabled and effective start times exist,
+    this sensor will turn ON at those earlier times.
+    """
     _attr_name = "No Melucha"
     _attr_icon = "mdi:briefcase-variant-off"
 
@@ -439,10 +527,12 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._attr_unique_id = f"yidcal_{slug}"
         self.entity_id = f"binary_sensor.yidcal_{slug}"
         self.hass = hass
+
         # Pull Israel/Chutz setting from integration config
         cfg_root = hass.data.get(DOMAIN, {}) or {}
         cfg_conf = cfg_root.get("config", {}) or {}
         self._diaspora = cfg_conf.get("diaspora", True)
+
         self._candle = candle_offset
         self._havdalah = havdalah_offset
 
@@ -465,13 +555,83 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             )
         )
 
+    # ---------------- Early-start helpers ----------------
+
+    def _get_early_maps(self) -> tuple[dict, dict]:
+        """Fetch effective early-start maps from the Early start-time sensor."""
+        early_state = self.hass.states.get("sensor.yidcal_early_shabbos_yt_start_time")
+        if not early_state:
+            return {}, {}
+
+        attrs = early_state.attributes or {}
+
+        def pick(*names):
+            for n in names:
+                if n in attrs and isinstance(attrs[n], dict):
+                    return attrs[n]
+            return {}
+
+        eff_shabbos = pick(
+            "Effective shabbos start by date",
+            "Effective_Shabbos_Start_By_Date",
+            "effective_shabbos_start_by_date",
+        )
+        eff_yomtov = pick(
+            "Effective yomtov start by date",
+            "Effective_Yomtov_Start_By_Date",
+            "effective_yomtov_start_by_date",
+        )
+
+        return eff_shabbos or {}, eff_yomtov or {}
+
+    def _parse_early_dt(self, val):
+        """Parse an iso/datetime attribute into local tz datetime."""
+        if not val:
+            return None
+        try:
+            if isinstance(val, datetime):
+                dt_local = val
+            else:
+                dt_local = datetime.fromisoformat(str(val))
+            if dt_local.tzinfo is None:
+                dt_local = dt_local.replace(tzinfo=self._tz)
+            return dt_local.astimezone(self._tz)
+        except Exception:
+            return None
+
+    def _apply_early_start(
+        self,
+        erev_date,
+        start_dt: datetime,
+        is_yomtov_cluster: bool,
+        eff_shabbos_map: dict,
+        eff_yomtov_map: dict,
+    ) -> datetime:
+        """Return earlier of candle-start and effective early-start (if any)."""
+        key = erev_date.isoformat()
+        src_map = eff_yomtov_map if is_yomtov_cluster else eff_shabbos_map
+
+        early_val = src_map.get(key)
+        early_dt = self._parse_early_dt(early_val)
+        if not early_dt:
+            return start_dt
+
+        # Round early time the same way as candle starts
+        early_dt = round_half_up(early_dt)
+
+        return min(start_dt, early_dt)
+
+    # ---------------- Main update ----------------
+
     async def async_update(self, now: datetime | None = None) -> None:
-        """Turn on from candle-lighting of the first day through havdalah of the last day,
-        merging Yom Tov clusters that run directly into Shabbos (3-day Yom Tov)."""
+        """Turn on from (possibly early) entry through havdalah of the last day,
+        merging Yom Tov clusters that run directly into Shabbos."""
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
         if not self._geo:
             return
+
+        eff_shabbos_map, eff_yomtov_map = self._get_early_maps()
 
         # Each candidate: (start_dt, end_dt, display_name, is_yomtov_cluster)
         candidates: list[tuple[datetime, datetime, str, bool]] = []
@@ -490,10 +650,21 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             while HDateInfo(end_d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
                 end_d += timedelta(days=1)
 
-            # Window: candle-lighting before first day through havdalah after last day
+            # Candle-based start (Erev YT)
             cal_prev = ZmanimCalendar(geo_location=self._geo, date=d - timedelta(days=1))
             start_dt = cal_prev.sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
 
+            # Apply early YT if present for that Erev
+            erev_yt = d - timedelta(days=1)
+            start_dt = self._apply_early_start(
+                erev_yt,
+                start_dt,
+                is_yomtov_cluster=True,
+                eff_shabbos_map=eff_shabbos_map,
+                eff_yomtov_map=eff_yomtov_map,
+            )
+
+            # End = havdalah after last YT day
             cal_end = ZmanimCalendar(geo_location=self._geo, date=end_d)
             end_dt = cal_end.sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
 
@@ -505,7 +676,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         # --- 2) Shabbos windows (this week + next) --------------------------
         wd = today.weekday()
-        # Friday of this week (or today if it's Friday)
         friday = today - timedelta(days=(wd - 4) % 7)
 
         for week in range(2):
@@ -515,10 +685,18 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             cal_f = ZmanimCalendar(geo_location=self._geo, date=f)
             start_dt = cal_f.sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
 
+            # Apply early Shabbos if present for that Friday
+            start_dt = self._apply_early_start(
+                f,
+                start_dt,
+                is_yomtov_cluster=False,
+                eff_shabbos_map=eff_shabbos_map,
+                eff_yomtov_map=eff_yomtov_map,
+            )
+
             cal_s = ZmanimCalendar(geo_location=self._geo, date=s)
             end_dt = cal_s.sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
 
-            # Skip Shabbos windows whose *rounded* end is already past
             if round_ceil(end_dt) <= now:
                 continue
 
@@ -536,7 +714,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         # --- 3) Pick the main cluster (current, else earliest upcoming) -----
         main: tuple[datetime, datetime, str, bool] | None = None
 
-        # Prefer a window whose *rounded* bounds currently contain 'now'
         for start_dt, end_dt, name, is_yt in candidates:
             start_cut = round_half_up(start_dt)
             end_cut   = round_ceil(end_dt)
@@ -544,7 +721,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 if main is None or start_dt < main[0]:
                     main = (start_dt, end_dt, name, is_yt)
 
-        # If none contains 'now', pick the earliest upcoming window (by rounded start)
         if main is None:
             best_start_cut: datetime | None = None
             for start_dt, end_dt, name, is_yt in candidates:
@@ -553,25 +729,22 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                     best_start_cut = start_cut
                     main = (start_dt, end_dt, name, is_yt)
 
-        # If none contains 'now', pick the earliest upcoming window
         if main is None:
             for start_dt, end_dt, name, is_yt in candidates:
                 if start_dt >= now:
                     if main is None or start_dt < main[0]:
                         main = (start_dt, end_dt, name, is_yt)
 
-        # At this point we must have a main window
         start, end, festival_name, is_yt_cluster = main  # type: ignore[misc]
 
-        # --- 4) Merge overlapping clusters (3-day YT into Shabbos, etc.) ---
+        # --- 4) Merge overlapping clusters (3-day YT into Shabbos, etc.) ----
         union_start, union_end = start, end
         for start_dt, end_dt, *_ in candidates:
-            # any overlap with current union? then extend
             if start_dt <= union_end and end_dt >= union_start:
                 union_start = min(union_start, start_dt)
                 union_end = max(union_end, end_dt)
 
-        # --- 5) Round + final state / attributes ----------------------------
+        # --- 5) Round + final state / attributes ---------------------------
         window_start = round_half_up(union_start)
         window_end = round_ceil(union_end)
         in_window = (window_start <= now < window_end)
@@ -588,9 +761,10 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Window_Start": window_start.isoformat(),
             "Window_End": window_end.isoformat(),
             "In_Window": in_window,
-            # These two are now based on the *main* cluster
             "Is_Yom_Tov": in_window and is_yt_cluster,
             "Is_Shabbos": in_window and (festival_name == "שבת"),
+            "Early_Shabbos_Map_Keys": list(eff_shabbos_map.keys()),
+            "Early_YomTov_Map_Keys": list(eff_yomtov_map.keys()),
         }
 
 async def async_setup_entry(
