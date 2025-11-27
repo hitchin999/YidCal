@@ -191,6 +191,38 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         diaspora = cfg.get("diaspora", True)
 
+        # ----- Early Shabbos / Yom Tov support (from helper sensor) -----
+        early = self.hass.states.get("sensor.yidcal_early_shabbos_yt_start_time")
+        early_attrs = getattr(early, "attributes", {}) or {}
+        eff_shabbos = early_attrs.get("effective_shabbos_start_by_date") or {}
+        eff_yomtov = early_attrs.get("effective_yomtov_start_by_date") or {}
+
+        # Defensive: make sure they're dicts
+        if not isinstance(eff_shabbos, dict):
+            eff_shabbos = {}
+        if not isinstance(eff_yomtov, dict):
+            eff_yomtov = {}
+
+        def _parse_iso_local(iso: str | None) -> datetime.datetime | None:
+            if not iso:
+                return None
+            try:
+                dt = datetime.datetime.fromisoformat(iso)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=tz)
+                return dt.astimezone(tz)
+            except Exception:
+                return None
+
+        def get_early_shabbos_start_for(d: datetime.date) -> datetime.datetime | None:
+            dt = _parse_iso_local(eff_shabbos.get(d.isoformat()))
+            return _round_half_up(dt) if dt else None
+
+        def get_early_yomtov_start_for(erev: datetime.date) -> datetime.datetime | None:
+            dt = _parse_iso_local(eff_yomtov.get(erev.isoformat()))
+            return _round_half_up(dt) if dt else None
+
+        # ----- Local sunrise/sunset helpers -----
         def sunset_on(d: datetime.date) -> datetime.datetime:
             return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(tz)
 
@@ -214,7 +246,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         effective_pydate = today if now_local < havdalah_today else today + timedelta(days=1)
 
-        # --- Shabbos window (nearest current Shabbos), with rounding ---
+        # --- Shabbos window (nearest current Shabbos), with rounding + EARLY ---
         shabbos_eve = today
         while shabbos_eve.weekday() != 4:
             shabbos_eve -= timedelta(days=1)
@@ -223,10 +255,15 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         raw_shabbos_start = sunset_on(shabbos_eve) - timedelta(minutes=self._candle_offset)
         raw_shabbos_end = sunset_on(shabbos_day) + timedelta(minutes=self._havdalah_offset)
 
-        shabbos_start = _round_half_up(raw_shabbos_start)
+        regular_shabbos_start = _round_half_up(raw_shabbos_start)
         shabbos_end = _round_ceil(raw_shabbos_end)
 
-        # --- Festival window detection (rounded) ---
+        shabbos_start = regular_shabbos_start
+        early_shabbos_start = get_early_shabbos_start_for(shabbos_eve)
+        if early_shabbos_start and early_shabbos_start < shabbos_start:
+            shabbos_start = early_shabbos_start
+
+        # --- Festival window detection (rounded + EARLY YOM TOV) ---
         dates_to_check = [today - timedelta(days=1), today, today + timedelta(days=1)]
         fest_dates = sorted(d for d in dates_to_check if is_yomtov(d))
         if fest_dates:
@@ -236,11 +273,17 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             eve = start_date - timedelta(days=1)
 
             if eve.weekday() == 5:
+                # Yom Tov starting right after Shabbos – never earlier than Motzaei Shabbos
                 raw_fest_start = sunset_on(eve) + timedelta(minutes=self._havdalah_offset)
                 fest_start = _round_ceil(raw_fest_start)
             else:
                 raw_fest_start = sunset_on(eve) - timedelta(minutes=self._candle_offset)
                 fest_start = _round_half_up(raw_fest_start)
+
+                # If an early YT start is configured for this erev, pull the start earlier
+                early_yt_start = get_early_yomtov_start_for(eve)
+                if early_yt_start and early_yt_start < fest_start:
+                    fest_start = early_yt_start
 
             raw_fest_end = sunset_on(end_date) + timedelta(minutes=self._havdalah_offset)
             fest_end = _round_ceil(raw_fest_end)
@@ -295,13 +338,27 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             self._set_state(state)
             return
 
-        # --- Erev: dawn → candlelighting for Friday or YT-eve ---
+        # --- Erev: dawn → (early-start OR candlelighting) for Friday or YT-eve ---
         is_yom_tom = is_yomtov(today + timedelta(days=1))
         is_fast_tomorrow = _is_fast_day(today + timedelta(days=1))
         is_shabbos_today = (today.weekday() == 5)
 
+        erev_end_cut = candle_cut
+
+        # If today is Friday and an early Shabbos start is defined, end Erev at that time
+        if today.weekday() == 4:
+            early_shabbos_today = get_early_shabbos_start_for(today)
+            if early_shabbos_today and early_shabbos_today < erev_end_cut:
+                erev_end_cut = early_shabbos_today
+
+        # If today is Erev Yom Tov (tomorrow YT, today not Shabbos), shrink Erev to early YT
+        if is_yom_tom and not is_shabbos_today:
+            early_yt_today = get_early_yomtov_start_for(today)
+            if early_yt_today and early_yt_today < erev_end_cut:
+                erev_end_cut = early_yt_today
+
         if (
-            dawn <= now_local < candle_cut
+            dawn <= now_local < erev_end_cut
             and not is_fast_tomorrow
             and not is_shabbos_today
             and ((today.weekday() == 4 and not is_yomtov(today)) or is_yom_tom)
@@ -309,7 +366,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             self._set_state("Erev")
             return
 
-        # --- Shabbos on Friday evening or Saturday day ---
+        # --- Shabbos on Friday evening or Saturday day (with EARLY start) ---
         if shabbos_start <= now_local < shabbos_end:
             if _is_chol_hamoed(shabbos_day):
                 state = "Shabbos & Chol Hamoed"
