@@ -13,14 +13,14 @@
           "is_in_israel": "If you live in Israel, check this",
           "strip_nikud": "Strip vowel points (nikud) from Hebrew text",
           "candlelighting_offset": "Minutes before sunset for candle lighting",
-          "havdalah_offset": "Minutes after sunset for Motzaei Shabbos / Yom Tov / Netz/ Havdalah",
+          "havdalah_offset": "Minutes after sunset for Havdalah",
           "tallis_tefilin_offset": "Minutes after dawn for tallis & tefilin",
           "day_label_language": "Day label language for the Full Display sensor",
           "include_date": "Include Hebrew date on the Full Display sensor",
-          "include_attribute_sensors": "Create separate sensors for Holiday Sensor attributes",
+          "include_attribute_sensors": "Create separate sensors for holiday attributes",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
-					"time_format": "Time format (For Simple Zmanim only)"
+          "time_format": "Time format (For Simple Zmanim only)"
         }
       },
       "yurtzeit": {
@@ -41,7 +41,8 @@
       "init": {
         "menu_options": {
           "general": "General settings",
-          "yurtzeit": "Yahrtzeit sensors"
+          "yurtzeit": "Yahrtzeit sensors",
+          "early_shabbos_yt": "Early Shabbos / Yom Tov"
         }
       },
       "general": {
@@ -49,14 +50,14 @@
           "is_in_israel": "If you live in Israel, check this",
           "strip_nikud": "Strip vowel points (nikud) from Hebrew text",
           "candlelighting_offset": "Minutes before sunset for candle lighting",
-          "havdalah_offset": "Minutes after sunset for Motzaei Shabbos / Yom Tov / Netz/ Havdalah",
+          "havdalah_offset": "Minutes after sunset for Havdalah",
           "tallis_tefilin_offset": "Minutes after dawn for tallis & tefilin",
           "day_label_language": "Day label language for the Full Display sensor",
           "include_date": "Include Hebrew date on the Full Display sensor",
-          "include_attribute_sensors": "Create separate sensors for Yomim Tovim attributes",
+          "include_attribute_sensors": "Create separate sensors for holiday attributes",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
-					"time_format": "Time format (For Simple Zmanim only)"
+          "time_format": "Time format (For Simple Zmanim only)"
         }
       },
       "yurtzeit": {
@@ -64,6 +65,55 @@
           "enable_yurtzeit_daily": "Create daily Yahrtzeit sensor",
           "enable_weekly_yurtzeit": "Create weekly Yahrtzeit sensor",
           "yurtzeit_databases": "Which Yahrtzeit database(s) to use"
+        }
+      },
+      "early_shabbos_yt": {
+        "title": "Early Shabbos / Yom Tov",
+        "menu_options": {
+          "early_shabbos": "Early Shabbos",
+          "early_yomtov": "Early Yom Tov"
+        }
+      },
+      "early_shabbos": {
+        "title": "Early Shabbos",
+        "data": {
+          "enable_early_shabbos": "Enable early Shabbos",
+          "early_shabbos_mode": "How to calculate early Shabbos",
+          "early_shabbos_plag_method": "Which Plag method to use",
+          "early_shabbos_fixed_time": "Fixed clock time for early Shabbos",
+          "early_shabbos_apply_rule": "When should early Shabbos apply",
+          "early_shabbos_sunset_after": "Only when Friday sunset is after…"
+        }
+      },
+      "early_yomtov": {
+        "title": "Early Yom Tov",
+        "data": {
+          "enable_early_yomtov": "Enable early Yom Tov",
+          "early_yomtov_mode": "How to calculate early Yom Tov",
+          "early_yomtov_plag_method": "Which Plag method to use",
+          "early_yomtov_fixed_time": "Fixed clock time for early Yom Tov",
+          "early_yomtov_include": "Which Yomim Tovim allow early acceptance",
+          "early_yomtov_allow_second_days": "Allow early acceptance on second days of Yom Tov"
+        }
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "early_shabbos_override": {
+        "name": "Early Shabbos Override",
+        "state": {
+          "auto": "Auto",
+          "force_early": "Force early",
+          "force_regular": "Force regular"
+        }
+      },
+      "early_yomtov_override": {
+        "name": "Early Yom Tov Override",
+        "state": {
+          "auto": "Auto",
+          "force_early": "Force early",
+          "force_regular": "Force regular"
         }
       }
     }
