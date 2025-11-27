@@ -99,7 +99,7 @@ class YidCalZmanDevice(YidCalDevice):
         entry_type="service",
     )
 
-# Use this for the per-attribute mirror sensors from HolidaySensor
+
 class YidCalAttrDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
         identifiers={(DOMAIN, "yidcal_holiday_attributes")},
@@ -109,7 +109,7 @@ class YidCalAttrDevice(YidCalDevice):
         entry_type="service",
     )
 
-# Display / Rich-label sensors live here
+
 class YidCalDisplayDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
         identifiers={(DOMAIN, "yidcal_display")},
@@ -119,12 +119,22 @@ class YidCalDisplayDevice(YidCalDevice):
         entry_type="service",
     )
 
-# Special policy / operational binary sensors
+
 class YidCalSpecialDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
         identifiers={(DOMAIN, "yidcal_special_binaries")},
         name="YidCal — Special Binary Sensors",
         manufacturer="Yoel Goldstein/Vaayer LLC",
         model="Special Binary Sensors",
+        entry_type="service",
+    )
+
+
+class YidCalEarlyDevice(YidCalDevice):
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, "yidcal_early_shabbos_yt")},
+        name="YidCal — Early Shabbos YT",
+        manufacturer="Yoel Goldstein/Vaayer LLC",
+        model="Early Shabbos / Yom Tov Controls",
         entry_type="service",
     )
