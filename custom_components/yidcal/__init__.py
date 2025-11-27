@@ -28,11 +28,39 @@ from .config_flow import (
     CONF_YAHRTZEIT_DATABASE,
     CONF_TIME_FORMAT,
     DEFAULT_TIME_FORMAT,
+    # Early Entry (NEW)
+    CONF_ENABLE_EARLY_SHABBOS,
+    CONF_EARLY_SHABBOS_MODE,
+    CONF_EARLY_SHABBOS_PLAG_METHOD,
+    CONF_EARLY_SHABBOS_FIXED_TIME,
+    CONF_EARLY_SHABBOS_APPLY_RULE,
+    CONF_EARLY_SHABBOS_SUNSET_AFTER,
+
+    CONF_ENABLE_EARLY_YOMTOV,
+    CONF_EARLY_YOMTOV_MODE,
+    CONF_EARLY_YOMTOV_PLAG_METHOD,
+    CONF_EARLY_YOMTOV_FIXED_TIME,
+    CONF_EARLY_YOMTOV_INCLUDE,
+    CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
+
+    DEFAULT_ENABLE_EARLY_SHABBOS,
+    DEFAULT_EARLY_SHABBOS_MODE,
+    DEFAULT_EARLY_SHABBOS_PLAG_METHOD,
+    DEFAULT_EARLY_SHABBOS_FIXED_TIME,
+    DEFAULT_EARLY_SHABBOS_APPLY_RULE,
+    DEFAULT_EARLY_SHABBOS_SUNSET_AFTER,
+
+    DEFAULT_ENABLE_EARLY_YOMTOV,
+    DEFAULT_EARLY_YOMTOV_MODE,
+    DEFAULT_EARLY_YOMTOV_PLAG_METHOD,
+    DEFAULT_EARLY_YOMTOV_FIXED_TIME,
+    DEFAULT_EARLY_YOMTOV_INCLUDE,
+    DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SELECT]
 
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
@@ -250,6 +278,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_UPCOMING_LOOKAHEAD_DAYS,
         initial.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
     )
+    
+    # ---------------- Early Entry options (NEW) ----------------
+    enable_early_shabbos = opts.get(
+        CONF_ENABLE_EARLY_SHABBOS,
+        initial.get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
+    )
+    early_shabbos_mode = opts.get(
+        CONF_EARLY_SHABBOS_MODE,
+        initial.get(CONF_EARLY_SHABBOS_MODE, DEFAULT_EARLY_SHABBOS_MODE),
+    )
+    early_shabbos_plag_method = opts.get(
+        CONF_EARLY_SHABBOS_PLAG_METHOD,
+        initial.get(CONF_EARLY_SHABBOS_PLAG_METHOD, DEFAULT_EARLY_SHABBOS_PLAG_METHOD),
+    )
+    early_shabbos_fixed_time = opts.get(
+        CONF_EARLY_SHABBOS_FIXED_TIME,
+        initial.get(CONF_EARLY_SHABBOS_FIXED_TIME, DEFAULT_EARLY_SHABBOS_FIXED_TIME),
+    )
+    early_shabbos_apply_rule = opts.get(
+        CONF_EARLY_SHABBOS_APPLY_RULE,
+        initial.get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE),
+    )
+    early_shabbos_sunset_after = opts.get(
+        CONF_EARLY_SHABBOS_SUNSET_AFTER,
+        initial.get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER),
+    )
+
+    enable_early_yomtov = opts.get(
+        CONF_ENABLE_EARLY_YOMTOV,
+        initial.get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
+    )
+    early_yomtov_mode = opts.get(
+        CONF_EARLY_YOMTOV_MODE,
+        initial.get(CONF_EARLY_YOMTOV_MODE, DEFAULT_EARLY_YOMTOV_MODE),
+    )
+    early_yomtov_plag_method = opts.get(
+        CONF_EARLY_YOMTOV_PLAG_METHOD,
+        initial.get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD),
+    )
+    early_yomtov_fixed_time = opts.get(
+        CONF_EARLY_YOMTOV_FIXED_TIME,
+        initial.get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME),
+    )
+    early_yomtov_include = opts.get(
+        CONF_EARLY_YOMTOV_INCLUDE,
+        initial.get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE),
+    )
+    early_yomtov_allow_second_days = opts.get(
+        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
+        initial.get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
+    )
 
     # Resolve and store geo+tz config
     latitude = hass.config.latitude
@@ -277,6 +356,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
         CONF_UPCOMING_LOOKAHEAD_DAYS: upcoming_lookahead,
         CONF_TIME_FORMAT: time_format,
+        # Early Entry (NEW)
+        CONF_ENABLE_EARLY_SHABBOS: enable_early_shabbos,
+        CONF_EARLY_SHABBOS_MODE: early_shabbos_mode,
+        CONF_EARLY_SHABBOS_PLAG_METHOD: early_shabbos_plag_method,
+        CONF_EARLY_SHABBOS_FIXED_TIME: early_shabbos_fixed_time,
+        CONF_EARLY_SHABBOS_APPLY_RULE: early_shabbos_apply_rule,
+        CONF_EARLY_SHABBOS_SUNSET_AFTER: early_shabbos_sunset_after,
+
+        CONF_ENABLE_EARLY_YOMTOV: enable_early_yomtov,
+        CONF_EARLY_YOMTOV_MODE: early_yomtov_mode,
+        CONF_EARLY_YOMTOV_PLAG_METHOD: early_yomtov_plag_method,
+        CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
+        CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
+        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
     }
 
     # Store global config for sensors
@@ -300,6 +393,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_YURTZEIT_DATABASES: databases,
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
         CONF_TIME_FORMAT: time_format,
+        # Early Entry (NEW)
+        CONF_ENABLE_EARLY_SHABBOS: enable_early_shabbos,
+        CONF_EARLY_SHABBOS_MODE: early_shabbos_mode,
+        CONF_EARLY_SHABBOS_PLAG_METHOD: early_shabbos_plag_method,
+        CONF_EARLY_SHABBOS_FIXED_TIME: early_shabbos_fixed_time,
+        CONF_EARLY_SHABBOS_APPLY_RULE: early_shabbos_apply_rule,
+        CONF_EARLY_SHABBOS_SUNSET_AFTER: early_shabbos_sunset_after,
+
+        CONF_ENABLE_EARLY_YOMTOV: enable_early_yomtov,
+        CONF_EARLY_YOMTOV_MODE: early_yomtov_mode,
+        CONF_EARLY_YOMTOV_PLAG_METHOD: early_yomtov_plag_method,
+        CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
+        CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
+        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -373,6 +480,57 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_UPCOMING_LOOKAHEAD_DAYS,
         initial.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
     )
+    
+    # ---------------- Early Entry options (NEW) ----------------
+    enable_early_shabbos = opts.get(
+        CONF_ENABLE_EARLY_SHABBOS,
+        initial.get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
+    )
+    early_shabbos_mode = opts.get(
+        CONF_EARLY_SHABBOS_MODE,
+        initial.get(CONF_EARLY_SHABBOS_MODE, DEFAULT_EARLY_SHABBOS_MODE),
+    )
+    early_shabbos_plag_method = opts.get(
+        CONF_EARLY_SHABBOS_PLAG_METHOD,
+        initial.get(CONF_EARLY_SHABBOS_PLAG_METHOD, DEFAULT_EARLY_SHABBOS_PLAG_METHOD),
+    )
+    early_shabbos_fixed_time = opts.get(
+        CONF_EARLY_SHABBOS_FIXED_TIME,
+        initial.get(CONF_EARLY_SHABBOS_FIXED_TIME, DEFAULT_EARLY_SHABBOS_FIXED_TIME),
+    )
+    early_shabbos_apply_rule = opts.get(
+        CONF_EARLY_SHABBOS_APPLY_RULE,
+        initial.get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE),
+    )
+    early_shabbos_sunset_after = opts.get(
+        CONF_EARLY_SHABBOS_SUNSET_AFTER,
+        initial.get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER),
+    )
+
+    enable_early_yomtov = opts.get(
+        CONF_ENABLE_EARLY_YOMTOV,
+        initial.get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
+    )
+    early_yomtov_mode = opts.get(
+        CONF_EARLY_YOMTOV_MODE,
+        initial.get(CONF_EARLY_YOMTOV_MODE, DEFAULT_EARLY_YOMTOV_MODE),
+    )
+    early_yomtov_plag_method = opts.get(
+        CONF_EARLY_YOMTOV_PLAG_METHOD,
+        initial.get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD),
+    )
+    early_yomtov_fixed_time = opts.get(
+        CONF_EARLY_YOMTOV_FIXED_TIME,
+        initial.get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME),
+    )
+    early_yomtov_include = opts.get(
+        CONF_EARLY_YOMTOV_INCLUDE,
+        initial.get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE),
+    )
+    early_yomtov_allow_second_days = opts.get(
+        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
+        initial.get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
+    )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -392,6 +550,20 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
         CONF_UPCOMING_LOOKAHEAD_DAYS: upcoming_lookahead,
         CONF_TIME_FORMAT: time_format,
+        # Early Entry (NEW)
+        CONF_ENABLE_EARLY_SHABBOS: enable_early_shabbos,
+        CONF_EARLY_SHABBOS_MODE: early_shabbos_mode,
+        CONF_EARLY_SHABBOS_PLAG_METHOD: early_shabbos_plag_method,
+        CONF_EARLY_SHABBOS_FIXED_TIME: early_shabbos_fixed_time,
+        CONF_EARLY_SHABBOS_APPLY_RULE: early_shabbos_apply_rule,
+        CONF_EARLY_SHABBOS_SUNSET_AFTER: early_shabbos_sunset_after,
+
+        CONF_ENABLE_EARLY_YOMTOV: enable_early_yomtov,
+        CONF_EARLY_YOMTOV_MODE: early_yomtov_mode,
+        CONF_EARLY_YOMTOV_PLAG_METHOD: early_yomtov_plag_method,
+        CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
+        CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
+        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
     }
 
     # Schedule the reload shortly after to apply new options
