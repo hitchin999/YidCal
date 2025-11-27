@@ -40,11 +40,16 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         and that day is not Yom Tov), end at **Friday** candle-lighting
         (sunset(Friday) − candle_offset).
 
+    Early Yom Tov:
+      • If early YT is enabled/effective for the Erev-YT date, move the start earlier
+        based on sensor.yidcal_early_yomtov_yt_start_time (or fallback sensor).
+      • Early does NOT override the Motza'ei-Shabbos start case.
+
     In the diaspora, Shemini Atzeres → Simchas Torah is treated as one span.
 
     Attributes always show the current active span's window, or the next
     upcoming span if none is active:
-      Now, Window_Start, Window_End, Activation_Logic
+      Now, Window_Start, Window_End, Early_Start_Used, Early_Start_Time, Activation_Logic
     """
     _attr_name = "No Melucha – Yom Tov"
     _attr_icon = "mdi:briefcase-variant-off"
@@ -69,7 +74,6 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._geo = await get_geo(self.hass)
         await self.async_update()
 
-        # Recalc every top-of-minute to match rounded Motzi / Zman windows
         self._register_listener(
             async_track_time_change(
                 self.hass,
@@ -83,11 +87,45 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     def _sunset(self, d) -> datetime:
         return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
 
+    def _get_effective_early_yomtov_start(self, erev_date):
+        """
+        Try to read effective early YT start for a given EREV date.
+
+        Primary sensor:
+          sensor.yidcal_early_yomtov_yt_start_time
+        Fallback sensor (if you combined in one):
+          sensor.yidcal_early_shabbos_yt_start_time
+
+        Expected attribute dict:
+          effective_yomtov_start_by_date[YYYY-MM-DD] -> ISO datetime
+        Also tolerates:
+          effective_yt_start_by_date
+        """
+        for ent_id in (
+            "sensor.yidcal_early_yomtov_yt_start_time",
+            "sensor.yidcal_early_shabbos_yt_start_time",
+        ):
+            try:
+                st = self.hass.states.get(ent_id)
+                if not st:
+                    continue
+                eff = (
+                    st.attributes.get("effective_yomtov_start_by_date")
+                    or st.attributes.get("effective_yt_start_by_date")
+                    or {}
+                )
+                iso = eff.get(erev_date.isoformat())
+                if not iso:
+                    continue
+                dt = datetime.fromisoformat(iso)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=self._tz)
+                return dt.astimezone(self._tz)
+            except Exception:
+                continue
+        return None
+
     def _span_end(self, start) -> datetime.date:
-        """
-        Given the first halachic day of a Yom Tov span, return the LAST halachic date of that span.
-        (In the diaspora, Shemini Atzeres immediately followed by Simchas Torah is treated as one span.)
-        """
         end = start
         while HDateInfo(end + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
             end += timedelta(days=1)
@@ -102,62 +140,58 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         return end
 
     def _first_day_if_span_starts(self, d) -> datetime.date | None:
-        """Return d if a Yom Tov span starts on d (yesterday not YT), else None."""
         if HDateInfo(d, diaspora=self._diaspora).is_yom_tov and not HDateInfo(
             d - timedelta(days=1), diaspora=self._diaspora
         ).is_yom_tov:
             return d
         return None
 
-    def _span_window(self, start: datetime.date, end: datetime.date) -> tuple[datetime, datetime]:
+    def _span_window(self, start: datetime.date, end: datetime.date) -> tuple[datetime, datetime, datetime | None]:
         """
-        Compute the raw (unrounded) window for a pure-Yom-Tov span:
-          start_dt .. end_dt (datetimes in self._tz).
-        Applies the Motza'ei-Shabbos and YT→Shabbos special cases.
+        Raw window for a pure-YT span, with special cases + early-start override.
+        Returns (start_dt, end_dt, early_dt_used_or_none).
         """
-        # Day before first YT day
         prev_day = start - timedelta(days=1)
-        # Day after last YT day
         next_day = end + timedelta(days=1)
 
         # Base start: candles before first YT day
         start_dt = self._sunset(prev_day) - timedelta(minutes=self._candle)
 
-        # If the span starts right after Shabbos (prev day is Shabbos and not YT),
-        # start at Motza'ei Shabbos (havdalah), i.e. do NOT include Shabbos in this sensor.
-        if prev_day.weekday() == 5 and not HDateInfo(prev_day, diaspora=self._diaspora).is_yom_tov:
+        # Special case: span starts right after Shabbos (prev day is Shabbos, not YT)
+        starts_after_shabbos = (
+            prev_day.weekday() == 5
+            and not HDateInfo(prev_day, diaspora=self._diaspora).is_yom_tov
+        )
+        if starts_after_shabbos:
             start_dt = self._sunset(prev_day) + timedelta(minutes=self._havdalah)
+            early_dt = None  # don't early-override in this case
+        else:
+            # Early YT override for the EREV date
+            early_dt = self._get_effective_early_yomtov_start(prev_day)
+            if early_dt and early_dt < start_dt:
+                start_dt = early_dt
 
-        # Base end: havdalah after LAST YT day
+        # Base end: havdalah after last YT day
         end_dt = self._sunset(end) + timedelta(minutes=self._havdalah)
 
-        # If the span leads directly into Shabbos (next_day is Shabbos and not YT),
-        # end at **Friday** candle-lighting, not Motza'ei Shabbos.
+        # Special case: span leads into Shabbos (next day is Shabbos, not YT)
         if next_day.weekday() == 5 and not HDateInfo(next_day, diaspora=self._diaspora).is_yom_tov:
             shabbos_eve = next_day - timedelta(days=1)  # Friday
             end_dt = self._sunset(shabbos_eve) - timedelta(minutes=self._candle)
 
-        return start_dt, end_dt
+        return start_dt, end_dt, early_dt
 
     def _find_active_span(self, now_local: datetime):
-        """
-        If we're currently inside a YT span, return (first_day, last_day).
-        Scan a generous window around 'now' to avoid edge timing issues.
-
-        IMPORTANT: detection uses the *rounded* window (same as final state),
-        so we don't cut off earlier than the other rounded sensors.
-        """
         base = now_local.date()
-        for i in range(-7, 60):  # a full week back, two months forward
+        for i in range(-7, 60):
             d = base + timedelta(days=i)
             first = self._first_day_if_span_starts(d)
             if not first:
                 continue
 
             end = self._span_end(first)
-            start_dt, end_dt = self._span_window(first, end)
+            start_dt, end_dt, _early = self._span_window(first, end)
 
-            # Use the same rounding semantics as async_update
             window_start = _round_half_up(start_dt)
             window_end   = _round_ceil(end_dt)
 
@@ -167,7 +201,6 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         return None, None
 
     def _next_span_first_day_after(self, ref) -> datetime.date | None:
-        """Find the first halachic day of the next YT span after (or on) ref, up to ~1 year ahead."""
         for i in range(0, 370):
             d = ref + timedelta(days=i)
             first = self._first_day_if_span_starts(d)
@@ -183,7 +216,6 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         now = dt_util.now().astimezone(self._tz)
 
-        # 1) If in a span → use that; otherwise pick the next upcoming span
         start_d, end_d = self._find_active_span(now)
         if start_d is None:
             nxt = self._next_span_first_day_after(now.date())
@@ -191,40 +223,43 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 start_d, end_d = nxt, self._span_end(nxt)
 
         if start_d is not None and end_d is not None:
-            # 2) Build the window for that span (pure YT, with special cases)
-            start_dt, end_dt = self._span_window(start_d, end_d)
+            start_dt, end_dt, early_raw = self._span_window(start_d, end_d)
 
             window_start = _round_half_up(start_dt)
-            window_end = _round_ceil(end_dt)
+            window_end   = _round_ceil(end_dt)
 
-            # 3) State is ON iff now inside this pure-YT window
             self._attr_is_on = window_start <= now < window_end
 
             self._attr_extra_state_attributes = {
                 "Now": now.isoformat(),
                 "Window_Start": window_start.isoformat(),
                 "Window_End": window_end.isoformat(),
+                "Early_Start_Used": bool(early_raw and early_raw < (self._sunset(start_d - timedelta(days=1)) - timedelta(minutes=self._candle))),
+                "Early_Start_Time": early_raw.isoformat() if early_raw else "",
                 "Activation_Logic": (
                     "ON for any contiguous Yom Tov span. "
                     "If the day before the span is Shabbos (and not Yom Tov), "
                     "start at Motza'ei Shabbos (havdalah). "
                     "If the span leads directly into Shabbos, end at Friday candle-lighting. "
+                    "If Early Yom Tov is enabled/effective for Erev-YT, start earlier. "
                     "In the diaspora, Shemini Atzeres and Simchas Torah are treated as one span."
                 ),
             }
             return
 
-        # No span found (very unlikely) → publish blanks
         self._attr_is_on = False
         self._attr_extra_state_attributes = {
             "Now": now.isoformat(),
             "Window_Start": "",
             "Window_End": "",
+            "Early_Start_Used": False,
+            "Early_Start_Time": "",
             "Activation_Logic": (
                 "ON for any contiguous Yom Tov span. "
                 "If the day before the span is Shabbos (and not Yom Tov), "
                 "start at Motza'ei Shabbos (havdalah). "
                 "If the span leads directly into Shabbos, end at Friday candle-lighting. "
+                "If Early Yom Tov is enabled/effective for Erev-YT, start earlier. "
                 "In the diaspora, Shemini Atzeres and Simchas Torah are treated as one span."
             ),
         }
