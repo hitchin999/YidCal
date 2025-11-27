@@ -31,6 +31,43 @@ DEFAULT_YURTZEIT_DATABASES = ["standard"]
 CONF_YAHRTZEIT_DATABASE = "yahrtzeit_database"  # old single-select spelling
 DEFAULT_YAHRTZEIT_DATABASE = "standard"
 
+# ============ Early Entry keys (NEW) ============
+
+CONF_ENABLE_EARLY_SHABBOS = "enable_early_shabbos"
+CONF_EARLY_SHABBOS_MODE = "early_shabbos_mode"  # default behavior
+CONF_EARLY_SHABBOS_PLAG_METHOD = "early_shabbos_plag_method"
+CONF_EARLY_SHABBOS_FIXED_TIME = "early_shabbos_fixed_time"
+CONF_EARLY_SHABBOS_APPLY_RULE = "early_shabbos_apply_rule"
+CONF_EARLY_SHABBOS_SUNSET_AFTER = "early_shabbos_sunset_after"
+
+DEFAULT_ENABLE_EARLY_SHABBOS = False
+DEFAULT_EARLY_SHABBOS_MODE = "plag"  # plag | fixed | disabled
+DEFAULT_EARLY_SHABBOS_PLAG_METHOD = "gra"  # gra | ma
+DEFAULT_EARLY_SHABBOS_FIXED_TIME = "19:00:00"
+DEFAULT_EARLY_SHABBOS_APPLY_RULE = "every_friday"  # every_friday | sunset_after
+DEFAULT_EARLY_SHABBOS_SUNSET_AFTER = "19:00:00"
+
+CONF_ENABLE_EARLY_YOMTOV = "enable_early_yomtov"
+CONF_EARLY_YOMTOV_MODE = "early_yomtov_mode"  # default behavior
+CONF_EARLY_YOMTOV_PLAG_METHOD = "early_yomtov_plag_method"
+CONF_EARLY_YOMTOV_FIXED_TIME = "early_yomtov_fixed_time"
+CONF_EARLY_YOMTOV_INCLUDE = "early_yomtov_include"  # whitelist
+CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS = "early_yomtov_allow_second_days"
+
+DEFAULT_ENABLE_EARLY_YOMTOV = False
+DEFAULT_EARLY_YOMTOV_MODE = "plag"  # plag | fixed | disabled
+DEFAULT_EARLY_YOMTOV_PLAG_METHOD = "gra"
+DEFAULT_EARLY_YOMTOV_FIXED_TIME = "19:00:00"
+
+# Conservative defaults per our plan
+DEFAULT_EARLY_YOMTOV_INCLUDE = [
+    "rosh_hashana",
+    "yom_kippur",
+    "sukkos",
+    "shemini_atzeres",
+    "pesach_last_days",
+]
+DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS = False
 
 class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for YidCal."""
@@ -166,19 +203,17 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         return OptionsFlowHandler(config_entry)
 
-
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Options flow with a simple menu to split General vs. Yurtzeit."""
+    """Options flow with a simple menu to split General vs. Yurtzeit vs Early Entry."""
 
     def __init__(self, config_entry):
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
-        # Pass step IDs only; labels are taken from translations:
-        # options.step.init.menu_options.general / yurtzeit
+        # Add "early_shabbos_yt" to the main options menu
         return self.async_show_menu(
             step_id="init",
-            menu_options=["general", "yurtzeit"],
+            menu_options=["general", "yurtzeit", "early_shabbos_yt"],
         )
 
     async def async_step_general(self, user_input=None):
@@ -248,7 +283,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             )
             return self.async_show_form(step_id="general", data_schema=schema)
 
-        # Merge these edits with existing options, preserving any Yurtzeit fields
         new_opts = {**self._config_entry.options, **user_input}
         return self.async_create_entry(title="", data=new_opts)
 
@@ -257,7 +291,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         data = self._config_entry.data or {}
         opts = self._config_entry.options or {}
 
-        # Back-compat defaults
         legacy_db = opts.get(CONF_YAHRTZEIT_DATABASE, data.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE))
         default_dbs = opts.get(
             CONF_YURTZEIT_DATABASES,
@@ -309,4 +342,153 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         new_opts[CONF_ENABLE_WEEKLY_YURTZEIT] = enable_weekly
         new_opts[CONF_YURTZEIT_DATABASES] = dbs
 
+        return self.async_create_entry(title="", data=new_opts)
+
+    # -------------------- NEW: Early Entry sub-menu --------------------
+
+    async def async_step_early_shabbos_yt(self, user_input=None):
+        """Sub-menu for Early Entry."""
+        return self.async_show_menu(
+            step_id="early_shabbos_yt",
+            menu_options=["early_shabbos", "early_yomtov"],
+        )
+
+    async def async_step_early_shabbos(self, user_input=None):
+        """Edit Early Shabbos settings."""
+        data = self._config_entry.data or {}
+        opts = self._config_entry.options or {}
+
+        def get(k, default):
+            return opts.get(k, data.get(k, default))
+
+        if user_input is None:
+            schema = vol.Schema({
+                vol.Optional(
+                    CONF_ENABLE_EARLY_SHABBOS,
+                    default=get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
+                ): bool,
+
+                vol.Optional(
+                    CONF_EARLY_SHABBOS_MODE,
+                    default=get(CONF_EARLY_SHABBOS_MODE, DEFAULT_EARLY_SHABBOS_MODE),
+                ): selector({
+                    "select": {
+                        "options": [
+                            {"value": "plag", "label": "By Plag Hamincha (weekly)"},
+                            {"value": "fixed", "label": "Fixed time (clock)"},
+                            {"value": "disabled", "label": "Disabled (manual only)"},
+                        ]
+                    }
+                }),
+
+                vol.Optional(
+                    CONF_EARLY_SHABBOS_PLAG_METHOD,
+                    default=get(CONF_EARLY_SHABBOS_PLAG_METHOD, DEFAULT_EARLY_SHABBOS_PLAG_METHOD),
+                ): selector({
+                    "select": {
+                        "options": [
+                            {"value": "gra", "label": "GRA (default)"},
+                            {"value": "ma", "label": "Magen Avraham (advanced)"},
+                        ]
+                    }
+                }),
+
+                vol.Optional(
+                    CONF_EARLY_SHABBOS_FIXED_TIME,
+                    default=get(CONF_EARLY_SHABBOS_FIXED_TIME, DEFAULT_EARLY_SHABBOS_FIXED_TIME),
+                ): selector({"time": {}}),
+
+                vol.Optional(
+                    CONF_EARLY_SHABBOS_APPLY_RULE,
+                    default=get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE),
+                ): selector({
+                    "select": {
+                        "options": [
+                            {"value": "every_friday", "label": "Every Friday"},
+                            {"value": "sunset_after", "label": "Only when sunset is after…"},
+                        ]
+                    }
+                }),
+
+                vol.Optional(
+                    CONF_EARLY_SHABBOS_SUNSET_AFTER,
+                    default=get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER),
+                ): selector({"time": {}}),
+            })
+            return self.async_show_form(step_id="early_shabbos", data_schema=schema)
+
+        new_opts = {**self._config_entry.options, **user_input}
+        return self.async_create_entry(title="", data=new_opts)
+
+    async def async_step_early_yomtov(self, user_input=None):
+        """Edit Early Yom Tov settings."""
+        data = self._config_entry.data or {}
+        opts = self._config_entry.options or {}
+
+        def get(k, default):
+            return opts.get(k, data.get(k, default))
+
+        if user_input is None:
+            schema = vol.Schema({
+                vol.Optional(
+                    CONF_ENABLE_EARLY_YOMTOV,
+                    default=get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
+                ): bool,
+
+                vol.Optional(
+                    CONF_EARLY_YOMTOV_MODE,
+                    default=get(CONF_EARLY_YOMTOV_MODE, DEFAULT_EARLY_YOMTOV_MODE),
+                ): selector({
+                    "select": {
+                        "options": [
+                            {"value": "plag", "label": "By Plag Hamincha (weekly)"},
+                            {"value": "fixed", "label": "Fixed time (clock)"},
+                            {"value": "disabled", "label": "Disabled (manual only)"},
+                        ]
+                    }
+                }),
+
+                vol.Optional(
+                    CONF_EARLY_YOMTOV_PLAG_METHOD,
+                    default=get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD),
+                ): selector({
+                    "select": {
+                        "options": [
+                            {"value": "gra", "label": "GRA (default)"},
+                            {"value": "ma", "label": "Magen Avraham (advanced)"},
+                        ]
+                    }
+                }),
+
+                vol.Optional(
+                    CONF_EARLY_YOMTOV_FIXED_TIME,
+                    default=get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME),
+                ): selector({"time": {}}),
+
+                vol.Optional(
+                    CONF_EARLY_YOMTOV_INCLUDE,
+                    default=get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE),
+                ): selector({
+                    "select": {
+                        "multiple": True,
+                        "options": [
+                            {"value": "rosh_hashana", "label": "Rosh Hashana (Day 1 only)"},
+                            {"value": "yom_kippur", "label": "Yom Kippur"},
+                            {"value": "sukkos", "label": "Sukkos (Day 1 only)"},
+                            {"value": "shemini_atzeres", "label": "Shemini Atzeres (first day only)"},
+                            {"value": "pesach_last_days", "label": "Last days of Pesach (Shvi’i only)"},
+                            {"value": "pesach_first_day", "label": "Pesach Day 1 (accept early; seder at night)"},
+                            {"value": "shavuos", "label": "Shavuos (advanced)"},
+                        ]
+                    }
+                }),
+
+                vol.Optional(
+                    CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
+                    default=get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
+                ): bool,
+            })
+            return self.async_show_form(step_id="early_yomtov", data_schema=schema)
+
+        new_opts = {**self._config_entry.options, **user_input}
         return self.async_create_entry(title="", data=new_opts)
