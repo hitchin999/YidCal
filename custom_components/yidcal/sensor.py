@@ -65,6 +65,8 @@ from .zman_tzeis import ZmanTziesSensor
 from .upcoming_holiday_sensor import UpcomingHolidaySensor
 from .fast_timer_sensors import FastStartCountdownSensor, FastEndCountdownSensor
 from .friday_is_rosh_chodesh_sensor import FridayIsRoshChodeshSensor
+from .early_shabbos_yt_start_time_sensor import EarlyShabbosYtStartTimeSensor
+
 from .yurtzeit_sensor import (
     YurtzeitSensor,
     YurtzeitWeeklySensor,
@@ -80,6 +82,8 @@ from .config_flow import (
     CONF_YURTZEIT_DATABASES,
     CONF_YAHRTZEIT_DATABASE,   # legacy fallback
     DEFAULT_YAHRTZEIT_DATABASE,
+    CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS,
+    CONF_ENABLE_EARLY_YOMTOV,  DEFAULT_ENABLE_EARLY_YOMTOV,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -241,6 +245,18 @@ async def async_setup_entry(
             update_interval_minutes=15,
         ),
     ]
+
+    enable_es = entry.options.get(
+        CONF_ENABLE_EARLY_SHABBOS,
+        entry.data.get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
+    )
+    enable_ey = entry.options.get(
+        CONF_ENABLE_EARLY_YOMTOV,
+        entry.data.get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
+    )
+
+    if enable_es or enable_ey:
+        sensors.append(EarlyShabbosYtStartTimeSensor(hass, entry))
 
     # ─────────────────────────────────────────────────────────────
     # Yurtzeit sensors (per database, daily/weekly, legacy-safe)
