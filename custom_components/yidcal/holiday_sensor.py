@@ -769,14 +769,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Friday daytime of Chanukah: alos → candle
         if in_chanukah and wd_py == 4:
             attrs["ערב שבת חנוכה"] = True
-        
-        # Shabbos in Chanukah: candles → havdalah
-        if in_chanukah and wd_fest == 5:
-            attrs["שבת חנוכה"] = True
-        
-        # Shabbos Chanukah that is also Rosh Chodesh (exclude RH 1 Tishrei)
-        if in_chanukah and wd_fest == 5 and (hd_fest.day in (1, 30)) and not (hd_fest.month == 7 and hd_fest.day == 1):
-            attrs["שבת חנוכה ראש חודש"] = True
 
         # Shovavim
         parsha = (getparsha_string(hd_fest) or "").upper()
@@ -1126,22 +1118,45 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs.get("שביעי של פסח") or attrs.get("אחרון של פסח")
             )
 
-        # Shabbos Chol HaMoed (halachic Shabbos via wd_fest)
-        attrs["שבת חול המועד סוכות"] = (
-            wd_fest == 5 and hd_fest.month == 7 and hd_fest.day in (17, 18, 19, 20)
+        # ─── Shabbos-based flags: use Fri candle → Sat havdalah window ─────────
+        shabbos_pydate: datetime.date | None = None
+
+        # Friday after candle-lighting counts as "in Shabbos" already
+        if wd == 4 and now >= candle_cut:
+            shabbos_pydate = actual_date + timedelta(days=1)  # Shabbos day (Saturday)
+
+        # Saturday until havdalah is still Shabbos
+        elif wd == 5 and now < havdalah_cut:
+            shabbos_pydate = actual_date
+
+        hd_shabbos = PHebrewDate.from_pydate(shabbos_pydate) if shabbos_pydate else None
+        
+        # Shabbos Chanukah flags (Fri candle → Sat havdalah)
+        if hd_shabbos:
+            chan_first_py_shabbos = PHebrewDate(hd_shabbos.year, 9, 25).to_pydate()
+            days_into_chan_shabbos = (shabbos_pydate - chan_first_py_shabbos).days
+            if 0 <= days_into_chan_shabbos <= 7:
+                attrs["שבת חנוכה"] = True
+
+                # Shabbos Chanukah that is also Rosh Chodesh (exclude RH 1 Tishrei)
+                if (hd_shabbos.day in (1, 30)) and not (hd_shabbos.month == 7 and hd_shabbos.day == 1):
+                    attrs["שבת חנוכה ראש חודש"] = True
+
+        # CH"M day ranges differ by mode (EY includes day 16; diaspora starts at 17)
+        chm_days = (17, 18, 19, 20) if self._diaspora else (16, 17, 18, 19, 20)
+
+        attrs["שבת חול המועד סוכות"] = bool(
+            hd_shabbos and hd_shabbos.month == 7 and hd_shabbos.day in chm_days
         )
-        attrs["שבת חול המועד פסח"] = (
-            wd_fest == 5 and hd_fest.month == 1 and hd_fest.day in (17, 18, 19, 20)
+        attrs["שבת חול המועד פסח"] = bool(
+            hd_shabbos and hd_shabbos.month == 1 and hd_shabbos.day in chm_days
         )
 
-        # Shabbos Rosh Chodesh – halachic Shabbos via wd_fest (Mon=0..Sun=6).
-        # True when the halachic Shabbos day is also Rosh Chodesh
-        # (RC days are 30 of the previous month or 1 of the current),
-        # excluding 1 Tishrei (Rosh Hashanah) per your existing RC rule.
-        attrs["שבת ראש חודש"] = (
-            wd_fest == 5
-            and (hd_fest.day in (1, 30))
-            and not (hd_fest.month == 7 and hd_fest.day == 1)  # exclude RH
+        # Shabbos Rosh Chodesh (same Shabbos window logic)
+        attrs["שבת ראש חודש"] = bool(
+            hd_shabbos
+            and (hd_shabbos.day in (1, 30))
+            and not (hd_shabbos.month == 7 and hd_shabbos.day == 1)  # exclude RH
         )
 
         # ─── Countdown for fast ends in
@@ -1301,12 +1316,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
             if hd_fest.month == 7 and hd_fest.day == 22:
                 attrs["שמחת תורה"] = True
-
-            if wd_fest == 5:
-                if hd_fest.month == 7 and hd_fest.day in (16,17,18,19,20):
-                    attrs["שבת חול המועד סוכות"] = True
-                if hd_fest.month == 1 and hd_fest.day in (16,17,18,19,20):
-                    attrs["שבת חול המועד פסח"] = True
 
             if picked in ("שמיני עצרת", "שמחת תורה"):
                 picked = "שמיני עצרת/שמחת תורה"
