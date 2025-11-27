@@ -20,7 +20,7 @@
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
           "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
           "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די",
-					"time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
+          "time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
         }
       },
       "yurtzeit": {
@@ -41,7 +41,8 @@
       "init": {
         "menu_options": {
           "general": "אלגעמיינע סעטינגס",
-          "yurtzeit": "יארצייטן סענסאָרס"
+          "yurtzeit": "יארצייטן סענסאָרס",
+          "early_shabbos_yt": "פריער שבת / יום טוב"
         }
       },
       "general": {
@@ -55,8 +56,8 @@
           "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
           "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
-          "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די",
-					"time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
+          "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקןדי",
+          "time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
         }
       },
       "yurtzeit": {
@@ -64,6 +65,55 @@
           "enable_yurtzeit_daily": "צולייגען די טעגליכע יארצייטן סענסאר",
           "enable_weekly_yurtzeit": "צולייגען די וועכנטליכע יארצייטן סענסאר",
           "yurtzeit_databases": "וועלכע יארצייטן דאטאבעיס(ן) צו ניצן"
+        }
+      },
+      "early_shabbos_yt": {
+        "title": "פריער שבת / יום טוב",
+        "menu_options": {
+          "early_shabbos": "פריער שבת",
+          "early_yomtov": "פריער יום טוב"
+        }
+      },
+      "early_shabbos": {
+        "title": "פריער שבת",
+        "data": {
+          "enable_early_shabbos": "עקטיוועט פריער שבת",
+          "early_shabbos_mode": "וויזוי צו רעכענען פריער שבת",
+          "early_shabbos_plag_method": "וועלכן פּלג־שיטה צו נוצן",
+          "early_shabbos_fixed_time": "א געוויסע צייט פאר פריער שבת",
+          "early_shabbos_apply_rule": "ווען זאל פריער שבת ווערן אפלייעד",
+          "early_shabbos_sunset_after": "נאר ווען פרייטאג שקיעה איז נאך …"
+        }
+      },
+      "early_yomtov": {
+        "title": "פריער יום טוב",
+        "data": {
+          "enable_early_yomtov": "עקטיוועט פריער יום טוב",
+          "early_yomtov_mode": "וויזוי צו רעכענען פריער יום טוב",
+          "early_yomtov_plag_method": "וועלכן פּלג־שיטה צו נוצן",
+          "early_yomtov_fixed_time": "א געוויסע צייט פאר פריער יום טוב",
+          "early_yomtov_include": "אויף וועלכע ימים טובים מעג מען פריער אננעמען",
+          "early_yomtov_allow_second_days": "ערלויבן פריער אננעמען אויך אויף צווייטע טעג יום טוב"
+        }
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "early_shabbos_override": {
+        "name": "Early Shabbos Override",
+        "state": {
+          "auto": "Auto",
+          "force_early": "Force early",
+          "force_regular": "Force regular"
+        }
+      },
+      "early_yomtov_override": {
+        "name": "Early Yom Tov Override",
+        "state": {
+          "auto": "Auto",
+          "force_early": "Force early",
+          "force_regular": "Force regular"
         }
       }
     }
