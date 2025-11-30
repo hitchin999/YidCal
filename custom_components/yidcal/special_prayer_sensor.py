@@ -96,6 +96,8 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from pyluach.dates import GregorianDate
+from pyluach import parshios
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
@@ -383,6 +385,20 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                 hd_sun = hd_sun + 1
             m_num_sun = hd_sun.month
             d_num_sun = hd_sun.day
+            
+            # ---------- פרשת המן (ג׳ בשלח) ----------
+            # True only on Tuesday of Parshas Beshalach, from Alos (dawn) until Tzeis (havdala)
+            # Use Israel vs Diaspora parsha schedule appropriately.
+            parsha_today = parshios.getparsha_string(
+                GregorianDate(today.year, today.month, today.day),
+                israel=(not self._diaspora),
+                hebrew=True,
+            )
+            is_parshas_haman = (
+                now.weekday() == 1  # Tuesday (Mon=0)
+                and parsha_today == "בשלח"
+                and dawn <= now < havdala
+            )
 
             # ---------- מוריד הגשם / מוריד הטל ----------
             is_morid_geshem = (
@@ -560,6 +576,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             attrs["הלל"] = is_hallel
             attrs["הלל השלם"] = is_hallel_shalem
             attrs["אתה חוננתנו"] = motzash_tog
+            attrs["פרשת המן"] = is_parshas_haman
 
             self._attr_extra_state_attributes = attrs
 
@@ -583,6 +600,8 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                 parts.append("עשי\"ת")
             if motzash_tog:
                 parts.append("אתה חוננתנו")
+            if is_parshas_haman:
+                parts.append("פרשת המן")
 
             self._state = " - ".join(parts)
             return self._state
