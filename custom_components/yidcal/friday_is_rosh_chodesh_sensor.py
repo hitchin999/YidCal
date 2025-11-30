@@ -253,8 +253,8 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         self._attr_extra_state_attributes.update(
             {
-                "Window_Start": window_start.isoformat() if window_start else "",
-                "Window_End": window_end.isoformat() if window_end else "",
+                #"Window_Start": window_start.isoformat() if window_start else "",
+                #"Window_End": window_end.isoformat() if window_end else "",
 
                 "Next_Window_Start": next_ws.isoformat() if next_ws else "",
                 "Next_Window_End": next_we.isoformat() if next_we else "",
@@ -263,4 +263,5 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
                 "Active_Window_Today": active,
             }
         )
+
 
