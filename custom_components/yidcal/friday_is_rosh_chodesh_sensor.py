@@ -258,8 +258,9 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
                 "Next_Window_Start": next_ws.isoformat() if next_ws else "",
                 "Next_Window_End": next_we.isoformat() if next_we else "",
-                "Next_Reminder_Day": next_day.isoformat() if next_day else "",
+                #"Next_Reminder_Day": next_day.isoformat() if next_day else "",
 
                 "Active_Window_Today": active,
             }
         )
+
