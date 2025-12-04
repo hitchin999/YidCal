@@ -739,20 +739,23 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 (+1, ["מוצאי יום הכיפורים"]),
             ]
         elif base == "חנוכה":
-            last_day = d0 + timedelta(days=7)           # civil date of day 8
-            motzei_exists = (last_day.weekday() != 5)  # no separate motzei if day 8 is Shabbos
+            last_day = d0 + timedelta(days=7)           # day 8 civil date
+            motzei_exists = (last_day.weekday() != 5)  # no distinct motzaei if day 8 is Shabbos
+
             buckets = [
                 (-1, ["ערב חנוכה"]),
-                (0, ["חנוכה"]),
-                (1, ["חנוכה"]),
-                (2, ["חנוכה"]),
-                (3, ["חנוכה"]),
-                (4, ["חנוכה"]),
-                (5, ["חנוכה"]),
-                (6, ["חנוכה"]),
-                (7, ["חנוכה", "זאת חנוכה"]),  # day 8
-                (8, ["מוצאי חנוכה"]),
+                (0,  ["חנוכה", "א׳ דחנוכה"]),
+                (1,  ["חנוכה", "ב׳ דחנוכה"]),
+                (2,  ["חנוכה", "ג׳ דחנוכה"]),
+                (3,  ["חנוכה", "ד׳ דחנוכה"]),
+                (4,  ["חנוכה", "ה׳ דחנוכה"]),
+                (5,  ["חנוכה", "ו׳ דחנוכה"]),
+                (6,  ["חנוכה", "ז׳ דחנוכה"]),
+                (7,  ["חנוכה", "זאת חנוכה"]),  # treat this as day 8 (unless you add "ח׳ דחנוכה")
             ]
+            if motzei_exists:
+                buckets.append((8, ["מוצאי חנוכה"]))
+                
         elif base in ("תשעה באב", "תשעה באב נדחה"):
             from pyluach.hebrewcal import HebrewDate as PHebrewDate
             hd0 = PHebrewDate.from_pydate(d0)
