@@ -87,6 +87,13 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * ערב שבת חנוכה
   * שבת חנוכה
   * שבת חנוכה ראש חודש
+  * א׳ דחנוכה
+  * ב׳ דחנוכה
+  * ג׳ דחנוכה
+  * ד׳ דחנוכה
+  * ה׳ דחנוכה
+  * ו׳ דחנוכה
+  * ז׳ דחנוכה
   * זאת חנוכה
   * מוצאי חנוכה
   * שובבים
@@ -189,6 +196,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
   * Aggregates liturgical insertions (מוריד הגשם/הטל, ותן טל ומטר/ותן ברכה, יעלה ויבוא, על הניסים, עננו, נחם, etc.)
   * **Attribute `הושענות`** – daily Hoshana during Sukkot
+  * Adds **פרשת המן** on **ג׳ בשלח**
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
 * **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
@@ -320,7 +328,14 @@ ISO/With-Seconds timestamps remain controlled by Home Assistant’s global date/
 
 ## Display device extras
 
-### Fast countdown sensors (new)
+### Haftorah Sensor (New)
+
+* **Haftorah** (`sensor.yidcal_haftorah`) — Haftarah reading for the relevant Shabbos (including special Haftaros when applicable).
+* **Minhag selection:** controlled by the config-flow option **`הפטרה סענסאר מנהג`**:
+  * אשכנזי (default)
+  * ספרדי
+
+### Fast countdown sensors
 
 * **Fast Starts In** (`sensor.yidcal_fast_starts_in`)
   Countdown timer for when a fast begins.
@@ -330,7 +345,7 @@ ISO/With-Seconds timestamps remain controlled by Home Assistant’s global date/
 
 *(Both are under the **YidCal — Display** device.)*
 
-### Friday Is Rosh Chodesh (new)
+### Friday Is Rosh Chodesh
 
 Shows the reminder: **“שניידן די נעגל, האר היינט לכבוד שבת”** when applicable:
 
@@ -390,6 +405,8 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `צייט־פארמאט (נאר פאר Simple Zmanim)`                      | `12-hour`   | Format for **Simple** Zmanim attributes only: **12-hour (AM/PM)** or **24-hour**.                                                       |
 | `ווען זאל זיך די סליחות טאג טוישן`                         | `זמן הבדלה` | When the Selichos label advances: `havdalah` (after sunset + offset) or `midnight` (12 AM).                                             |
 | `Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די`   | `2`         | How many **halachic days** ahead Upcoming Holiday pre-activates (range **1–14**). Updates nightly at **12:02 AM** and respects offsets. |
+| `הפטרה סענסאר מנהג` | `אשכנזי` | Choose the minhag used for the Haftorah sensor: `אשכנזי` or `ספרדי`. |
+
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. Remove them manually via **Settings → Entities**, or delete and re-add the integration with the option turned off.
 
