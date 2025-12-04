@@ -22,6 +22,10 @@ DEFAULT_IS_IN_ISRAEL = False
 CONF_TIME_FORMAT = "time_format"
 DEFAULT_TIME_FORMAT = "12" 
 
+# ============ Haftorah Minhag (NEW) ============
+CONF_HAFTORAH_MINHAG = "haftorah_minhag"
+DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
+
 # ============ New Yurtzeit keys ============
 CONF_ENABLE_YURTZEIT_DAILY = "enable_yurtzeit_daily"
 CONF_YURTZEIT_DATABASES = "yurtzeit_databases"
@@ -95,6 +99,17 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "options": [
                                 {"value": "yiddish", "label": "זונטאג, מאנטאג"},
                                 {"value": "hebrew",  "label": "יום א', יום ב"},
+                            ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_HAFTORAH_MINHAG,
+                        default=DEFAULT_HAFTORAH_MINHAG,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "ashkenazi", "label": "אשכנזי"},
+                                {"value": "sephardi",  "label": "ספרדי"},
                             ]
                         }
                     }),
@@ -240,6 +255,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             "options": [
                                 {"value": "yiddish", "label": "זונטאג, מאנטאג"},
                                 {"value": "hebrew",  "label": "יום א', יום ב"},
+                            ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_HAFTORAH_MINHAG,
+                        default=get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "ashkenazi", "label": "אשכנזי"},
+                                {"value": "sephardi",  "label": "ספרדי"},
                             ]
                         }
                     }),
@@ -476,7 +502,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             {"value": "yom_kippur", "label": "Yom Kippur"},
                             {"value": "sukkos", "label": "Sukkos (Day 1 only)"},
                             {"value": "shemini_atzeres", "label": "Shemini Atzeres (first day only)"},
-                            {"value": "pesach_last_days", "label": "Last days of Pesach (Shvi’i only)"},
+                            {"value": "pesach_last_days", "label": "Last days of Pesach (Shvi'i only)"},
                             {"value": "pesach_first_day", "label": "Pesach Day 1 (accept early; seder at night)"},
                             {"value": "shavuos", "label": "Shavuos (advanced)"},
                         ]
