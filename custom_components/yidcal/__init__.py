@@ -21,6 +21,9 @@ from .config_flow import (
     DEFAULT_UPCOMING_LOOKAHEAD_DAYS,
     CONF_IS_IN_ISRAEL,
     DEFAULT_IS_IN_ISRAEL,
+    # Haftorah Minhag (NEW)
+    CONF_HAFTORAH_MINHAG,
+    DEFAULT_HAFTORAH_MINHAG,
     # NEW Yurtzeit
     CONF_ENABLE_YURTZEIT_DAILY,
     CONF_YURTZEIT_DATABASES,
@@ -236,6 +239,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_TIME_FORMAT,
         initial.get(CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT),
     )
+    haftorah_minhag = opts.get(
+        CONF_HAFTORAH_MINHAG,
+        initial.get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
+    )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
         initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -346,6 +353,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "havdalah_offset": havdala,
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
+        CONF_HAFTORAH_MINHAG: haftorah_minhag,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
         # Yurtzeit new fields
@@ -387,6 +395,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "day_label_language": day_label,
         "include_date": include_date,
         "havdalah_offset": havdala,
+        CONF_HAFTORAH_MINHAG: haftorah_minhag,
         # Yurtzeit new fields (so sensors can read them directly if desired)
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
         CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
@@ -438,6 +447,10 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     time_format = opts.get(
         CONF_TIME_FORMAT,
         initial.get(CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT),
+    )
+    haftorah_minhag = opts.get(
+        CONF_HAFTORAH_MINHAG,
+        initial.get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
     )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
@@ -540,6 +553,7 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         "havdalah_offset": havdala,
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
+        CONF_HAFTORAH_MINHAG: haftorah_minhag,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
         # Yurtzeit new fields
