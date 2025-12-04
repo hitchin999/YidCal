@@ -66,6 +66,7 @@ from .upcoming_holiday_sensor import UpcomingHolidaySensor
 from .fast_timer_sensors import FastStartCountdownSensor, FastEndCountdownSensor
 from .friday_is_rosh_chodesh_sensor import FridayIsRoshChodeshSensor
 from .early_shabbos_yt_start_time_sensor import EarlyShabbosYtStartTimeSensor
+from .haftorah_sensor import HaftorahSensor
 
 from .yurtzeit_sensor import (
     YurtzeitSensor,
@@ -236,6 +237,7 @@ async def async_setup_entry(
         FastStartCountdownSensor(hass),
         FastEndCountdownSensor(hass),
         FridayIsRoshChodeshSensor(hass, yidcal_helper, havdalah_offset),
+        HaftorahSensor(hass),
         UpcomingHolidaySensor(
             hass,
             candle_offset,
