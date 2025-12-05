@@ -516,6 +516,90 @@ class HaftorahResolver:
 
         return None, None, extra
 
+    def _check_additional_pesukim(self, shabbos: date, reason: str) -> dict[str, Any]:
+        """
+        Check if we need to add first/last pesukim of Rosh Chodesh or Machar Chodesh.
+        
+        This applies when:
+        - Shabbat is Rosh Chodesh (day 1 or 30) but we read a different haftarah
+          (e.g., Chanukah, Shekalim on RC Adar, HaChodesh on RC Nisan)
+        - Shabbat is Erev Rosh Chodesh but we read a different haftarah
+        
+        Special case: When Shabbat is day 30 (first day of two-day RC), tomorrow 
+        is day 1 (second day of RC), so we add BOTH RC and Machar Chodesh pesukim.
+        
+        We don't add pesukim when:
+        - The haftarah IS the Rosh Chodesh or Machar Chodesh haftarah
+        - Regular parsha reading (then RC/MC haftarah is read instead, not added)
+        
+        Note: Month lengths vary - Cheshvan/Kislev can have 29 or 30 days.
+        Day 30 only exists (and is RC) if the month has 30 days.
+        """
+        result: dict[str, Any] = {}
+        
+        gd = _greg_from_pydate(shabbos)
+        hd = gd.to_heb()
+        
+        # Check if this is Rosh Chodesh
+        # Day 1 is always RC. Day 30, if it exists in the date, is also RC.
+        is_rc = hd.day in (1, 30)
+        is_rc_day_30 = hd.day == 30  # First day of two-day RC
+        
+        # Check if this is Erev Rosh Chodesh (tomorrow is RC but today is not)
+        is_erev_rc = False
+        tomorrow_is_rc = False
+        if not is_rc:
+            try:
+                # Try to get tomorrow in the same month
+                tomorrow_hd = HebrewDate(hd.year, hd.month, hd.day + 1)
+                # If tomorrow is day 30, it's RC (and today is Erev RC)
+                if tomorrow_hd.day == 30:
+                    is_erev_rc = True
+                    tomorrow_is_rc = True
+            except (ValueError, TypeError):
+                # Tomorrow doesn't exist in this month, so tomorrow is 1st of next month = RC
+                # Therefore today is Erev RC
+                is_erev_rc = True
+                tomorrow_is_rc = True
+        elif is_rc_day_30:
+            # Today is day 30 (RC), and tomorrow is day 1 (also RC)
+            tomorrow_is_rc = True
+        
+        # Only add pesukim if we're reading a special haftarah that overrides RC/MC
+        # (festivals, Chanukah, arba parshiyot, etc.) - NOT for regular parsha
+        special_reasons = [
+            "chanuka", "arba_parshiyot", "shabbat_shuva", "shabbat_hagadol",
+            "festival", "rosh_hashana", "yom_kippur", "sukkot", "pesach", "shavuot"
+        ]
+        
+        is_special = any(sr in reason.lower() for sr in special_reasons)
+        
+        if not is_special:
+            return result
+        
+        additions = []
+        sources = []
+        
+        # Check for Rosh Chodesh addition
+        if is_rc and "rosh_chodesh" not in reason.lower():
+            additions.append("ר\"ח")
+            sources.append("ישעיהו סו:א + סו:כג")
+        
+        # Check for Machar Chodesh addition
+        # This applies when tomorrow is RC (either Erev RC, or day 30 with day 1 tomorrow)
+        if tomorrow_is_rc and "machar_chodesh" not in reason.lower():
+            # Don't add MC if we're on day 1 of RC (tomorrow is day 2, not RC)
+            if hd.day != 1:
+                additions.append("מחר חודש")
+                sources.append("שמואל א כ:יח + כ:מב")
+        
+        if additions:
+            result["add_pesukim"] = "גם פסוק ראשון ואחרון של " + " ושל ".join(additions)
+            result["add_pesukim_source"] = " + ".join(sources)
+            result["add_pesukim_type"] = "both" if len(additions) > 1 else ("rosh_chodesh" if "ר\"ח" in additions else "machar_chodesh")
+            
+        return result
+
     def _resolve_rosh_machar(self, shabbos: date) -> tuple[str | None, str | None, dict[str, Any]]:
         gd = _greg_from_pydate(shabbos)
         hd = gd.to_heb()
@@ -588,6 +672,8 @@ class HaftorahResolver:
             if not ent:
                 return None
             name, full, variants = self._pick_name(ent, minhag)
+            # Check for additional pesukim (RC/MC)
+            extra.update(self._check_additional_pesukim(shabbos, reason or "festival"))
             return HaftorahResolved(
                 haftarah_id=str(hid),
                 display_name=name,
@@ -617,6 +703,9 @@ class HaftorahResolver:
                 # Fall back to catalog entry
                 display_name, full_name, variants = self._pick_name(ent, minhag)
                 source_ref = ent.get("source") or ""
+            
+            # Check for additional pesukim (RC/MC)
+            extra2.update(self._check_additional_pesukim(shabbos, reason or "special_shabbos"))
             
             return HaftorahResolved(
                 haftarah_id=str(hid),
@@ -776,6 +865,17 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         extra.pop("haftarah_name_english", None)
         extra.pop("haftarah_source_english", None)
         extra.pop("haftarah_variants", None)
+        extra.pop("add_pesukim_type", None)  # Internal use only
+        
+        # Extract add_pesukim before renaming for use in state
+        add_pesukim_text = extra.get("add_pesukim", "")
+        
+        # Rename add_pesukim keys to Hebrew-friendly attribute names
+        if "add_pesukim" in extra:
+            extra["מוסיפים"] = extra.pop("add_pesukim")
+        if "add_pesukim_source" in extra:
+            extra["מקור_התוספת"] = extra.pop("add_pesukim_source")
+        
         variants = _variants_hebrew_keys(resolved.variants or {})
 
         # Build the display state
@@ -788,7 +888,11 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             # Append source reference if not already included
             display = f"{display} ({resolved.source_ref})"
         
-        # State: just the haftarah name with source (no prefix)
+        # Add the מוסיפים text to the state (without source)
+        if add_pesukim_text:
+            display = f"{display} - {add_pesukim_text}"
+        
+        # State: haftarah name with source, plus any additions
         self._state = display if display else None
 
         # Attributes: keep footnotes/alternates usable for later UI
