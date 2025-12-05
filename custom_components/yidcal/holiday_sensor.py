@@ -190,6 +190,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "מוצאי סוכות",
         "אסרו חג סוכות",
         "ערב חנוכה",
+        "א׳ דחנוכה",
+        "ב׳ דחנוכה",
+        "ג׳ דחנוכה",
+        "ד׳ דחנוכה",
+        "ה׳ דחנוכה",
+        "ו׳ דחנוכה",
+        "ז׳ דחנוכה",
         "חנוכה",
         "זאת חנוכה",
         "צום עשרה בטבת",
@@ -776,7 +783,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         if in_chanukah:
             attrs["חנוכה"] = True
-            # Zot Chanukah = day 8 of the span (Tevet 2 *or* 3 depending on Kislev)
+
+            # Day labels 1–7
+            chan_day_letters = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ז׳"]
+            if 0 <= days_into_chan <= 6:
+                attrs[f"{chan_day_letters[days_into_chan]} דחנוכה"] = True
+
+            # Zot Chanukah = day 8
             if days_into_chan == 7:
                 attrs["זאת חנוכה"] = True
         
