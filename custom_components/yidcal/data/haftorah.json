@@ -821,7 +821,7 @@
       "frequency_rank": 8,
       "id": "56",
       "name_english": "Machar Chodesh",
-      "name_hebrew": "ממחר חדש",
+      "name_hebrew": "מחר חדש",
       "notes": "Variable: 0-3 times per year when day before Rosh Chodesh falls on Shabbat",
       "occasion": "שבת ערב ראש חודש",
       "source": "שמואל א כ",
@@ -1676,7 +1676,7 @@
       },
       "shabbat_machar_chodesh": {
         "id": 56,
-        "name_hebrew": "ממחר חדש",
+        "name_hebrew": "מחר חדש",
         "name_english": "Machar Chodesh",
         "occasion": "שבת ערב ראש חודש",
         "timing": "When day before Rosh Chodesh (30th of month) falls on Shabbat",
