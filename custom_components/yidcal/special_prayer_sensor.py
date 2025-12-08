@@ -20,7 +20,6 @@ Main state (joined with " - ")
 • יעלה ויבוא  
   – On: כל ראש חודש (חוץ מראש השנה), יום טוב וחול המועד.  
   – חלון זמן: מן צאת הכוכבים (אמש) עד צאת הכוכבים (הלילה) — כלומר לילה-עד-לילה (tzeis→tzeis).  
-  – לא נאמר בחנוכה.
 
 • אתה יצרת  
   – When שבת coincides with ראש חודש (from dawn → sunset).
@@ -467,7 +466,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             is_rc = (day in (1, 30)) and not is_rh
 
             yaaleh_day = (is_rc or is_yomtov or has_chm) and night_inclusive_window
-            is_yaaleh_veyavo = bool(yaaleh_day) and not is_chanukah
+            is_yaaleh_veyavo = bool(yaaleh_day)
 
             # ---------- אתה יצרת ----------
             is_atah_yatzarta = (
