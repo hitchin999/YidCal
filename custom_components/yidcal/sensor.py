@@ -821,97 +821,92 @@ class RoshChodeshToday(YidCalDisplayDevice, SensorEntity):
         super().__init__()
         slug = "rosh_chodesh_today"
         self._attr_unique_id = f"yidcal_{slug}"
-        self.entity_id       = f"sensor.yidcal_{slug}"
+        self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
         self.helper = helper
         self._havdalah_offset = havdalah_offset
         self._attr_native_value = None
 
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg["tzname"])
+        self._geo = None
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
-        # 1) Immediate update
+        self._geo = await get_geo(self.hass)
+
         await self.async_update()
 
-        # 2) Hourly refresh on event loop
-        async_track_time_interval(
-            self.hass,
-            self.async_update,
-            timedelta(hours=1),
+        # Minute lockstep like DayType
+        self._register_listener(
+            async_track_time_change(self.hass, self.async_update, second=0)
         )
 
-        # 3) Anytime "sensor.yidcal_molad" changes, run async_update() on the event loop
-        async_track_state_change_event(
-            self.hass,
-            ["sensor.yidcal_molad"],
-            self._handle_molad_change,  # see below
-        )
-
-        # 4) Sunset + havdalah offset (on event loop)
-        async_track_sunset(
+        # Also re-evaluate at tzeis (sunset + offset)
+        self._register_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
         )
-        
+
+        # Molad change can still force refresh
+        self._register_listener(
+            async_track_state_change_event(
+                self.hass,
+                ["sensor.yidcal_molad"],
+                self._handle_molad_change,
+            )
+        )
+
     async def _handle_molad_change(self, event) -> None:
-        """Called when the Molad sensor’s state changes—just re‐run async_update."""
         await self.async_update()
 
-    async def async_update(self, _now: datetime | None = None) -> None:
-        """Compute whether *now* is inside any Rosh-Chodesh interval."""
-        tz = ZoneInfo(self.hass.config.time_zone)
-        now = _now or datetime.now(tz)
+    def _tzeis(self, d: date) -> datetime:
+        """Rounded tzeis = sunset(d) + offset, Motzi-style."""
+        sunset = (
+            ZmanimCalendar(geo_location=self._geo, date=d)
+            .sunset()
+            .astimezone(self._tz)
+        )
+        return _round_ceil(sunset + timedelta(minutes=self._havdalah_offset))
 
-        main   = self.hass.states.get("sensor.yidcal_molad")
-        attr   = main.attributes if main else {}
-        nf_list = (attr.get("Rosh_Chodesh_Nightfall") if main else None) or []
-        month   = (attr.get("Month_Name") if main else "") or ""
+    async def async_update(self, now: datetime | None = None) -> None:
+        if not self._geo:
+            return
 
-        # 1) Use Molad-provided nightfall times if present
-        nf_datetimes: list[datetime] = []
-        if nf_list:
-            nf_datetimes = [
-                dt if isinstance(dt, datetime) else datetime.fromisoformat(dt)
-                for dt in nf_list
-            ]
-        else:
-            # 2) Fallback: compute locally, but FIRST pick base_date like Molad does
-            #    (if Hebrew day < 3, jump ~15 days back to previous month).
-            hd_now = PHebrewDate.from_pydate(now.date())
-            base_date = (now.date() - timedelta(days=15)) if hd_now.day < 3 else now.date()
+        now_local = (now or dt_util.now()).astimezone(self._tz)
+        today = now_local.date()
+
+        # Match your Molad “base_date” rule near month start
+        hd_now = PHebrewDate.from_pydate(today)
+        base_date = (today - timedelta(days=15)) if hd_now.day < 3 else today
+
+        try:
             rc = self.helper.get_rosh_chodesh_days(base_date)
+            rc_gdays = list(rc.gdays or [])
+        except Exception:
+            rc_gdays = []
 
-            # Derive month name in **Hebrew** from the RC day itself (matches pyluach style)
-            if not month:
-                month = PHebrewDate.from_pydate(rc.gdays[-1]).month_name(True) if rc.gdays else (rc.month or "")
+        if not rc_gdays:
+            self._attr_native_value = "Not Rosh Chodesh Today"
+            return
 
-            loc = LocationInfo(
-                latitude=self.hass.config.latitude,
-                longitude=self.hass.config.longitude,
-                timezone=self.hass.config.time_zone,
-            )
-            nf_datetimes = []
-            for gd in rc.gdays:
-                prev = gd - timedelta(days=1)
-                sd = sun(loc.observer, date=prev, tzinfo=tz)
-                nf_datetimes.append(sd["sunset"] + timedelta(minutes=self._havdalah_offset))
+        # Month name from the RC day itself (pyluach Hebrew month name)
+        month = PHebrewDate.from_pydate(rc_gdays[-1]).month_name(True)
 
-        # Find which Rosh Chodesh period (if any) is active
         active_index: int | None = None
-        for i, start in enumerate(nf_datetimes):
-            end = (
-                nf_datetimes[i + 1]
-                if i + 1 < len(nf_datetimes)
-                else start + timedelta(days=1)
-            )
-            if start <= now < end:
+
+        # Each RC "day" is: tzeis(prev day) -> tzeis(this day)
+        for i, gd in enumerate(rc_gdays):
+            start = self._tzeis(gd - timedelta(days=1))
+            end = self._tzeis(gd)
+            if start <= now_local < end:
                 active_index = i
                 break
 
-        # Build the display string
         if active_index is not None:
-            if len(nf_datetimes) == 1:
+            if len(rc_gdays) == 1:
                 val = f"ראש חודש {month}"
             else:
                 prefix = ("א", "ב")[active_index] + "׳"
@@ -923,6 +918,4 @@ class RoshChodeshToday(YidCalDisplayDevice, SensorEntity):
 
     @property
     def available(self) -> bool:
-        # Stay available even if Molad hasn’t computed RC attributes or is missing.
         return True
-        
