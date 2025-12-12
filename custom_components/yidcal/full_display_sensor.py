@@ -145,7 +145,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 if "ערב פסח" not in text:
                     text += " ~ ערב פסח"
 
-        # 5) Special Shabbos — show on Fri only after 13:00 (general),
+        # 5) Special Shabbos — show on Fri only after 12:00 (general),
         # but for "פורים משולש" require candle-lighting; on Shabbos show until havdalah.
         special = self.hass.states.get("sensor.yidcal_special_shabbos")
         show_special = False
@@ -168,13 +168,13 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                                 # For Purim Meshulash, only after (rounded) candles
                                 show_special = now >= candle
                             else:
-                                # Normal years: from 13:00 or candles, whichever first
-                                show_special = (now.hour >= 13) or (now >= candle)
+                                # Normal years: from 12:00 or candles, whichever first
+                                show_special = (now.hour >= 12) or (now >= candle)
                     else:
                         if "פורים משולש" in sstate:
                             show_special = False
                         else:
-                            show_special = now.hour >= 13
+                            show_special = now.hour >= 12
 
                 elif wd == 5 and self._geo:  # Shabbos
                     today = now.date()
