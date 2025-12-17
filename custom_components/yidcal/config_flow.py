@@ -63,6 +63,13 @@ DEFAULT_EARLY_YOMTOV_MODE = "plag"  # plag | fixed | disabled
 DEFAULT_EARLY_YOMTOV_PLAG_METHOD = "gra"
 DEFAULT_EARLY_YOMTOV_FIXED_TIME = "19:00:00"
 
+# ============ Krias HaTorah extras (NEW) ============
+CONF_KORBANOS_YUD_GIMMEL_MIDOS = "korbanos_yud_gimmel_midos"
+DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS = False
+
+CONF_MISHNE_TORAH_HOSHANA_RABBA = "mishne_torah_hoshana_rabba"
+DEFAULT_MISHNE_TORAH_HOSHANA_RABBA = False
+
 # Conservative defaults per our plan
 DEFAULT_EARLY_YOMTOV_INCLUDE = [
     "rosh_hashana",
@@ -91,6 +98,15 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional("candlelighting_offset", default=DEFAULT_CANDLELIGHT_OFFSET): int,
                     vol.Optional("havdalah_offset", default=DEFAULT_HAVDALAH_OFFSET): int,
                     vol.Optional("tallis_tefilin_offset", default=DEFAULT_TALLIS_TEFILIN_OFFSET): int,
+                    vol.Optional(
+                        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
+                        default=DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS,
+                    ): bool,
+
+                    vol.Optional(
+                        CONF_MISHNE_TORAH_HOSHANA_RABBA,
+                        default=DEFAULT_MISHNE_TORAH_HOSHANA_RABBA,
+                    ): bool,
                     vol.Optional(
                         "day_label_language",
                         default=DEFAULT_DAY_LABEL_LANGUAGE,
@@ -247,6 +263,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional("candlelighting_offset", default=get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET)): int,
                     vol.Optional("havdalah_offset", default=get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)): int,
                     vol.Optional("tallis_tefilin_offset", default=get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)): int,
+                    vol.Optional(
+                        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
+                        default=get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
+                    ): bool,
+
+                    vol.Optional(
+                        CONF_MISHNE_TORAH_HOSHANA_RABBA,
+                        default=get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
+                    ): bool,
                     vol.Optional(
                         "day_label_language",
                         default=get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
