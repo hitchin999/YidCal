@@ -59,6 +59,12 @@ from .config_flow import (
     DEFAULT_EARLY_YOMTOV_FIXED_TIME,
     DEFAULT_EARLY_YOMTOV_INCLUDE,
     DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
+    
+    CONF_KORBANOS_YUD_GIMMEL_MIDOS,
+    DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS,
+    CONF_MISHNE_TORAH_HOSHANA_RABBA,
+    DEFAULT_MISHNE_TORAH_HOSHANA_RABBA,
+
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -261,7 +267,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     diaspora = not is_in_israel
 
-    # NEW: daily toggle + multi-DB list with legacy fallback
     enable_daily = opts.get(
         CONF_ENABLE_YURTZEIT_DAILY,
         initial.get(CONF_ENABLE_YURTZEIT_DAILY, True),
@@ -336,6 +341,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
         initial.get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
     )
+    korbanos_yud_gimmel_midos = opts.get(
+        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
+        initial.get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
+    )
+    mishne_torah_hoshana_rabba = opts.get(
+        CONF_MISHNE_TORAH_HOSHANA_RABBA,
+        initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
+    )
 
     # Resolve and store geo+tz config
     latitude = hass.config.latitude
@@ -378,6 +391,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
         CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
         CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
+
+        CONF_KORBANOS_YUD_GIMMEL_MIDOS: korbanos_yud_gimmel_midos,
+        CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
     }
 
     # Store global config for sensors
@@ -416,6 +432,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
         CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
         CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
+        
+        "korbanos_yud_gimmel_midos": korbanos_yud_gimmel_midos,
+        "mishne_torah_hoshana_rabba": mishne_torah_hoshana_rabba,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -578,6 +597,9 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
         CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
         CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
+
+        CONF_KORBANOS_YUD_GIMMEL_MIDOS: korbanos_yud_gimmel_midos,
+        CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
     }
 
     # Schedule the reload shortly after to apply new options
