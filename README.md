@@ -328,7 +328,16 @@ ISO/With-Seconds timestamps remain controlled by Home Assistant’s global date/
 
 ## Display device extras
 
-### Haftorah Sensor (New)
+### Krias HaTorah Sensor (New in v0.5.4)
+
+* **Krias HaTorah** (`sensor.yidcal_krias_hatorah`) — summarizes today’s (or the next) קריאת התורה: how many ס"ת, which parsha(s) and reasons (Shabbos, Yom Tov, fast day, חנוכה, ראש חודש, נשיאים בניסן, etc.), with separate attributes for שחרית / מנחה / ערבית.
+* **Minhag toggles (config flow):**
+  * `?ליינט מען קרבנות אום שלוש עשרה מדות` (`korbanos_yud_gimmel_midos`) — optionally add **קרבנות** at מנחה on שלוש עשרה מדות days.
+  * `?ליינט מען משנה תורה הושענא רבה ביינאכט` (`mishne_torah_hoshana_rabba`) — optionally add **משנה תורה** reading for הושענא רבה by night.
+  * Both default to **false**, so you can enable them only if it matches your shul’s minhag.
+
+
+### Haftorah Sensor
 
 * **Haftorah** (`sensor.yidcal_haftorah`) — Haftarah reading for the relevant Shabbos (including special Haftaros when applicable).
 * **Minhag selection:** controlled by the config-flow option **`הפטרה סענסאר מנהג`**:
@@ -405,8 +414,9 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `צייט־פארמאט (נאר פאר Simple Zmanim)`                      | `12-hour`   | Format for **Simple** Zmanim attributes only: **12-hour (AM/PM)** or **24-hour**.                                                       |
 | `ווען זאל זיך די סליחות טאג טוישן`                         | `זמן הבדלה` | When the Selichos label advances: `havdalah` (after sunset + offset) or `midnight` (12 AM).                                             |
 | `Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די`   | `2`         | How many **halachic days** ahead Upcoming Holiday pre-activates (range **1–14**). Updates nightly at **12:02 AM** and respects offsets. |
-| `הפטרה סענסאר מנהג` | `אשכנזי` | Choose the minhag used for the Haftorah sensor: `אשכנזי` or `ספרדי`. |
-
+| `הפטרה סענסאר מנהג`                                        | `אשכנזי`    | Choose the minhag used for the Haftorah sensor: `אשכנזי` or `ספרדי`.                                                                   |
+| `?ליינט מען קרבנות אום שלוש עשרה מדות`                     | `false`     | Include **קרבנות** in the Krias HaTorah sensor at מנחה on **שלוש עשרה מדות** days if your shul leins it from the בימה.                |
+| `?ליינט מען משנה תורה הושענא רבה ביינאכט`                  | `false`     | Include **משנה תורה** in the Krias HaTorah sensor for **הושענא רבה ביינאכט** if your minhag is to lein it (not just say it privately). |
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. Remove them manually via **Settings → Entities**, or delete and re-add the integration with the option turned off.
 
