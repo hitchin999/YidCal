@@ -209,7 +209,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Day Type** (`binary_sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day, Chol Hamoed, Shabbos & Chol Hamoed)
 * **Longer Shachris** (`binary_sensor.yidcal_longer_shachris`) – ON **4 AM–2 PM local** on **Rosh Chodesh, Chanukah, Chol Hamoed (Pesach/Sukkos), Purim, and Tisha B’Av (incl. nidcheh)**. Always OFF on Shabbos/Yom Tov.
 
-### Hebrew date helper sensors (new)
+### Hebrew date helper sensors
 
 * **Chodesh** (`sensor.yidcal_chodesh`) — current Hebrew month
 * **Yom L’Chodesh** (`sensor.yidcal_yom_lchodesh`) — current Hebrew day-of-month
