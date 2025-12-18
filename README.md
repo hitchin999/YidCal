@@ -332,8 +332,8 @@ ISO/With-Seconds timestamps remain controlled by Home Assistant’s global date/
 
 * **Krias HaTorah** (`sensor.yidcal_krias_hatorah`) — summarizes today’s (or the next) קריאת התורה: how many ס"ת, which parsha(s) and reasons (Shabbos, Yom Tov, fast day, חנוכה, ראש חודש, נשיאים בניסן, etc.), with separate attributes for שחרית / מנחה / ערבית.
 * **Minhag toggles (config flow):**
-  * `?ליינט מען קרבנות אום שלוש עשרה מדות` (`korbanos_yud_gimmel_midos`) — optionally add **קרבנות** at מנחה on שלוש עשרה מדות days.
-  * `?ליינט מען משנה תורה הושענא רבה ביינאכט` (`mishne_torah_hoshana_rabba`) — optionally add **משנה תורה** reading for הושענא רבה by night.
+  * `?ליינט מען קרבנות אום שלוש עשרה מדות` — optionally add **קרבנות** at מנחה on שלוש עשרה מדות days.
+  * `?ליינט מען משנה תורה הושענא רבה ביינאכט` — optionally add **משנה תורה** reading for הושענא רבה by night.
   * Both default to **false**, so you can enable them only if it matches your shul’s minhag.
 
 
