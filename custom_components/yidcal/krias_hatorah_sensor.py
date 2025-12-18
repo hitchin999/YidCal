@@ -34,7 +34,6 @@ _LOGGER = logging.getLogger(__name__)
 # Hebrew numerals for sefer count
 HEBREW_NUMERALS = {1: "א'", 2: "ב'", 3: "ג'"}
 
-
 class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     _attr_name = "Krias HaTorah"
     _attr_icon = "mdi:book-open-page-variant"
@@ -90,13 +89,30 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             return ""
         
         if len(sifrei) == 1:
-            # Single sefer: just show parsha (reason)
+            # Single sefer: opening_words • sefer - parsha (reason)
             s = sifrei[0]
+            opening = s.get("opening_words", "")
+            source_sefer = s.get("sefer", "")
             parsha = s.get("parsha_source", "")
             reason = s.get("reason", "")
-            if reason and reason != parsha:
-                return f"{parsha} ({reason})"
-            return parsha
+            
+            # Build source string
+            if source_sefer and parsha:
+                if reason and reason != parsha:
+                    source_str = f"{source_sefer} - {parsha} ({reason})"
+                else:
+                    source_str = f"{source_sefer} - {parsha}"
+            elif parsha:
+                if reason and reason != parsha:
+                    source_str = f"{parsha} ({reason})"
+                else:
+                    source_str = parsha
+            else:
+                source_str = reason or ""
+            
+            if opening and source_str:
+                return f"{opening} • {source_str}"
+            return opening or source_str
         
         # Multiple sifrei: ג' ס"ת • ספר א' - מקץ (reason) • ספר ב' - ...
         count = len(sifrei)
@@ -198,12 +214,12 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     def _is_shlosh_esrei_middos(self, date: datetime.date) -> bool:
         """Return True on the 'שלוש עשרה מדות' day used for Korbanos at Mincha."""
         hd_py = PHebrewDate.from_pydate(date)
-        wd_py = date.weekday()  # Python weekday: Mon=0 ... Sun=6
+        wd_py = date.weekday()  # Python weekday: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
         if hd_py.month != 7:
             return False
         return (
-            (hd_py.day == 8 and wd_py in (MONDAY, TUESDAY, THURSDAY))
-            or (hd_py.day == 6 and wd_py == THURSDAY)
+            (hd_py.day == 8 and wd_py in [0, 1, 3])
+            or (hd_py.day == 6 and wd_py == 3)
         )
         
     def _is_shabbos_chol_hamoed(self, hd: PHebrewDate, wd: int) -> tuple[bool, str | None]:
