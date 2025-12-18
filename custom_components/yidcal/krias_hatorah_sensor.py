@@ -164,8 +164,30 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         return None
 
     def _get_weekly_parsha(self, hd: PHebrewDate) -> str | None:
+        """Get the parsha for the week. Usually the upcoming Shabbos, but if that's Yom Tov, use previous."""
         try:
-            idxs = getparsha(hd, israel=not self._diaspora)
+            py_date = hd.to_pydate()
+            wd = py_date.weekday()  # Mon=0 ... Sat=5, Sun=6
+            
+            # Calculate days until upcoming Shabbos (Saturday = 5)
+            if wd == 5:  # Already Shabbos
+                days_to_shabbos = 0
+            elif wd == 6:  # Sunday - next Shabbos is 6 days away
+                days_to_shabbos = 6
+            else:  # Mon-Fri - go to upcoming Shabbos
+                days_to_shabbos = 5 - wd
+            
+            shabbos_date = py_date + timedelta(days=days_to_shabbos)
+            hd_shabbos = PHebrewDate.from_pydate(shabbos_date)
+            
+            idxs = getparsha(hd_shabbos, israel=not self._diaspora)
+            
+            # If upcoming Shabbos has no parsha (Yom Tov), try previous Shabbos
+            if not idxs and wd != 5:  # Don't go back if we're ON Shabbos
+                prev_shabbos = shabbos_date - timedelta(days=7)
+                hd_prev = PHebrewDate.from_pydate(prev_shabbos)
+                idxs = getparsha(hd_prev, israel=not self._diaspora)
+            
             if not idxs:
                 return None
             return "-".join(PARSHIOS_HEBREW[i] for i in idxs)
@@ -173,8 +195,32 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             return None
 
     def _get_next_weekly_parsha(self, hd: PHebrewDate) -> str | None:
+        """Get the parsha for the week after (used for Shabbos Mincha - we start next week's parsha)."""
         try:
-            idxs = getparsha(hd + 7, israel=not self._diaspora)
+            py_date = hd.to_pydate()
+            wd = py_date.weekday()
+            
+            # First find upcoming Shabbos, then add 7
+            if wd == 5:  # Shabbos - next week is +7
+                days_to_next = 7
+            elif wd == 6:  # Sunday - next Shabbos +6, then +7 = 13
+                days_to_next = 13
+            else:  # Mon-Fri - upcoming Shabbos + 7
+                days_to_next = (5 - wd) + 7
+            
+            next_shabbos = py_date + timedelta(days=days_to_next)
+            hd_next = PHebrewDate.from_pydate(next_shabbos)
+            
+            idxs = getparsha(hd_next, israel=not self._diaspora)
+            
+            # If next Shabbos has no parsha (Yom Tov), keep looking forward
+            attempts = 0
+            while not idxs and attempts < 4:
+                next_shabbos = next_shabbos + timedelta(days=7)
+                hd_next = PHebrewDate.from_pydate(next_shabbos)
+                idxs = getparsha(hd_next, israel=not self._diaspora)
+                attempts += 1
+            
             if not idxs:
                 return None
             return "-".join(PARSHIOS_HEBREW[i] for i in idxs)
