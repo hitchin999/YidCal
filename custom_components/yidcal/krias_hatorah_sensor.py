@@ -11,7 +11,7 @@ from typing import Any
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
-from pyluach.parshios import getparsha_string
+from pyluach.parshios import getparsha, PARSHIOS_HEBREW
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
@@ -143,15 +143,19 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
     def _get_weekly_parsha(self, hd: PHebrewDate) -> str | None:
         try:
-            english = getparsha_string(hd, israel=not self._diaspora)
-            return self._english_to_hebrew_parsha(english)
+            idxs = getparsha(hd, israel=not self._diaspora)
+            if not idxs:
+                return None
+            return "-".join(PARSHIOS_HEBREW[i] for i in idxs)
         except:
             return None
 
     def _get_next_weekly_parsha(self, hd: PHebrewDate) -> str | None:
         try:
-            english = getparsha_string(hd + 7, israel=not self._diaspora)
-            return self._english_to_hebrew_parsha(english)
+            idxs = getparsha(hd + 7, israel=not self._diaspora)
+            if not idxs:
+                return None
+            return "-".join(PARSHIOS_HEBREW[i] for i in idxs)
         except:
             return None
 
