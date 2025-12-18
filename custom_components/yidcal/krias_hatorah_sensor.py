@@ -16,6 +16,8 @@ from pyluach.parshios import getparsha, PARSHIOS_HEBREW
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
@@ -33,6 +35,17 @@ _LOGGER = logging.getLogger(__name__)
 
 # Hebrew numerals for sefer count
 HEBREW_NUMERALS = {1: "א'", 2: "ב'", 3: "ג'"}
+
+def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
+    """Round to nearest minute (<30s floor, ≥30s ceil)."""
+    if dt.second >= 30:
+        dt += timedelta(minutes=1)
+    return dt.replace(second=0, microsecond=0)
+
+
+def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
+    """Always bump to the next minute (Motzi-style)."""
+    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     _attr_name = "Krias HaTorah"
@@ -62,18 +75,27 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last:
-            self._attr_native_value = last.state if last.state not in ("unknown", "unavailable") else None
+            self._attr_native_value = (
+                last.state if last.state not in ("unknown", "unavailable") else None
+            )
             self._attr_extra_state_attributes = dict(last.attributes or {})
             self._last_completed_anchor = self._attr_extra_state_attributes.get("_last_completed_anchor")
             lct = self._attr_extra_state_attributes.get("_last_completed_time")
             if lct:
                 try:
                     self._last_completed_time = datetime.datetime.fromisoformat(lct)
-                except:
+                except Exception:
                     pass
+
         self._geo = await get_geo(self.hass)
+
+        # Initial state
         await self.async_update()
-        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
+
+        # Interval-based update (catches time jumps)
+        self._register_listener(
+            async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -348,18 +370,30 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 kriah_days.append(HEBREW_DAYS.get(wd, ""))
         return kriah_days
 
-    def _get_readings_for_date(self, target_date: datetime.date, tz: ZoneInfo) -> tuple[list[dict], bool, int, int, str, dict | None]:
+    def _get_readings_for_date(
+        self,
+        target_date: datetime.date,
+        tz: ZoneInfo,
+    ) -> tuple[list[dict], bool, int, int, str, dict | None]:
         """
         Compute readings for a specific date.
         Returns: (readings_list, has_kriah, sefer_count_max, aliyah_count_max, reason, nasi_reading)
         """
         wd = target_date.weekday()
         cal = ZmanimCalendar(geo_location=self._geo, date=target_date)
-        alos = cal.sunrise().astimezone(tz) - timedelta(minutes=72)
-        chatzos = cal.chatzos().astimezone(tz)
-        mincha_gedola = chatzos + timedelta(minutes=30)
-        sunset = cal.sunset().astimezone(tz)
-        tzeis = sunset + timedelta(minutes=self._havdalah_offset)
+
+        # Raw zmanim
+        alos_raw = cal.sunrise().astimezone(tz) - timedelta(minutes=72)
+        chatzos_raw = cal.chatzos().astimezone(tz)
+        mincha_g_raw = chatzos_raw + timedelta(minutes=30)
+        sunset_raw = cal.sunset().astimezone(tz)
+        tzeis_raw = sunset_raw + timedelta(minutes=self._havdalah_offset)
+
+        # Rounded, aligned with other YidCal sensors
+        alos = _round_half_up(alos_raw)
+        chatzos = _round_half_up(chatzos_raw)
+        mincha_gedola = _round_half_up(mincha_g_raw)
+        tzeis = _round_ceil(tzeis_raw)
 
         hd = PHebrewDate.from_pydate(target_date)
         weekly_parsha = self._get_weekly_parsha(hd)
@@ -377,6 +411,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         is_yom_kippur = self._is_yom_kippur(hd)
         is_fast, fast_name, is_tisha_bav = self._get_fast_info(hd, wd)
         yom_tov = self._get_yom_tov_reading(hd, wd)
+        is_hoshana_rabba = bool(yom_tov and yom_tov.get("key") == "hoshana_rabbah")
         shlosh_esrei_middos = self._is_shlosh_esrei_middos(target_date)
 
         readings: list[dict] = []
@@ -437,8 +472,10 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 # Calculate maariv window (tzeis of previous day until alos)
                 yesterday = target_date - timedelta(days=1)
                 yesterday_cal = ZmanimCalendar(geo_location=self._geo, date=yesterday)
-                yesterday_sunset = yesterday_cal.sunset().astimezone(tz)
-                yesterday_tzeis = yesterday_sunset + timedelta(minutes=self._havdalah_offset)
+                yesterday_sunset_raw = yesterday_cal.sunset().astimezone(tz)
+                yesterday_tzeis = _round_ceil(
+                    yesterday_sunset_raw + timedelta(minutes=self._havdalah_offset)
+                )
                 maariv_start, maariv_end = yesterday_tzeis.isoformat(), alos.isoformat()
                 
                 # Get night reading data
@@ -455,13 +492,14 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 readings.append(maariv)
             
             # Check if this is Hoshana Rabba (optional Mishne Torah at night)
-            is_hoshana_rabba = (hd.month == 7 and hd.day == 21)
             if is_hoshana_rabba and self._read_mishne_torah:
                 # Calculate maariv window (tzeis of previous day until alos)
                 yesterday = target_date - timedelta(days=1)
                 yesterday_cal = ZmanimCalendar(geo_location=self._geo, date=yesterday)
-                yesterday_sunset = yesterday_cal.sunset().astimezone(tz)
-                yesterday_tzeis = yesterday_sunset + timedelta(minutes=self._havdalah_offset)
+                yesterday_sunset_raw = yesterday_cal.sunset().astimezone(tz)
+                yesterday_tzeis = _round_ceil(
+                    yesterday_sunset_raw + timedelta(minutes=self._havdalah_offset)
+                )
                 maariv_start, maariv_end = yesterday_tzeis.isoformat(), alos.isoformat()
                 
                 mt_sifrei = MISHNE_TORAH_READING.get("sifrei_torah", [])
@@ -630,9 +668,24 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             if not self._geo:
                 return
 
-        tz = self._tz or ZoneInfo(self.hass.config.time_zone)
-        now = now or datetime.datetime.now(tz)
-        today = now.date()
+        cfg = self.hass.data[DOMAIN]["config"]
+        tz = ZoneInfo(cfg["tzname"])
+        now_local = (now or dt_util.now()).astimezone(tz)
+        civil_today = now_local.date()
+
+        # --- Halachic cutover (tzeis/havdalah) for DISPLAY ONLY ---
+        def _havdalah_cutover(d: datetime.date) -> datetime.datetime:
+            cal = ZmanimCalendar(geo_location=self._geo, date=d)
+            sunset_raw = cal.sunset().astimezone(tz)
+            return _round_ceil(sunset_raw + timedelta(minutes=self._havdalah_offset))
+
+        havdalah_today = await self.hass.async_add_executor_job(_havdalah_cutover, civil_today)
+        today = civil_today if now_local < havdalah_today else civil_today + timedelta(days=1)
+
+        # Keep Has_Kriah_Today as 12am→12am (civil day)
+        _, has_kriah_civil_today, _, _, _, _ = await self.hass.async_add_executor_job(
+            self._get_readings_for_date, civil_today, tz
+        )
 
         # Get readings for today and tomorrow (run blocking zmanim calls in executor)
         readings_today, has_kriah_today, sefer_max_today, aliyah_max_today, reason_today, nasi_today = \
@@ -653,7 +706,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             ws, we = reading.get("window_start"), reading.get("window_end")
             if ws and we:
                 try:
-                    if datetime.datetime.fromisoformat(ws) <= now <= datetime.datetime.fromisoformat(we):
+                    if datetime.datetime.fromisoformat(ws) <= now_local <= datetime.datetime.fromisoformat(we):
                         current_reading = reading
                         break
                 except:
@@ -677,7 +730,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 ws = reading.get("window_start")
                 if ws:
                     try:
-                        if now < datetime.datetime.fromisoformat(ws):
+                        if now_local < datetime.datetime.fromisoformat(ws):
                             next_reading = reading
                             break
                     except:
@@ -728,7 +781,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             if we:
                 try:
                     window_end_dt = datetime.datetime.fromisoformat(we)
-                    if now > window_end_dt:
+                    if now_local > window_end_dt:
                         if self._last_completed_time is None or window_end_dt > self._last_completed_time:
                             self._last_completed_anchor = reading.get("_scroll_anchor", "")
                             self._last_completed_time = window_end_dt
@@ -744,8 +797,9 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 if self._last_completed_anchor != next_upcoming_anchor:
                     prep_now = True
 
-        hd = PHebrewDate.from_pydate(today)
-        kriah_days = self._get_kriah_days_this_week(today, hd)
+        # Week display should stay civil-date based (so it matches your expectation)
+        hd = PHebrewDate.from_pydate(civil_today)
+        kriah_days = self._get_kriah_days_this_week(civil_today, hd)
 
         # Build summary for state
         display_sifrei = display_reading.get("sifrei_torah", []) if display_reading else []
@@ -762,7 +816,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             "Sefer_Torah_Count": display_sefer_count,
             "Aliyah_Count": display_aliyah_count,
             "Kriah_Days": ", ".join(kriah_days),
-            "Has_Kriah_Today": has_kriah_today,
+            "Has_Kriah_Today": has_kriah_civil_today,
             "Kriah_Now": kriah_now,
             "Prep_Now": prep_now,
         }
