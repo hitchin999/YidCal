@@ -350,12 +350,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
     )
 
-    # Resolve and store geo+tz config
+    # Resolve and store geo+tz config (with caching to avoid repeated API calls)
     latitude = hass.config.latitude
     longitude = hass.config.longitude
-    city, state, lat, lon, tzname = await resolve_location_from_coordinates(
-        hass, latitude, longitude
-    )
+    
+    # Check if we have cached location data AND if HA coordinates haven't changed
+    cached = initial.get("resolved_location")
+    if cached and cached.get("source_lat") == latitude and cached.get("source_lon") == longitude:
+        # Use cached location
+        city = cached["city"]
+        state = cached["state"]
+        lat = cached["lat"]
+        lon = cached["lon"]
+        tzname = cached["tzname"]
+        _LOGGER.debug("YidCal: Using cached location: %s, %s", city, state)
+    else:
+        # First-time setup or coordinates changed: resolve and cache
+        if cached:
+            _LOGGER.info("YidCal: HA coordinates changed, re-resolving location")
+        else:
+            _LOGGER.info("YidCal: First-time setup, resolving location from coordinates")
+        
+        city, state, lat, lon, tzname = await resolve_location_from_coordinates(
+            hass, latitude, longitude
+        )
+        
+        # Save to entry data for future loads
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **initial,
+                "resolved_location": {
+                    "city": city,
+                    "state": state,
+                    "lat": lat,
+                    "lon": lon,
+                    "tzname": tzname,
+                    "source_lat": latitude,
+                    "source_lon": longitude,
+                }
+            }
+        )
+        _LOGGER.info("YidCal: Cached resolved location: %s, %s", city, state)
 
     # Store per-entry options
     hass.data.setdefault(DOMAIN, {})
@@ -562,6 +598,14 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     early_yomtov_allow_second_days = opts.get(
         CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
         initial.get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
+    )
+    korbanos_yud_gimmel_midos = opts.get(
+        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
+        initial.get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
+    )
+    mishne_torah_hoshana_rabba = opts.get(
+        CONF_MISHNE_TORAH_HOSHANA_RABBA,
+        initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
     )
 
     hass.data.setdefault(DOMAIN, {})
