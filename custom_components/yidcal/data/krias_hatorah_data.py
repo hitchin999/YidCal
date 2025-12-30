@@ -160,7 +160,7 @@ TISHA_BAV_READINGS: dict = {
         ],
     },
     "mincha": {
-        "display_title": "תשעה באב מנחה", "reason": "תשעה באב מנחה", "aliyah_count": 3, "has_maftir": False,
+        "display_title": "תשעה באב מנחה", "reason": "תשעה באב מנחה", "aliyah_count": 3, "has_maftir": True,
         "sifrei_torah": [
             {"sefer_number": 1, "opening_words": "ויחל משה את פני ה׳ אלקיו", "sefer": "שמות", "parsha_source": "כי תשא", "reason": "ויחל", "aliyos": "3 עליות"},
         ],
