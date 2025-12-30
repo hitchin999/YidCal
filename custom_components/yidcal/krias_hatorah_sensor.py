@@ -4,6 +4,7 @@
 from __future__ import annotations
 import datetime
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
@@ -15,7 +16,7 @@ from pyluach.parshios import getparsha, PARSHIOS_HEBREW
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
@@ -46,6 +47,30 @@ def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
 def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
     """Always bump to the next minute (Motzi-style)."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+
+@dataclass
+class KriasHaTorahExtraData(ExtraStoredData):
+    """Extra stored data for Krias HaTorah sensor (hidden from attributes)."""
+    
+    last_completed_anchor: str | None = None
+    last_completed_time: str | None = None  # ISO format string
+    
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation of the extra data."""
+        return {
+            "last_completed_anchor": self.last_completed_anchor,
+            "last_completed_time": self.last_completed_time,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> KriasHaTorahExtraData:
+        """Initialize extra data from a dict."""
+        return cls(
+            last_completed_anchor=data.get("last_completed_anchor"),
+            last_completed_time=data.get("last_completed_time"),
+        )
+
 
 class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
     _attr_name = "Krias HaTorah"
@@ -79,8 +104,12 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 last.state if last.state not in ("unknown", "unavailable") else None
             )
             self._attr_extra_state_attributes = dict(last.attributes or {})
-            self._last_completed_anchor = self._attr_extra_state_attributes.get("_last_completed_anchor")
-            lct = self._attr_extra_state_attributes.get("_last_completed_time")
+        
+        # Restore internal tracking data from extra stored data (not attributes)
+        extra_data = await self.async_get_last_extra_data()
+        if extra_data:
+            self._last_completed_anchor = extra_data.as_dict().get("last_completed_anchor")
+            lct = extra_data.as_dict().get("last_completed_time")
             if lct:
                 try:
                     self._last_completed_time = datetime.datetime.fromisoformat(lct)
@@ -95,6 +124,14 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         # Interval-based update (catches time jumps)
         self._register_listener(
             async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
+        )
+
+    @property
+    def extra_restore_state_data(self) -> KriasHaTorahExtraData:
+        """Return extra data to be stored for restore."""
+        return KriasHaTorahExtraData(
+            last_completed_anchor=self._last_completed_anchor,
+            last_completed_time=self._last_completed_time.isoformat() if self._last_completed_time else None,
         )
 
     @property
@@ -792,13 +829,54 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 display_aliyah_count = next_reading.get("aliyah_count", 3)
                 display_nasi = nasi_today
             elif has_kriah_tomorrow:
-                # Show tomorrow's reading
-                display_reading = readings_tomorrow[0] if readings_tomorrow else None
-                display_readings = readings_tomorrow
-                display_reason = reason_tomorrow
-                display_sefer_count = sefer_max_tomorrow
-                display_aliyah_count = aliyah_max_tomorrow
-                display_nasi = nasi_tomorrow
+                # Show tomorrow's reading, but respect today's windows:
+                # - Don't show tomorrow's Shacharis until after today's Shacharis window (chatzos)
+                # - Don't show tomorrow's Mincha until after today's Mincha window (tzeis)
+                
+                # Get today's civil windows to check what's still "open"
+                cal_civil = await self.hass.async_add_executor_job(
+                    lambda: ZmanimCalendar(geo_location=self._geo, date=civil_today)
+                )
+                chatzos_civil = cal_civil.chatzos().astimezone(tz)
+                sunset_civil = cal_civil.sunset().astimezone(tz)
+                tzeis_civil = sunset_civil + timedelta(minutes=self._havdalah_offset)
+                
+                # Find the appropriate next reading from tomorrow
+                display_reading = None
+                display_readings = []
+                
+                for future_reading in readings_tomorrow:
+                    future_tefilah = future_reading.get("tefilah", "")
+                    
+                    # Shacharis: can show after today's chatzos
+                    if future_tefilah == "שחרית" and now_local >= chatzos_civil:
+                        display_reading = future_reading
+                        display_readings = [future_reading]
+                        break
+                    # Mincha: can show after today's tzeis
+                    elif future_tefilah == "מנחה" and now_local >= tzeis_civil:
+                        display_reading = future_reading
+                        display_readings = [future_reading]
+                        break
+                    # Maariv: can show after today's tzeis
+                    elif future_tefilah == "ערבית" and now_local >= tzeis_civil:
+                        display_reading = future_reading
+                        display_readings = [future_reading]
+                        break
+                
+                if display_reading:
+                    display_reason = reason_tomorrow
+                    display_sefer_count = display_reading.get("sefer_torah_count", 1)
+                    display_aliyah_count = display_reading.get("aliyah_count", 3)
+                    display_nasi = nasi_tomorrow
+                else:
+                    # Still within today's window for the next tefilah type - show nothing yet
+                    display_reading = None
+                    display_readings = []
+                    display_reason = ""
+                    display_sefer_count = 0
+                    display_aliyah_count = 0
+                    display_nasi = None
             else:
                 # No reading today or tomorrow - find next kriah day
                 display_reading = None
@@ -814,22 +892,27 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                         await self.hass.async_add_executor_job(self._get_readings_for_date, future_date, tz)
                     if future_has:
                         display_reading = future_readings[0] if future_readings else None
-                        display_readings = future_readings
+                        display_readings = [future_readings[0]] if future_readings else []
                         display_reason = future_reason
-                        display_sefer_count = future_sefer
-                        display_aliyah_count = future_aliyah
+                        display_sefer_count = display_reading.get("sefer_torah_count", 1) if display_reading else 0
+                        display_aliyah_count = display_reading.get("aliyah_count", 3) if display_reading else 0
                         display_nasi = future_nasi
                         break
 
         # Update last completed anchor for prep_now logic
-        for reading in readings_today:
+        # Check CIVIL day's readings (not halachic) since we need to know what was completed today
+        readings_civil_today, _, _, _, _, _ = await self.hass.async_add_executor_job(
+            self._get_readings_for_date, civil_today, tz
+        )
+        for reading in readings_civil_today:
             we = reading.get("window_end")
-            if we:
+            anchor = reading.get("_scroll_anchor", "")
+            if we and anchor:
                 try:
                     window_end_dt = datetime.datetime.fromisoformat(we)
                     if now_local > window_end_dt:
-                        if self._last_completed_time is None or window_end_dt > self._last_completed_time:
-                            self._last_completed_anchor = reading.get("_scroll_anchor", "")
+                        if self._last_completed_time is None or window_end_dt >= self._last_completed_time:
+                            self._last_completed_anchor = anchor
                             self._last_completed_time = window_end_dt
                 except:
                     pass
