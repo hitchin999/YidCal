@@ -89,6 +89,10 @@ def get_special_shabbos_name(today: date | dates.GregorianDate | dates.HebrewDat
     chazak_ports = {11, 22, 32, 42}
     if parsha_indices and any(idx in chazak_ports for idx in parsha_indices):
         events.append("שבת חזק")
+        
+    # Shabbos Shirah: Parshas Beshalach
+    if parsha_indices and 15 in parsha_indices:
+        events.append("שבת שירה")
 
     # Purim Meshulash (show everywhere): when the evaluated Shabbos is 15 Adar (or 15 Adar II in a leap year)
     if shabbat_heb.month == adar_month and shabbat_heb.day == 15:
