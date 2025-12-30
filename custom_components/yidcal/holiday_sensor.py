@@ -35,10 +35,27 @@ def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
         dt += timedelta(minutes=1)
     return dt.replace(second=0, microsecond=0)
 
-
 def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
     """Always bump up to the next minute."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    
+def _compute_chatzos_hayom(geo: GeoLocation, base_date: datetime.date, tz: ZoneInfo) -> datetime.datetime:
+    """Compute Chatzos Hayom (halachic midday) for a given date using MGA day."""
+    cal = ZmanimCalendar(geo_location=geo, date=base_date)
+    sunrise = cal.sunrise().astimezone(tz)
+    sunset = cal.sunset().astimezone(tz)
+
+    # MGA day: 72 minutes before sunrise to 72 minutes after sunset
+    dawn = sunrise - timedelta(minutes=72)
+    nightfall = sunset + timedelta(minutes=72)
+
+    hour_td = (nightfall - dawn) / 12
+    chatzos = dawn + hour_td * 6
+
+    # Round: <30s floor, >=30s ceil
+    if chatzos.second >= 30:
+        chatzos += timedelta(minutes=1)
+    return chatzos.replace(second=0, microsecond=0)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -969,69 +986,107 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_fest.month == 5 and hd_fest.day == ykk_av_day:
             attrs["יום כיפור קטן"] = True
 
-        # ─── Countdown for fast starts in (6 hours before fast)
-        is_fast_day = (
-            (hd_py_fast.month == 7 and hd_py_fast.day == gedaliah_day) or  # Tzom Gedaliah
-            (hd_py.month == 7 and hd_py.day == 10) or          # Yom Kippur
-            (hd_py_fast.month == 10 and hd_py_fast.day == 10) or  # Tzom Tevet
-            (hd_py_fast.month == 4 and hd_py_fast.day == 17) or  # 17 Tammuz
-            (hd_py.month == 12 and hd_py.day == 13) or         # Ta'anit Esther
-            (hd_fest.month == 5 and hd_fest.day == 8 and now < actual_sunset) or  # Erev Tisha B'Av
-            (hd_fest.month == 5 and hd_fest.day == 9) or       # Tisha B'Av
-            (hd_fest.month == 5 and hd_fest.day == 9 and wd_fest == 5) or  # Erev for Deferred Tisha B'Av
-            (hd_fest.month == 5 and hd_fest.day == 10 and wd_fest == 6) or  # Deferred Tisha B'Av
-            (hd_py.month == 7 and hd_py.day == 9)              # Erev Yom Kippur
-        )
-        if is_fast_day and now >= start_time_fast - timedelta(hours=6) and now < start_time_fast:
-            remaining_sec = max(0, (start_time_fast - now).total_seconds())
-            minutes_remaining = math.ceil(remaining_sec / 60)
-            h = minutes_remaining // 60
-            m = minutes_remaining % 60
-            attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
-        else:
-            attrs["מען פאַסט אַן און"] = ""
-
-        # Fix for pre-fast countdown on evening before minor dawn-start fasts (safe & halachic-day aligned)
+# ─── Countdown for fast starts in ───────────────────────────────────
+        # Minor fasts: timer starts at tzeis (havdalah) the evening before
+        # Major fasts (YK, Tisha B'Av): timer starts at Chatzos HaYom of Erev
+        
         minor_fast_dates = [
-            (7, gedaliah_day),        # Tzom Gedaliah (handles deferred to 4 Tishrei)
-            (10, 10),                 # 10 Tevet
-            (4, 17),                  # 17 Tammuz
-            (13 if is_leap else 12, 13),  # Ta'anit Esther (Adar II in leap years)
+            (7, gedaliah_day),                    # Tzom Gedaliah
+            (10, 10),                             # 10 Tevet
+            (4, 17),                              # 17 Tammuz
+            (13 if is_leap else 12, 13),          # Ta'anit Esther
         ]
-
-        # Remember if a pre-fast countdown was already set (e.g., Erev YK / Tish'a)
-        prefast_already = bool(attrs["מען פאַסט אַן און"])
-
-        # Use the next morning's halachic date (already rolls at havdalah)
-        next_halachic_date = festival_date
-        hd_tomorrow = PHebrewDate.from_pydate(next_halachic_date)
-
-        # Is the *next halachic day* a minor dawn-start fast?
-        is_pre_minor_fast = any(hd_tomorrow.month == m and hd_tomorrow.day == d for m, d in minor_fast_dates)
-
-        # Compute next dawn for the halachic next day (rounding consistent with earlier logic)
-        tomorrow_cal = ZmanimCalendar(geo_location=self._geo, date=next_halachic_date)
-        next_dawn = tomorrow_cal.sunrise().astimezone(tz) - timedelta(minutes=72)
+        
+        # Check if tomorrow (by halachic day) is a minor fast
+        hd_tomorrow = PHebrewDate.from_pydate(festival_date)
+        is_tomorrow_minor_fast = any(
+            hd_tomorrow.month == m and hd_tomorrow.day == d 
+            for m, d in minor_fast_dates
+        )
+        
+        # Check if today (actual date) is a minor fast day (for during-fast display)
+        is_today_minor_fast = any(
+            hd_py_fast.month == m and hd_py_fast.day == d 
+            for m, d in minor_fast_dates
+        )
+        
+        # Compute tomorrow's dawn for minor fasts
+        tomorrow_cal_for_dawn = ZmanimCalendar(geo_location=self._geo, date=festival_date)
+        next_dawn = tomorrow_cal_for_dawn.sunrise().astimezone(tz) - timedelta(minutes=72)
         if next_dawn.second >= 30:
             next_dawn += timedelta(minutes=1)
         next_dawn = next_dawn.replace(second=0, microsecond=0)
-
-        # Do not show a new "starts in" countdown if any fast flag is currently active.
-        # This prevents the countdown from reappearing right after a fast ends.
+        
+        # Tonight's tzeis (havdalah time) - this is when minor fast countdown starts
+        tonight_tzeis = _round_ceil(actual_sunset + timedelta(minutes=self._havdalah_offset))
+        
+        # ─── MINOR FASTS: Pre-fast countdown (tzeis evening before → alos) ───
         no_fast_active_now = not any(attrs.get(f) for f in self.FAST_FLAGS)
-
-        # Only manage the minor-fast pre-window here; never clobber a countdown that was already set earlier
-        if no_fast_active_now and is_pre_minor_fast and (next_dawn - timedelta(hours=6)) <= now < next_dawn:
+        
+        if no_fast_active_now and is_tomorrow_minor_fast and tonight_tzeis <= now < next_dawn:
             remaining_sec = max(0, (next_dawn - now).total_seconds())
             minutes_remaining = math.ceil(remaining_sec / 60)
             h = minutes_remaining // 60
             m = minutes_remaining % 60
             attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
-        elif not prefast_already:
-            # Clear only if we didn't already set a (non-minor) pre-fast countdown above (e.g., Erev YK)
+        
+        # ─── MAJOR FASTS: Pre-fast countdown (Chatzos HaYom of Erev → fast start) ───
+        # Erev Yom Kippur: countdown from Chatzos until candle lighting
+        elif hd_py.month == 7 and hd_py.day == 9:
+            chatzos_erev_yk = _compute_chatzos_hayom(self._geo, actual_date, tz)
+            if chatzos_erev_yk <= now < candle_cut:
+                remaining_sec = max(0, (candle_cut - now).total_seconds())
+                minutes_remaining = math.ceil(remaining_sec / 60)
+                h = minutes_remaining // 60
+                m = minutes_remaining % 60
+                attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+            else:
+                attrs["מען פאַסט אַן און"] = ""
+        
+        # Erev Tisha B'Av: countdown from Chatzos until sunset
+        elif hd_fest.month == 5 and hd_fest.day == 8 and now < actual_sunset:
+            chatzos_erev_9av = _compute_chatzos_hayom(self._geo, actual_date, tz)
+            if chatzos_erev_9av <= now < actual_sunset:
+                remaining_sec = max(0, (actual_sunset - now).total_seconds())
+                minutes_remaining = math.ceil(remaining_sec / 60)
+                h = minutes_remaining // 60
+                m = minutes_remaining % 60
+                attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+            else:
+                attrs["מען פאַסט אַן און"] = ""
+        
+        # Erev Tisha B'Av Nidche (when 9 Av is Shabbos, fast is Sunday): 
+        # countdown from Chatzos Shabbos until Motzei Shabbos
+        elif hd_fest.month == 5 and hd_fest.day == 9 and wd_fest == 5:
+            chatzos_shabbos = _compute_chatzos_hayom(self._geo, actual_date, tz)
+            motzei_shabbos = _round_ceil(actual_sunset + timedelta(minutes=self._havdalah_offset))
+            if chatzos_shabbos <= now < motzei_shabbos:
+                remaining_sec = max(0, (motzei_shabbos - now).total_seconds())
+                minutes_remaining = math.ceil(remaining_sec / 60)
+                h = minutes_remaining // 60
+                m = minutes_remaining % 60
+                attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+            else:
+                attrs["מען פאַסט אַן און"] = ""
+        
+        # ─── DURING FAST: countdown to end ───
+        # Minor fasts during the fast day itself
+        elif is_today_minor_fast and dawn <= now < end_time:
+            # Fast is active - no "starts in" countdown needed
             attrs["מען פאַסט אַן און"] = ""
-
-
+        
+        # Yom Kippur during the fast
+        elif (hd_py.month == 7 and hd_py.day == 10) or (hd_fest.month == 7 and hd_fest.day == 10):
+            attrs["מען פאַסט אַן און"] = ""
+        
+        # Tisha B'Av during the fast
+        elif (hd_fest.month == 5 and hd_fest.day == 9) or \
+             (hd_fest.month == 5 and hd_fest.day == 10 and wd_fest == 6):
+            attrs["מען פאַסט אַן און"] = ""
+        
+        else:
+            attrs["מען פאַסט אַן און"] = ""
+            
         # helper: are we inside עשי"ת right now?
         def _in_ayt_window(now, tz, geo, candle_offset, havdalah_offset) -> bool:
             today = now.date()
