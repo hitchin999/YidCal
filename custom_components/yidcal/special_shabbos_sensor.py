@@ -19,6 +19,7 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
     _attr_icon = "mdi:calendar-star"
 
     POSSIBLE_EVENTS = [
+        "שבת שירה",
         "שבת שקלים",
         "שבת זכור",
         "שבת החודש",
