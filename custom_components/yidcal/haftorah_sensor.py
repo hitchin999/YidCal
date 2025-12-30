@@ -28,6 +28,128 @@ _LOGGER = logging.getLogger(__name__)
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"  # "ashkenazi" | "sephardi"
 DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
 
+# Weekday Haftorah Data
+WEEKDAY_HAFTAROT = {
+    "fast_day_mincha": {
+        "ashkenazi": {
+            "name_hebrew": "דרשו ה' בהמצאו",
+            "name_english": "Dirshu Hashem BeHimatz'o",
+            "source": "ישעיהו נה:ו-נו:ח",
+            "source_english": "Isaiah 55:6-56:8",
+        },
+        "sephardi": {
+            "name_hebrew": "דרשו ה' בהמצאו",
+            "name_english": "Dirshu Hashem BeHimatz'o",
+            "source": "ישעיהו נה:ו-נו:ח",
+            "source_english": "Isaiah 55:6-56:8",
+        },
+    },
+    "tisha_bav_shacharis": {
+        "ashkenazi": {
+            "name_hebrew": "אסף אסיפם",
+            "name_english": "Asof Asifem",
+            "source": "ירמיהו ח:יג-ט:כג",
+            "source_english": "Jeremiah 8:13-9:23",
+        },
+        "sephardi": {
+            "name_hebrew": "אסף אסיפם",
+            "name_english": "Asof Asifem",
+            "source": "ירמיהו ח:יג-ט:כג",
+            "source_english": "Jeremiah 8:13-9:23",
+        },
+    },
+    "tisha_bav_mincha": {
+        "ashkenazi": {
+            "name_hebrew": "דרשו ה' בהמצאו",
+            "name_english": "Dirshu Hashem BeHimatz'o",
+            "source": "ישעיהו נה:ו-נו:ח",
+            "source_english": "Isaiah 55:6-56:8",
+        },
+        "sephardi": {
+            "name_hebrew": "שובה ישראל",
+            "name_english": "Shuva Yisrael",
+            "source": "הושע יד",
+            "source_english": "Hosea 14",
+        },
+    },
+    "yom_kippur_mincha": {
+        "ashkenazi": {
+            "name_hebrew": "ויהי דבר ה' אל יונה",
+            "name_english": "Sefer Yonah",
+            "source": "יונה א-ד, מיכה ז:יח-כ",
+            "source_english": "Jonah 1-4, Micah 7:18-20",
+        },
+        "sephardi": {
+            "name_hebrew": "ויהי דבר ה' אל יונה",
+            "name_english": "Sefer Yonah",
+            "source": "יונה א-ד, מיכה ז:יח-כ",
+            "source_english": "Jonah 1-4, Micah 7:18-20",
+        },
+    },
+}
+
+
+def _is_leap_year(year: int) -> bool:
+    """Check if Hebrew year is a leap year."""
+    return ((year * 7 + 1) % 19) < 7
+
+
+def _get_fast_info(hd: HebrewDate, wd: int) -> tuple[bool, str | None, bool]:
+    """
+    Check if date is a public fast day.
+    Returns: (is_fast, fast_name, is_tisha_bav)
+    wd: Python weekday (Mon=0, Sat=5, Sun=6)
+    """
+    year = hd.year
+    is_leap = _is_leap_year(year)
+    adar = 13 if is_leap else 12
+    
+    # Tzom Gedaliah - 3 Tishrei (or 4 if 3 is Shabbos)
+    gedaliah_day = 4 if HebrewDate(year, 7, 3).to_pydate().weekday() == 5 else 3
+    if hd.month == 7 and hd.day == gedaliah_day:
+        return True, "צום גדליה", False
+    
+    # Asara B'Teves - 10 Teves (never postponed)
+    if hd.month == 10 and hd.day == 10:
+        return True, "צום עשרה בטבת", False
+    
+    # Taanis Esther - 13 Adar (or 11 if 13 is Shabbos)
+    if hd.month == adar and hd.day == 13 and wd != 5:
+        return True, "תענית אסתר", False
+    if hd.month == adar and hd.day == 11 and wd == 3:
+        try:
+            if HebrewDate(year, adar, 13).to_pydate().weekday() == 5:
+                return True, "תענית אסתר", False
+        except:
+            pass
+    
+    # Shiva Asar B'Tammuz - 17 Tammuz (or 18 if 17 is Shabbos)
+    if hd.month == 4 and hd.day == 17 and wd != 5:
+        return True, "צום שבעה עשר בתמוז", False
+    if hd.month == 4 and hd.day == 18 and wd == 6:
+        try:
+            if HebrewDate(year, 4, 17).to_pydate().weekday() == 5:
+                return True, "צום שבעה עשר בתמוז", False
+        except:
+            pass
+    
+    # Tisha B'Av - 9 Av (or 10 if 9 is Shabbos)
+    if hd.month == 5 and hd.day == 9 and wd != 5:
+        return True, "תשעה באב", True
+    if hd.month == 5 and hd.day == 10 and wd == 6:
+        try:
+            if HebrewDate(year, 5, 9).to_pydate().weekday() == 5:
+                return True, "תשעה באב נדחה", True
+        except:
+            pass
+    
+    return False, None, False
+
+
+def _is_yom_kippur(hd: HebrewDate) -> bool:
+    """Check if date is Yom Kippur."""
+    return hd.month == 7 and hd.day == 10
+
 def _data_path(filename: str) -> Path:
     here = Path(__file__).resolve().parent
     return here / "data" / filename
@@ -828,13 +950,142 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         havdalah_offset = int(cfg.get("havdalah_offset", cfg.get("havdala", 72)))
 
         now_local = (now or dt_util.now()).astimezone(self._tz)
-        shabbos_date, in_window = _determine_shabbos_target(
+        civil_today = now_local.date()
+        wd_today = civil_today.weekday()
+        
+        # Calculate zmanim for today
+        cal_today = ZmanimCalendar(geo_location=self._geo, date=civil_today)
+        sunrise_today = cal_today.sunrise().astimezone(self._tz)
+        alos_today = sunrise_today - timedelta(minutes=72)
+        chatzos_today = cal_today.chatzos().astimezone(self._tz)
+        mincha_gedola_today = chatzos_today + timedelta(minutes=30)
+        sunset_today = cal_today.sunset().astimezone(self._tz)
+        tzeis_today = sunset_today + timedelta(minutes=havdalah_offset)
+        
+        # Check if we're in Shabbos window
+        shabbos_date, in_shabbos_window = _determine_shabbos_target(
             now_local,
             geo=self._geo,
             candle_offset=candle_offset,
             havdalah_offset=havdalah_offset,
         )
-
+        
+        # If in Shabbos window, always show Shabbos haftorah
+        if in_shabbos_window:
+            self._show_shabbos_haftorah(shabbos_date, is_in_israel, minhag)
+            return
+        
+        # Get Hebrew date for today
+        gd_today = _greg_from_pydate(civil_today)
+        hd_today = gd_today.to_heb()
+        
+        # Check if today is a fast day or Yom Kippur
+        is_fast, fast_name, is_tisha_bav = _get_fast_info(hd_today, wd_today)
+        is_yom_kippur = _is_yom_kippur(hd_today)
+        
+        weekday_haftorah = None
+        weekday_reason = None
+        weekday_tefilah = None
+        
+        # Check TODAY for weekday haftorah
+        if is_fast and wd_today != 5:  # Fast day (not Shabbos)
+            if is_tisha_bav:
+                # Tisha B'Av has Shacharis AND Mincha haftorot
+                if now_local < chatzos_today:
+                    # Before chatzos - show Shacharis haftorah
+                    weekday_haftorah = WEEKDAY_HAFTAROT["tisha_bav_shacharis"]
+                    weekday_reason = f"{fast_name}"
+                    weekday_tefilah = "שחרית"
+                elif now_local < tzeis_today:
+                    # After chatzos, before tzeis - show Mincha haftorah
+                    weekday_haftorah = WEEKDAY_HAFTAROT["tisha_bav_mincha"]
+                    weekday_reason = f"{fast_name}"
+                    weekday_tefilah = "מנחה"
+                # After tzeis - fall through to check upcoming
+            else:
+                # Regular fast day - only Mincha has haftorah
+                if now_local < tzeis_today:
+                    # Show Mincha haftorah for the day (even before mincha gedola)
+                    weekday_haftorah = WEEKDAY_HAFTAROT["fast_day_mincha"]
+                    weekday_reason = f"{fast_name}"
+                    weekday_tefilah = "מנחה"
+                # After tzeis - fall through to show Shabbos
+        
+        elif is_yom_kippur and wd_today != 5:
+            # Yom Kippur Mincha has Sefer Yonah
+            if now_local < tzeis_today:
+                weekday_haftorah = WEEKDAY_HAFTAROT["yom_kippur_mincha"]
+                weekday_reason = "יום הכיפורים מנחה"
+                weekday_tefilah = "מנחה"
+        
+        # If we found a weekday haftorah for today, display it
+        if weekday_haftorah:
+            self._show_weekday_haftorah(weekday_haftorah, weekday_reason, weekday_tefilah, minhag)
+            return
+        
+        # Not on a fast day (or after tzeis on fast day) - check for UPCOMING weekday haftorah this week
+        # Look ahead up to 6 days for a weekday haftorah
+        for days_ahead in range(1, 7):
+            future_date = civil_today + timedelta(days=days_ahead)
+            future_wd = future_date.weekday()
+            
+            # Stop if we hit Shabbos - show Shabbos haftorah instead
+            if future_wd == 5:
+                break
+            
+            gd_future = _greg_from_pydate(future_date)
+            hd_future = gd_future.to_heb()
+            
+            is_fast_future, fast_name_future, is_tisha_bav_future = _get_fast_info(hd_future, future_wd)
+            is_yk_future = _is_yom_kippur(hd_future)
+            
+            if is_fast_future:
+                if is_tisha_bav_future:
+                    # Show Shacharis haftorah as upcoming
+                    weekday_haftorah = WEEKDAY_HAFTAROT["tisha_bav_shacharis"]
+                    weekday_reason = f"{fast_name_future}"
+                    weekday_tefilah = "שחרית"
+                else:
+                    # Regular fast - show mincha haftorah as upcoming
+                    weekday_haftorah = WEEKDAY_HAFTAROT["fast_day_mincha"]
+                    weekday_reason = f"{fast_name_future}"
+                    weekday_tefilah = "מנחה"
+                break
+            elif is_yk_future:
+                weekday_haftorah = WEEKDAY_HAFTAROT["yom_kippur_mincha"]
+                weekday_reason = "יום הכיפורים מנחה"
+                weekday_tefilah = "מנחה"
+                break
+        
+        # If we found an upcoming weekday haftorah, display it
+        if weekday_haftorah:
+            self._show_weekday_haftorah(weekday_haftorah, weekday_reason, weekday_tefilah, minhag)
+            return
+        
+        # No weekday haftorah - show Shabbos haftorah
+        self._show_shabbos_haftorah(shabbos_date, is_in_israel, minhag)
+    
+    def _show_weekday_haftorah(self, weekday_haftorah: dict, reason: str, tefilah: str, minhag: str) -> None:
+        """Display a weekday haftorah."""
+        minhag_key = "sephardi" if minhag.lower() in ("sephardi", "sefardi", "sephardic") else "ashkenazi"
+        haft_data = weekday_haftorah.get(minhag_key, weekday_haftorah.get("ashkenazi", {}))
+        
+        display = f"{haft_data.get('name_hebrew', '')} ({haft_data.get('source', '')})"
+        
+        self._state = display
+        self._attrs = {
+            "Haftarah_ID": "weekday",
+            "Full_Name": haft_data.get("name_hebrew", ""),
+            "Variants": {},
+            "Notes": "",
+            "Source_Ref": haft_data.get("source", ""),
+            "Reason": reason,
+            "Tefilah": tefilah,
+            "Type": "weekday",
+        }
+    
+    def _show_shabbos_haftorah(self, shabbos_date: date, is_in_israel: bool, minhag: str) -> None:
+        """Display a Shabbos haftorah."""
         resolved = _get_resolver().resolve(shabbos_date, israel=is_in_israel, minhag=minhag)
 
         if not resolved:
@@ -859,18 +1110,15 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
 
         extra = dict(resolved.extra or {})
         extra.pop("parsha_suffix", None)
-        # Remove internal extraction keys that shouldn't be exposed as attributes
         extra.pop("haftarah_name", None)
         extra.pop("haftarah_source", None)
         extra.pop("haftarah_name_english", None)
         extra.pop("haftarah_source_english", None)
         extra.pop("haftarah_variants", None)
-        extra.pop("add_pesukim_type", None)  # Internal use only
+        extra.pop("add_pesukim_type", None)
         
-        # Extract add_pesukim before renaming for use in state
         add_pesukim_text = extra.get("add_pesukim", "")
         
-        # Rename add_pesukim keys to Hebrew-friendly attribute names
         if "add_pesukim" in extra:
             extra["מוסיפים"] = extra.pop("add_pesukim")
         if "add_pesukim_source" in extra:
@@ -878,39 +1126,23 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         
         variants = _variants_hebrew_keys(resolved.variants or {})
 
-        # Build the display state
-        # If minhag-specific variant exists and includes source ref (in parentheses),
-        # use it directly. Otherwise, append source_ref if available.
         display = resolved.display_name or ""
         
-        # Check if the display name already has a source reference (contains parentheses)
         if display and "(" not in display and resolved.source_ref:
-            # Append source reference if not already included
             display = f"{display} ({resolved.source_ref})"
         
-        # Add the מוסיפים text to the state (without source)
         if add_pesukim_text:
             display = f"{display} - {add_pesukim_text}"
         
-        # State: haftarah name with source, plus any additions
         self._state = display if display else None
-
-        # Attributes: keep footnotes/alternates usable for later UI
-        gd = _greg_from_pydate(shabbos_date)
-        hd = gd.to_heb()
 
         self._attrs = {
             "Haftarah_ID": resolved.haftarah_id,
-            #"display_name": resolved.display_name,
             "Full_Name": resolved.full_name,
-            #"Minhag_Configured": minhag,
             "Variants": variants,
             "Notes": resolved.notes or "",
             "Source_Ref": resolved.source_ref,
             "Reason": resolved.reason,
-            #"Shabbos_Date": shabbos_date.isoformat(),
-            #"In_Shabbos_Window": in_window,
-            #"Is_In_Israel": is_in_israel,
-            #"hebrew_date": f"{hd.day} {hd.month_name(True)} {hd.year}",
+            "Type": "shabbos",
             **extra,
         }
