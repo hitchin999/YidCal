@@ -629,7 +629,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 shacharis = self._build_reading("שחרית", f"{fast_name} שחרית", fast_name, 3, False, sifrei,
                                                 shacharis_start, shacharis_end)
                 readings.append(shacharis)
-                mincha = self._build_reading("מנחה", f"{fast_name} מנחה", fast_name, 3, False, sifrei,
+                mincha = self._build_reading("מנחה", f"{fast_name} מנחה", fast_name, 3, True, sifrei,
                                             mincha_start, mincha_end)
                 readings.append(mincha)
 
@@ -804,9 +804,11 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             display_sefer_count = current_reading.get("sefer_torah_count", 1)
             display_aliyah_count = current_reading.get("aliyah_count", 3)
             display_nasi = nasi_today
+            display_date = today  # Current reading is for today
         else:
             # Not in a reading window - find next upcoming
             showing_next = True
+            display_date = today  # Default to today
             
             # Check for upcoming reading today
             for reading in readings_today:
@@ -820,63 +822,31 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                         pass
             
             if next_reading:
-                # There's still a reading later today (e.g., mincha)
+                # There's still reading(s) later today - show all remaining
                 display_reading = next_reading
-                display_readings = [next_reading]
-                # For mincha, use the mincha-specific info
-                display_reason = next_reading.get("reason", reason_today)
-                display_sefer_count = next_reading.get("sefer_torah_count", 1)
-                display_aliyah_count = next_reading.get("aliyah_count", 3)
+                # Get all readings from this point forward for today
+                display_readings = []
+                found_next = False
+                for reading in readings_today:
+                    if reading == next_reading:
+                        found_next = True
+                    if found_next:
+                        display_readings.append(reading)
+                display_date = today
+                # Use the day's overall reason
+                display_reason = reason_today
+                display_sefer_count = sefer_max_today
+                display_aliyah_count = aliyah_max_today
                 display_nasi = nasi_today
             elif has_kriah_tomorrow:
-                # Show tomorrow's reading, but respect today's windows:
-                # - Don't show tomorrow's Shacharis until after today's Shacharis window (chatzos)
-                # - Don't show tomorrow's Mincha until after today's Mincha window (tzeis)
-                
-                # Get today's civil windows to check what's still "open"
-                cal_civil = await self.hass.async_add_executor_job(
-                    lambda: ZmanimCalendar(geo_location=self._geo, date=civil_today)
-                )
-                chatzos_civil = cal_civil.chatzos().astimezone(tz)
-                sunset_civil = cal_civil.sunset().astimezone(tz)
-                tzeis_civil = sunset_civil + timedelta(minutes=self._havdalah_offset)
-                
-                # Find the appropriate next reading from tomorrow
-                display_reading = None
-                display_readings = []
-                
-                for future_reading in readings_tomorrow:
-                    future_tefilah = future_reading.get("tefilah", "")
-                    
-                    # Shacharis: can show after today's chatzos
-                    if future_tefilah == "שחרית" and now_local >= chatzos_civil:
-                        display_reading = future_reading
-                        display_readings = [future_reading]
-                        break
-                    # Mincha: can show after today's tzeis
-                    elif future_tefilah == "מנחה" and now_local >= tzeis_civil:
-                        display_reading = future_reading
-                        display_readings = [future_reading]
-                        break
-                    # Maariv: can show after today's tzeis
-                    elif future_tefilah == "ערבית" and now_local >= tzeis_civil:
-                        display_reading = future_reading
-                        display_readings = [future_reading]
-                        break
-                
-                if display_reading:
-                    display_reason = reason_tomorrow
-                    display_sefer_count = display_reading.get("sefer_torah_count", 1)
-                    display_aliyah_count = display_reading.get("aliyah_count", 3)
-                    display_nasi = nasi_tomorrow
-                else:
-                    # Still within today's window for the next tefilah type - show nothing yet
-                    display_reading = None
-                    display_readings = []
-                    display_reason = ""
-                    display_sefer_count = 0
-                    display_aliyah_count = 0
-                    display_nasi = None
+                # Show tomorrow's readings
+                display_reading = readings_tomorrow[0] if readings_tomorrow else None
+                display_readings = readings_tomorrow
+                display_date = tomorrow
+                display_reason = reason_tomorrow
+                display_sefer_count = sefer_max_tomorrow
+                display_aliyah_count = aliyah_max_tomorrow
+                display_nasi = nasi_tomorrow
             else:
                 # No reading today or tomorrow - find next kriah day
                 display_reading = None
@@ -885,6 +855,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 display_sefer_count = 0
                 display_aliyah_count = 0
                 display_nasi = None
+                display_date = None
                 # Look ahead up to 7 days
                 for days_ahead in range(2, 8):
                     future_date = today + timedelta(days=days_ahead)
@@ -892,10 +863,11 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                         await self.hass.async_add_executor_job(self._get_readings_for_date, future_date, tz)
                     if future_has:
                         display_reading = future_readings[0] if future_readings else None
-                        display_readings = [future_readings[0]] if future_readings else []
+                        display_readings = future_readings
+                        display_date = future_date
                         display_reason = future_reason
-                        display_sefer_count = display_reading.get("sefer_torah_count", 1) if display_reading else 0
-                        display_aliyah_count = display_reading.get("aliyah_count", 3) if display_reading else 0
+                        display_sefer_count = future_sefer
+                        display_aliyah_count = future_aliyah
                         display_nasi = future_nasi
                         break
 
@@ -952,14 +924,27 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
         # Flatten readings into header-style attributes
         tefilah_english = {"שחרית": "Shacharis", "מנחה": "Mincha", "ערבית": "Maariv"}
+        
+        # Determine the day suffix for future readings
+        # If display_date is not civil_today, show "ליום ב׳:" etc.
+        day_suffix = ""
+        if showing_next and display_date and display_date != civil_today:
+            display_weekday = display_date.weekday()
+            day_name = HEBREW_DAYS.get(display_weekday, "")
+            day_suffix = f" ל{day_name}"
+        
         for reading in display_readings:
             tefilah = reading.get("tefilah", "")
             tefilah_eng = tefilah_english.get(tefilah, tefilah)
             sifrei = reading.get("sifrei_torah", [])
             single_sefer = len(sifrei) == 1
+            has_haftorah = reading.get("has_maftir", False)
             
-            # Add tefilah header - mark as "הבא:" if showing next
-            header = f"{tefilah} הבא:" if showing_next else tefilah
+            # Add tefilah header - show day name for future days, nothing for same day
+            if showing_next:
+                header = f"{tefilah}{day_suffix}:"
+            else:
+                header = tefilah
             attrs[header] = ""
             
             for sefer in sifrei:
@@ -977,18 +962,26 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 
                 # Use simpler names when only 1 sefer (no "_Sefer_1")
                 if single_sefer:
-                    attrs[f"{tefilah_eng}_Opening"] = opening
+                    attrs[f"{tefilah_eng}_Start_Pasuk"] = opening
                     attrs[f"{tefilah_eng}_Source"] = source_str
                 else:
                     attrs[f"{tefilah_eng}_Sefer_{sefer_num}"] = opening
                     attrs[f"{tefilah_eng}_Sefer_{sefer_num}_Source"] = source_str
+            
+            # Add Has_Haftorah for this tefilah
+            attrs[f"{tefilah_eng}_Has_Haftorah"] = has_haftorah
 
         # Add Nasi reading if applicable
         if display_nasi:
-            nasi_header = "נשיא הבא:" if showing_next else "נשיא"
+            if showing_next and display_date and display_date != today:
+                nasi_header = f"נשיא{day_suffix}:"
+            elif showing_next:
+                nasi_header = "נשיא:"
+            else:
+                nasi_header = "נשיא"
             attrs[nasi_header] = ""
             attrs["Nasi_Today"] = f"נשיא {display_nasi['nasi']}"
-            attrs["Nasi_Opening"] = display_nasi["opening_words"]
+            attrs["Nasi_Start_Pasuk"] = display_nasi["opening_words"]
             attrs["Nasi_Source"] = display_nasi["pesukim"]
 
         # State is the summary
