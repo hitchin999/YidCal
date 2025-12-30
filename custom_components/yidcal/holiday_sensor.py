@@ -986,7 +986,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_fest.month == 5 and hd_fest.day == ykk_av_day:
             attrs["יום כיפור קטן"] = True
 
-# ─── Countdown for fast starts in ───────────────────────────────────
+        # ─── Countdown for fast starts in ───────────────────────────────────
         # Minor fasts: timer starts at tzeis (havdalah) the evening before
         # Major fasts (YK, Tisha B'Av): timer starts at Chatzos HaYom of Erev
         
@@ -1017,13 +1017,22 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             next_dawn += timedelta(minutes=1)
         next_dawn = next_dawn.replace(second=0, microsecond=0)
         
-        # Tonight's tzeis (havdalah time) - this is when minor fast countdown starts
-        tonight_tzeis = _round_ceil(actual_sunset + timedelta(minutes=self._havdalah_offset))
-        
         # ─── MINOR FASTS: Pre-fast countdown (tzeis evening before → alos) ───
         no_fast_active_now = not any(attrs.get(f) for f in self.FAST_FLAGS)
         
-        if no_fast_active_now and is_tomorrow_minor_fast and tonight_tzeis <= now < next_dawn:
+        # For the window check: handle midnight rollover
+        # If we're past midnight but before dawn, we're definitely past tzeis (which was hours ago)
+        # so we just need to check now < next_dawn
+        past_midnight_before_dawn = (now.hour < 12 and now < next_dawn)
+        
+        # Normal evening check (same calendar day): after tonight's tzeis
+        tonight_tzeis = _round_ceil(actual_sunset + timedelta(minutes=self._havdalah_offset))
+        evening_window = (tonight_tzeis <= now)
+        
+        # Combined: either past midnight before dawn, OR evening after tzeis but before dawn
+        in_minor_fast_prewindow = (past_midnight_before_dawn or evening_window) and now < next_dawn
+        
+        if no_fast_active_now and is_tomorrow_minor_fast and in_minor_fast_prewindow:
             remaining_sec = max(0, (next_dawn - now).total_seconds())
             minutes_remaining = math.ceil(remaining_sec / 60)
             h = minutes_remaining // 60
