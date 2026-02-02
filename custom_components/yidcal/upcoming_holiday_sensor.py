@@ -659,7 +659,7 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                         return f, d, PHebrewDate.from_pydate(d)
 
             # Singles
-            for single in ('ט"ו בשבט', "פסח שני", 'ל"ג בעומר', "זאת חנוכה"):
+            for single in ('חמשה עשר בשבט', "פסח שני", 'ל"ג בעומר', "זאת חנוכה"):
                 if attrs.get(single):
                     return single, d, PHebrewDate.from_pydate(d)
 
