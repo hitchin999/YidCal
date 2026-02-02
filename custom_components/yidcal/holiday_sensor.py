@@ -128,7 +128,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שובבים",
         "שובבים ת\"ת",
         "צום עשרה בטבת",
-        "ט\"ו בשבט",
+        "חמשה עשר בשבט",
         "תענית אסתר",
         "פורים",
         "שושן פורים",
@@ -217,7 +217,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "חנוכה",
         "זאת חנוכה",
         "צום עשרה בטבת",
-        "ט\"ו בשבט",
+        "חמשה עשר בשבט",
         "תענית אסתר",
         "פורים",
         "שושן פורים",
@@ -290,7 +290,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שובבים":                        "havdalah_havdalah",
         "שובבים ת\"ת":                   "havdalah_havdalah",
         "צום עשרה בטבת":                 "alos_havdalah",
-        "ט\"ו בשבט":                     "havdalah_havdalah",
+        "חמשה עשר בשבט":                "havdalah_havdalah",
         "תענית אסתר":                     "alos_havdalah",
         "פורים":                         "havdalah_havdalah",
         "שושן פורים":                     "havdalah_havdalah",
@@ -832,7 +832,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Tu BiShvat
         if hd_fest.month == 11 and hd_fest.day == 15:
-            attrs["ט\"ו בשבט"] = True
+            attrs["חמשה עשר בשבט"] = True
 
         # Purim
         if hd_fest.month in (12, 13):
