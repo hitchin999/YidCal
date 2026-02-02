@@ -116,7 +116,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "שובבים":               "shovavim",
     "שובבים ת\"ת":          "shovavim_tat",
     "צום עשרה בטבת":         "tzom_asura_beteves",
-    "ט\"ו בשבט":             "tu_bishvat",
+    "חמשה עשר בשבט":        "tu_bishvat",
     "תענית אסתר":            "taanis_esther",
     "פורים":                "purim",
     "שושן פורים":           "shushan_purim",
