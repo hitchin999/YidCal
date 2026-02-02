@@ -99,7 +99,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * שובבים
   * שובבים ת"ת
   * צום עשרה בטבת
-  * ט"ו בשבט
+  * חמשה עשר בשבט
   * תענית אסתר
   * פורים
   * שושן פורים
