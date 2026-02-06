@@ -74,6 +74,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "יום הכיפורים",
         "צום גדליה",
         "תענית אסתר",
+        "תענית אסתר מוקדם",
         "צום עשרה בטבת",
         "צום שבעה עשר בתמוז",
         "תשעה באב",
@@ -130,6 +131,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "צום עשרה בטבת",
         "חמשה עשר בשבט",
         "תענית אסתר",
+        "תענית אסתר מוקדם",
         "פורים",
         "שושן פורים",
         "מוצאי שושן פורים",
@@ -292,6 +294,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "צום עשרה בטבת":                 "alos_havdalah",
         "חמשה עשר בשבט":                "havdalah_havdalah",
         "תענית אסתר":                     "alos_havdalah",
+        "תענית אסתר מוקדם":                "alos_havdalah",
         "פורים":                         "havdalah_havdalah",
         "שושן פורים":                     "havdalah_havdalah",
         "ליל בדיקת חמץ":                   "candle_alos",
@@ -834,10 +837,18 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_fest.month == 11 and hd_fest.day == 15:
             attrs["חמשה עשר בשבט"] = True
 
-        # Purim
+        # Purim — Taanit Esther (pushed to 11 Adar when 13 Adar is Shabbat)
         if hd_fest.month in (12, 13):
-            if hd_fest.day == 13 and dawn <= now <= end_time:
-                attrs["תענית אסתר"] = True
+            thirteen_adar_py = PHebrewDate(hd_fest.year, adar_month, 13).to_pydate()
+            taanit_pushed = thirteen_adar_py.weekday() == 5  # 13 Adar is Shabbat
+
+            if taanit_pushed:
+                if hd_fest.day == 11 and dawn <= now <= end_time:
+                    attrs["תענית אסתר"] = True
+                    attrs["תענית אסתר מוקדם"] = True
+            else:
+                if hd_fest.day == 13 and dawn <= now <= end_time:
+                    attrs["תענית אסתר"] = True
             if hd_fest.day == 14:
                 attrs["פורים"] = True
             if hd_fest.day == 15:
