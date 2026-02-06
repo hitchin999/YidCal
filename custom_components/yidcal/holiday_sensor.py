@@ -74,7 +74,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "יום הכיפורים",
         "צום גדליה",
         "תענית אסתר",
-        "תענית אסתר מוקדם",
         "צום עשרה בטבת",
         "צום שבעה עשר בתמוז",
         "תשעה באב",
