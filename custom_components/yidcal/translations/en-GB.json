@@ -21,6 +21,7 @@
           "include_date": "Include Hebrew date on the Full Display sensor",
           "haftorah_minhag": "Haftorah sensor minhag",
           "include_attribute_sensors": "Create separate sensors for holiday attributes",
+          "enable_daf_hayomi": "Create Daf HaYomi sensor",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
           "time_format": "Time format (For Simple Zmanim only)"
@@ -61,6 +62,7 @@
           "include_date": "Include Hebrew date on the Full Display sensor",
           "haftorah_minhag": "Haftorah sensor minhag",
           "include_attribute_sensors": "Create separate sensors for holiday attributes",
+          "enable_daf_hayomi": "Create Daf HaYomi sensor",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
           "time_format": "Time format (For Simple Zmanim only)"
