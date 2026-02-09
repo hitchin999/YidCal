@@ -226,6 +226,22 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Eruv Tavshilin** (`binary_sensor.eruv_tavshilin`)
   **On only from Alos to Tzeis** on Erev-Yom-Tov for a Yom Tov thats going into a Shabbos.
 
+* **DST** (`binary_sensor.yidcal_dst`) *(New in v0.5.7)*
+  **ON** when the configured timezone is currently observing Daylight Saving Time, **OFF** otherwise. Updates every 60 seconds.
+  *Attributes:* `Now`, `UTC_Offset`, `DST_Offset`, `Timezone`
+
+* **Erev After Chatzos** (`binary_sensor.yidcal_erev_after_chatzos`) *(New in v0.5.7)*
+  **ON** when all of the following are true: today is Erev Shabbos or Erev Yom Tov (and not itself Shabbos/YT), current time is **after Chatzos HaYom** (midday), and current time is **before** the erev window end (candle-lighting / early start).
+  *Attributes:* `Now`, `Is_Erev_Day`, `Chatzos`, `Erev_Window_End`, `Activation_Logic`
+
+* **Season** (`sensor.yidcal_season`) *(New in v0.5.7)*
+  State: **"בין פסח לסוכות"** or **"בין סוכות לפסח"** — easy to use in automation triggers/conditions.
+  *Boolean attributes:* `Pesach_to_Sukkos`, `Sukkos_to_Pesach`, `Pesach_till_Shvuos`, `Shvuos_till_Rosh_Hashanah`, `After_Shvuos_till_DST_OFF`, `DST_OFF_till_Pesach`, `DST_ON_till_Pesach`, `DST_OFF_till_Chanukah`
+
+* **Longer Shabbos Shachris** (`binary_sensor.yidcal_longer_shabbos_shachris`) *(New in v0.5.7)*
+  **ON 4 AM–2 PM local** on Shabbos when the davening is longer due to: שבת שקלים/זכור/פרה/החודש, שבת הגדול, שבת ראש חודש, פורים משולש, שבת מברכים, שבת חנוכה, שבת חנוכה ראש חודש, שבת חול המועד סוכות/פסח. Always **OFF** on weekdays (use the existing **Longer Shachris** sensor for weekday scenarios).
+  *Attributes:* `Now`, `Window_Start`, `Window_End`, `Reason`, `Activation_Logic`
+
 ---
 
 ## Day Type (timing notes)
@@ -360,6 +376,18 @@ Shows the reminder: **“שניידן די נעגל, האר היינט לכבו�
 
 * If upcoming Rosh Chodesh is **Fri (1 day)** or **Fri/Sat (2 days)** → shows on **Thursday**
 * If upcoming Rosh Chodesh is **Thu/Fri (2 days)** → shows on **Wednesday**
+
+### Daf HaYomi (New in v0.5.7)
+
+* **Daf HaYomi** (`sensor.yidcal_daf_hayomi`) — Today's Daf Yomi page, computed from the standard 2,711-day cycle (14th cycle started Jan 5, 2020). **Enabled by default** — can be toggled via config flow.
+  State: `"ברכות דף ב׳"` (masechta + daf in Hebrew numerals).
+  *Attributes:* `Masechta`, `Masechta_English`, `Daf`, `Daf_Hebrew`, `Cycle_Number`, `Day_In_Cycle`
+
+### Amud HaYomi (New in v0.5.7)
+
+* **Amud HaYomi** (`sensor.yidcal_amud_hayomi`) — Today's Amud HaYomi (Dirshu cycle), one amud per day, 7 days/week. Cycle 1 started October 15, 2023 (1 Cheshvan 5784) with Berachos 2a. Always enabled (no config toggle).
+  State: `"פסחים דף ק״ג עמוד ב"` (masechta + daf + amud side).
+  *Attributes:* `Masechta`, `Masechta_English`, `Daf`, `Daf_Hebrew`, `Amud` (א/ב), `Amud_English` (a/b), `Cycle_Number`, `Day_In_Cycle`
 
 ---
 
