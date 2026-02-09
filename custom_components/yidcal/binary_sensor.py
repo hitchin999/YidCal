@@ -816,7 +816,7 @@ async def async_setup_entry(
         EruvTavshilinSensor(hass, candle, havdalah),
         DSTSensor(hass),
         ErevAfterChatzosSensor(hass, candle),
-        LongerShabbosSensor(hass),
+        LongerShabbosSensor(hass, candle, havdalah),
     ]
     if include_attrs:
         # Filter the list so we don’t create sensors that will never be used
