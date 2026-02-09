@@ -65,6 +65,9 @@ from .config_flow import (
     CONF_MISHNE_TORAH_HOSHANA_RABBA,
     DEFAULT_MISHNE_TORAH_HOSHANA_RABBA,
 
+    CONF_ENABLE_DAF_HAYOMI,
+    DEFAULT_ENABLE_DAF_HAYOMI,
+
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -350,6 +353,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
     )
 
+    enable_daf_hayomi = opts.get(
+        CONF_ENABLE_DAF_HAYOMI,
+        initial.get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI),
+    )
+
     # Resolve and store geo+tz config (with caching to avoid repeated API calls)
     latitude = hass.config.latitude
     longitude = hass.config.longitude
@@ -430,6 +438,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         CONF_KORBANOS_YUD_GIMMEL_MIDOS: korbanos_yud_gimmel_midos,
         CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
+        CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
     }
 
     # Store global config for sensors
@@ -471,6 +480,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         "korbanos_yud_gimmel_midos": korbanos_yud_gimmel_midos,
         "mishne_torah_hoshana_rabba": mishne_torah_hoshana_rabba,
+        CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -608,6 +618,11 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
     )
 
+    enable_daf_hayomi = opts.get(
+        CONF_ENABLE_DAF_HAYOMI,
+        initial.get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI),
+    )
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         CONF_IS_IN_ISRAEL: is_in_israel,
@@ -644,6 +659,7 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
 
         CONF_KORBANOS_YUD_GIMMEL_MIDOS: korbanos_yud_gimmel_midos,
         CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
+        CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
     }
 
     # Schedule the reload shortly after to apply new options
