@@ -36,6 +36,7 @@ from .no_melucha_yomtov_sensor import NoMeluchaYomTovSensor
 from .bishul_allowed_sensor import BishulAllowedSensor
 from .longer_shachris_sensor import LongerShachrisSensor
 from .eruv_tavshilin import EruvTavshilinSensor
+from .dst_sensor import DSTSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -811,6 +812,7 @@ async def async_setup_entry(
         MotziSensor(hass, candle, havdalah),
         LongerShachrisSensor(hass, candle, havdalah),
         EruvTavshilinSensor(hass, candle, havdalah),
+        DSTSensor(hass),
     ]
     if include_attrs:
         # Filter the list so we don’t create sensors that will never be used
