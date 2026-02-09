@@ -2,7 +2,8 @@
 """
 Binary sensor: Longer Shabbos Shachris
 
-ON 04:00–14:00 local on Shabbos when the davening is longer due to:
+ON for the entire Shabbos (candle-lighting Friday → havdalah Motzei Shabbos)
+when the davening is longer due to:
   • שבת שקלים, שבת זכור, שבת פרה, שבת החודש  (4 special parshiyos)
   • שבת הגדול
   • שבת ראש חודש
@@ -21,13 +22,17 @@ Attributes:
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+import logging
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
+
+from zmanim.zmanim_calendar import ZmanimCalendar
 
 from pyluach.dates import HebrewDate as PHebrewDate
 from pyluach.hebrewcal import Year as PYear
@@ -35,6 +40,9 @@ from pyluach import parshios as pyluach_parshios, dates as pyluach_dates
 
 from .device import YidCalSpecialDevice
 from .const import DOMAIN
+from .zman_sensors import get_geo
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _round_half_up(dt: datetime) -> datetime:
@@ -51,13 +59,6 @@ def _round_ceil(dt: datetime) -> datetime:
     )
 
 
-def _upcoming_shabbos(g) -> "date":
-    """Return the upcoming Shabbos (Saturday) for a Gregorian date (inclusive)."""
-    wd = g.weekday()
-    delta = (5 - wd) % 7
-    return g + timedelta(days=delta)
-
-
 def _month_length_safe(y: int, m: int) -> int:
     try:
         PHebrewDate(y, m, 30)
@@ -67,13 +68,13 @@ def _month_length_safe(y: int, m: int) -> int:
 
 
 class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
-    """ON 04:00–14:00 on qualifying Shabbosim."""
+    """ON for the full Shabbos (candle-lighting → havdalah) on qualifying Shabbosim."""
 
     _attr_name = "Longer Shabbos Shachris"
     _attr_icon = "mdi:alarm-plus"
     _attr_unique_id = "yidcal_longer_shabbos_shachris"
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
         self.hass = hass
         self.entity_id = "binary_sensor.yidcal_longer_shabbos_shachris"
@@ -83,12 +84,24 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
         self._diaspora = cfg.get("diaspora", True)
         self._is_in_israel = not self._diaspora
 
+        self._candle = candle_offset
+        self._havdalah = havdalah_offset
+        self._geo = None
+
         self._attr_extra_state_attributes: dict = {}
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        self._geo = await get_geo(self.hass)
         await self.async_update()
-        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
+
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self.async_update,
+                second=0,
+            )
+        )
 
     # ─── qualification logic ───
 
@@ -190,14 +203,26 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
 
         return reasons
 
-    def _window_for(self, d) -> tuple[datetime, datetime]:
-        start = datetime.combine(d, time(4, 0, 0, tzinfo=self._tz))
-        end = datetime.combine(d, time(14, 0, 0, tzinfo=self._tz))
-        return _round_half_up(start), _round_ceil(end)
+    def _shabbos_window(self, friday, saturday) -> tuple[datetime, datetime]:
+        """Candle-lighting Friday → havdalah Motzei Shabbos."""
+        fri_sunset = (
+            ZmanimCalendar(geo_location=self._geo, date=friday)
+            .sunset()
+            .astimezone(self._tz)
+        )
+        sat_sunset = (
+            ZmanimCalendar(geo_location=self._geo, date=saturday)
+            .sunset()
+            .astimezone(self._tz)
+        )
+        on_time = _round_half_up(fri_sunset - timedelta(minutes=self._candle))
+        off_time = _round_ceil(sat_sunset + timedelta(minutes=self._havdalah))
+        return on_time, off_time
 
-    def _next_qualifying_shabbos(self, ref) -> tuple["date", list[str]] | None:
-        """Find the next Shabbos on or after ref that qualifies."""
-        d = _upcoming_shabbos(ref)
+    def _next_qualifying_shabbos(self, ref) -> tuple | None:
+        """Find the next Saturday on or after ref that qualifies."""
+        wd = ref.weekday()
+        d = ref + timedelta(days=(5 - wd) % 7)
         for _ in range(55):  # scan ~1 year of Shabbosim
             reasons = self._get_reasons(d)
             if reasons:
@@ -208,36 +233,46 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
     # ─── main update ───
 
     async def async_update(self, _=None) -> None:
+        if not self._geo:
+            return
+
         now = dt_util.now().astimezone(self._tz)
         today = now.date()
+        wd = today.weekday()  # 0=Mon … 4=Fri, 5=Sat
 
         window_start = window_end = None
         reasons: list[str] = []
 
-        if today.weekday() == 5:  # Saturday
-            reasons = self._get_reasons(today)
+        if wd in (4, 5):  # Friday or Saturday — could be inside Shabbos window
+            friday = today if wd == 4 else (today - timedelta(days=1))
+            saturday = friday + timedelta(days=1)
+
+            reasons = self._get_reasons(saturday)
             if reasons:
-                window_start, window_end = self._window_for(today)
-                self._attr_is_on = window_start <= now < window_end
+                window_start, window_end = self._shabbos_window(friday, saturday)
+                self._attr_is_on = (window_start <= now < window_end)
 
                 if not self._attr_is_on and now >= window_end:
-                    # Today's window passed; find next qualifying Shabbos
-                    nxt = self._next_qualifying_shabbos(today + timedelta(days=1))
+                    # This Shabbos passed; find the next one
+                    nxt = self._next_qualifying_shabbos(saturday + timedelta(days=1))
                     if nxt:
-                        next_d, reasons = nxt
-                        window_start, window_end = self._window_for(next_d)
+                        next_sat, reasons = nxt
+                        next_fri = next_sat - timedelta(days=1)
+                        window_start, window_end = self._shabbos_window(next_fri, next_sat)
             else:
                 self._attr_is_on = False
-                nxt = self._next_qualifying_shabbos(today + timedelta(days=1))
+                nxt = self._next_qualifying_shabbos(saturday + timedelta(days=1))
                 if nxt:
-                    next_d, reasons = nxt
-                    window_start, window_end = self._window_for(next_d)
+                    next_sat, reasons = nxt
+                    next_fri = next_sat - timedelta(days=1)
+                    window_start, window_end = self._shabbos_window(next_fri, next_sat)
         else:
             self._attr_is_on = False
             nxt = self._next_qualifying_shabbos(today)
             if nxt:
-                next_d, reasons = nxt
-                window_start, window_end = self._window_for(next_d)
+                next_sat, reasons = nxt
+                next_fri = next_sat - timedelta(days=1)
+                window_start, window_end = self._shabbos_window(next_fri, next_sat)
 
         self._attr_extra_state_attributes = {
             "Now": now.isoformat(),
@@ -245,7 +280,7 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
             "Window_End": window_end.isoformat() if window_end else "",
             "Reason": " / ".join(reasons) if reasons else "",
             "Activation_Logic": (
-                "ON 04:00–14:00 on Shabbos when shachris is longer due to: "
+                "ON for entire Shabbos (candle-lighting → havdalah) when shachris is longer due to: "
                 "שבת שקלים, שבת זכור, שבת פרה, שבת החודש, שבת הגדול, "
                 "שבת ראש חודש, פורים משולש, שבת מברכים, "
                 "שבת חנוכה, שבת חנוכה ראש חודש, "
