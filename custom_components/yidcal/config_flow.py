@@ -70,6 +70,10 @@ DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS = False
 CONF_MISHNE_TORAH_HOSHANA_RABBA = "mishne_torah_hoshana_rabba"
 DEFAULT_MISHNE_TORAH_HOSHANA_RABBA = False
 
+# ============ Daf HaYomi ============
+CONF_ENABLE_DAF_HAYOMI = "enable_daf_hayomi"
+DEFAULT_ENABLE_DAF_HAYOMI = True
+
 # Conservative defaults per our plan
 DEFAULT_EARLY_YOMTOV_INCLUDE = [
     "rosh_hashana",
@@ -142,6 +146,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
+                    vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=DEFAULT_ENABLE_DAF_HAYOMI): bool,
                     vol.Optional(
                         CONF_SLICHOS_LABEL_ROLLOVER,
                         default=DEFAULT_SLICHOS_LABEL_ROLLOVER,
@@ -307,6 +312,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=get(CONF_INCLUDE_DATE, False)): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=get(CONF_INCLUDE_ATTR_SENSORS, True)): bool,
+                    vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI)): bool,
                     vol.Optional(
                         CONF_SLICHOS_LABEL_ROLLOVER,
                         default=get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
