@@ -38,6 +38,9 @@ from .perek_avot_sensor import PerekAvotSensor
 from .holiday_sensor import HolidaySensor
 from .full_display_sensor import FullDisplaySensor
 from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
+from .season_sensor import SeasonSensor
+from .daf_hayomi_sensor import DafHaYomiSensor
+from .amud_hayomi_sensor import AmudHaYomiSensor
 from .special_prayer_sensor import SpecialPrayerSensor
 from .zman_sensors import ZmanErevSensor, ZmanMotziSensor
 from .zman_krias_shma_mga import SofZmanKriasShmaMGASensor
@@ -86,6 +89,7 @@ from .config_flow import (
     DEFAULT_YAHRTZEIT_DATABASE,
     CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS,
     CONF_ENABLE_EARLY_YOMTOV,  DEFAULT_ENABLE_EARLY_YOMTOV,
+    CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -208,6 +212,7 @@ async def async_setup_entry(
         FullDisplaySensor(hass),
         MoridGeshemSensor(hass, yidcal_helper),
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
+        SeasonSensor(hass),
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
         ZmanErevSensor(hass, candle_offset, havdalah_offset),
         ZmanMotziSensor(hass, candle_offset, havdalah_offset),
@@ -261,6 +266,20 @@ async def async_setup_entry(
 
     if enable_es or enable_ey:
         sensors.append(EarlyShabbosYtStartTimeSensor(hass, entry))
+
+    # ─────────────────────────────────────────────────────────────
+    # Daf HaYomi (optional)
+    # ─────────────────────────────────────────────────────────────
+    enable_daf = entry.options.get(
+        CONF_ENABLE_DAF_HAYOMI, entry.data.get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI)
+    )
+    if enable_daf:
+        sensors.append(DafHaYomiSensor(hass))
+
+    # ─────────────────────────────────────────────────────────────
+    # Amud HaYomi (always on — Dirshu cycle)
+    # ─────────────────────────────────────────────────────────────
+    sensors.append(AmudHaYomiSensor(hass))
 
     # ─────────────────────────────────────────────────────────────
     # Yurtzeit sensors (per database, daily/weekly, legacy-safe)
