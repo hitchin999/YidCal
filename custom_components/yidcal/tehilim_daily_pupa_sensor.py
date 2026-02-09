@@ -103,19 +103,28 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
         self.entity_id = "sensor.yidcal_tehilim_daily_pupa"
         self._state: str | None = None
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
         # initial compute
         self.update()
 
         # refresh after midnight (civil)
-        async_track_time_change(
-            hass, self._handle_midnight, hour=0, minute=0, second=1
+        self._register_listener(
+            async_track_time_change(
+                self.hass, self._handle_midnight, hour=0, minute=0, second=1
+            )
         )
 
-        async_track_state_change_event(
-            hass, "binary_sensor.yidcal_no_melucha", self._handle_midnight
+        self._register_listener(
+            async_track_state_change_event(
+                self.hass, "binary_sensor.yidcal_no_melucha", self._handle_midnight
+            )
         )
-        async_track_state_change_event(
-            hass, "sensor.yidcal_holiday", self._handle_midnight
+        self._register_listener(
+            async_track_state_change_event(
+                self.hass, "sensor.yidcal_holiday", self._handle_midnight
+            )
         )
 
     async def _handle_midnight(self, *_):
