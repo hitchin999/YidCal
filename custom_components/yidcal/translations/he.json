@@ -21,6 +21,7 @@
           "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
           "haftorah_minhag": "מנהג ההפטרה",
           "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
+          "enable_daf_hayomi": "הוספת חיישן דף היומי",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
           "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
@@ -61,6 +62,7 @@
           "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
           "haftorah_minhag": "מנהג ההפטרה",
           "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
+          "enable_daf_hayomi": "הוספת חיישן דף היומי",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
           "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
