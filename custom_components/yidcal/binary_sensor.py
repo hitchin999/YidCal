@@ -837,4 +837,4 @@ async def async_setup_entry(
         for name in allowed:
             entities.append(HolidayAttributeBinarySensor(hass, name))
 
-    async_add_entities(entities, update_before_add=True)
+    async_add_entities(entities, update_before_add=False)
