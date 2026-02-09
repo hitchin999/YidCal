@@ -323,7 +323,7 @@ async def async_setup_entry(
                     YurtzeitWeeklySensor(hass, havdalah_offset, database=db, legacy_ids=(db == "standard"))
                 )
 
-    async_add_entities(sensors, update_before_add=True)
+    async_add_entities(sensors, update_before_add=False)
 
 class MoladSensor(YidCalDisplayDevice, SensorEntity):
     _attr_name = "Molad"
