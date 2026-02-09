@@ -239,9 +239,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   *Boolean attributes:* `Pesach_to_Sukkos`, `Sukkos_to_Pesach`, `Pesach_till_Shvuos`, `Shvuos_till_Rosh_Hashanah`, `After_Shvuos_till_DST_OFF`, `DST_OFF_till_Pesach`, `DST_ON_till_Pesach`, `DST_OFF_till_Chanukah`
 
 * **Longer Shabbos Shachris** (`binary_sensor.yidcal_longer_shabbos_shachris`) *(New in v0.5.7)*
-  **ON 4 AM–2 PM local** on Shabbos when the davening is longer due to: שבת שקלים/זכור/פרה/החודש, שבת הגדול, שבת ראש חודש, פורים משולש, שבת מברכים, שבת חנוכה, שבת חנוכה ראש חודש, שבת חול המועד סוכות/פסח. Always **OFF** on weekdays (use the existing **Longer Shachris** sensor for weekday scenarios).
+  **ON for the entire Shabbos** (candle-lighting → havdalah) when the davening is longer due to: שבת שקלים/זכור/פרה/החודש, שבת הגדול, שבת ראש חודש, פורים משולש, שבת מברכים, שבת חנוכה, שבת חנוכה ראש חודש, שבת חול המועד סוכות/פסח. Always **OFF** on weekdays (use the existing **Longer Shachris** sensor for weekday scenarios).
   *Attributes:* `Now`, `Window_Start`, `Window_End`, `Reason`, `Activation_Logic`
-
 ---
 
 ## Day Type (timing notes)
