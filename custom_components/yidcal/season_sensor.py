@@ -2,7 +2,7 @@
 """
 Sensor: Jewish Calendar Season
 
-State: "פסח עד סוכות" or "סוכות עד פסח"
+State: "בין פסח לסוכות" or "בין סוכות לפסח"
   (easy to select in automation triggers / conditions)
 
 Attributes (all boolean):
