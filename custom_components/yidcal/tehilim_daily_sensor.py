@@ -33,10 +33,16 @@ class TehilimDailySensor(YidCalDisplayDevice, SensorEntity):
         self.hass      = hass
 
         self._state = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
         self.update()
 
-        async_track_time_change(
-            hass, self._handle_midnight, hour=0, minute=0, second=1
+        self._register_listener(
+            async_track_time_change(
+                self.hass, self._handle_midnight, hour=0, minute=0, second=1
+            )
         )
 
     async def _handle_midnight(self, now):
