@@ -59,6 +59,9 @@ Logic for every “motzei” sensor:
 
 class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
     _attr_icon = "mdi:checkbox-marked-circle-outline"
+    # Only Yom Tov motzeis should defer to Motzaei Shabbos in 3-day blocks.
+    # Fasts, Chanukah, etc. just get blocked (no motzei shown).
+    _DEFER_FOR_SHABBOS: bool = False
 
     def __init__(
         self,
@@ -126,12 +129,16 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         """
-        Decide ON/OFF for “מוצאי <holiday>”.
+        Decide ON/OFF for "מוצאי <holiday>".
 
-        1) Determine holiday_date (today/yesterday or via day_matcher).
+        1) Determine holiday_date (today/yesterday, or today-2 when
+           yesterday was Shabbos — covers the 3-day YT→Shabbos scenario).
         2) motzei_start = sunset(holiday_date) + havdalah_offset
            motzei_end   = (holiday_date + 1 day) at Rounded Alos
-        3) BLOCK if motzei_start is inside Shabbos (Fri candles → Shabbos havdalah).
+        3) If Shabbos follows the holiday (holiday ends Friday),
+           DEFER motzei to Motzaei Shabbos (Sat havdalah → Sun Alos).
+        4) If the holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Shabbos),
+           use the normal motzei window (Sat havdalah → Sun Alos) — correct as-is.
         """
         # Lazily cache geo so ad-hoc instances (e.g. from HolidaySensor) work
         if not self._geo:
@@ -142,8 +149,11 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
         tz = self._tz
         now = (now or datetime.datetime.now(tz)).astimezone(tz)
         today_date = now.date()
+        yesterday = today_date - timedelta(days=1)
 
-        # 1) Check today's (or yesterday's) holiday target
+        # 1) Check today’s, yesterday’s, or two-days-ago’s holiday target.
+        #    The today-2 check handles Sunday morning (before Alos) after a
+        #    3-day YT block: holiday ended Friday → Shabbos → now Sunday.
         holiday_date: datetime.date | None = None
 
         def _is_target(d: date) -> bool:
@@ -155,8 +165,11 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
 
         if _is_target(today_date):
             holiday_date = today_date
-        elif _is_target(today_date - timedelta(days=1)):
-            holiday_date = today_date - timedelta(days=1)
+        elif _is_target(yesterday):
+            holiday_date = yesterday
+        elif self._DEFER_FOR_SHABBOS and yesterday.weekday() == 5 and _is_target(today_date - timedelta(days=2)):
+            # Yesterday was Shabbos and 2 days ago was the holiday’s last day (Friday)
+            holiday_date = today_date - timedelta(days=2)
 
         if not holiday_date:
             self._state = False
@@ -170,7 +183,7 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
         next_cal = ZmanimCalendar(geo_location=self._geo, date=next_day)
         motzei_end = alos_mga_72(next_cal, tz)
 
-        # 3) Shabbos blocking window (Fri candles → Shabbos havdalah)
+        # 3) Shabbos blocking / deferral
         off_from_fri = (holiday_date.weekday() - 4) % 7  # 0 if Friday
         fri = holiday_date - timedelta(days=off_from_fri)
         sat = fri + timedelta(days=1)
@@ -179,16 +192,28 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
         sat_sunset = ZmanimCalendar(geo_location=self._geo, date=sat).sunset().astimezone(tz)
 
         shabbos_start = fri_sunset - timedelta(minutes=self._candle_offset)
-        # Round Shabbos end the same way Motzi start is rounded,
-        # so a holiday ending on Shabbos is treated as blocked.
         shabbos_end   = round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset))
 
-        # Inclusive end: if motzei_start lands exactly at Shabbos end,
-        # it's still "blocked" (no distinct Motzei <holiday> on Motzaei Shabbos).
         shabbos_blocks_motzi = (shabbos_start <= motzei_start <= shabbos_end)
 
-        # Final state
-        self._state = (motzei_start <= now < motzei_end) and not shabbos_blocks_motzi
+        if shabbos_blocks_motzi and self._DEFER_FOR_SHABBOS and holiday_date.weekday() == 4:
+            # Holiday’s last day is Friday → Shabbos follows (3-day block).
+            # Defer motzei to Motzaei Shabbos: Sat havdalah → Sun Alos.
+            deferred_start = round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset))
+            sun = sat + timedelta(days=1)
+            sun_cal = ZmanimCalendar(geo_location=self._geo, date=sun)
+            deferred_end = alos_mga_72(sun_cal, tz)
+            self._state = (deferred_start <= now < deferred_end)
+        elif shabbos_blocks_motzi and self._DEFER_FOR_SHABBOS and holiday_date.weekday() == 5:
+            # Holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Sat).
+            # Normal window is already Sat havdalah → Sun Alos — correct as-is.
+            self._state = (motzei_start <= now < motzei_end)
+        elif shabbos_blocks_motzi:
+            # Non-YT holiday blocked by Shabbos, or YT without deferral
+            self._state = False
+        else:
+            # Normal case: no Shabbos conflict
+            self._state = (motzei_start <= now < motzei_end)
 
 
 #
@@ -197,6 +222,7 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
 
 class MotzeiYomKippurSensor(MotzeiHolidaySensor):
     """מוצאי יום הכיפורים (ט״י תשרי)"""
+    _DEFER_FOR_SHABBOS = True
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
@@ -211,6 +237,7 @@ class MotzeiYomKippurSensor(MotzeiHolidaySensor):
 
 class MotzeiPesachSensor(MotzeiHolidaySensor):
     """מוצאי פסח (ט״ו ניסן)"""
+    _DEFER_FOR_SHABBOS = True
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
@@ -225,6 +252,7 @@ class MotzeiPesachSensor(MotzeiHolidaySensor):
 
 class MotzeiSukkosSensor(MotzeiHolidaySensor):
     """מוצאי סוכות (ט״ו תשרי)"""
+    _DEFER_FOR_SHABBOS = True
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
@@ -239,6 +267,7 @@ class MotzeiSukkosSensor(MotzeiHolidaySensor):
 
 class MotzeiShavuosSensor(MotzeiHolidaySensor):
     """מוצאי שבועות (ב׳ שבועות)"""
+    _DEFER_FOR_SHABBOS = True
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
@@ -253,6 +282,7 @@ class MotzeiShavuosSensor(MotzeiHolidaySensor):
 
 class MotzeiRoshHashanaSensor(MotzeiHolidaySensor):
     """מוצאי ראש השנה (ב׳ תשרי)"""
+    _DEFER_FOR_SHABBOS = True
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__(
             hass,
