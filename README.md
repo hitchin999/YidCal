@@ -46,6 +46,9 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Bishul Allowed** (`binary_sensor.yidcal_bishul_allowed`)
   Usually **ON**; **OFF on Shabbos and Yom Kippur**. Perfect for percolators with **auto-fill valves**.
   *Attributes:* `Now`, `Next_Off_Window_Start`, `Next_Off_Window_End`
+* **3 Days Yom Tov** (`binary_sensor.yidcal_three_day_yomtov`)
+  ON from **candle-lighting** through **Alos** the morning after a continuous Shabbos + Yom Tov block (3+ days of no melacha). Only fires when the block contains both a pure Shabbos (not also YT) and at least one Yom Tov day.
+  *Attributes:* `שבת ואח"כ יום טוב` (Shabbos first), `יום טוב ואח"כ שבת` (YT first)
 
 ---
 
@@ -100,6 +103,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * שובבים ת"ת
   * צום עשרה בטבת
   * חמשה עשר בשבט
+  * תענית אסתר מוקדם
+  * שבת ערב פורים
   * תענית אסתר
   * פורים
   * שושן פורים
@@ -176,6 +181,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
   **Motzi holiday sensors (attribute-derived) — Shabbos overlap rule:**
   If a holiday’s “motzi moment” is swallowed by Shabbos (example: the holiday ends **Friday night after sunset**), then its **Motzi-holiday sensor is skipped entirely** (you just continue with regular Shabbos → Motzi Shabbos).
+  **Exception — major Yom Tov deferral:** For מוצאי ראש השנה, מוצאי סוכות, מוצאי פסח, מוצאי שבועות, and מוצאי יום הכיפורים, if YT ends Friday going into a 3-day block, the motzei sensor **defers to Motzaei Shabbos** (Saturday havdalah → Sunday Alos) instead of being skipped.
   **Exception:** In a **Purim Meshulash** year, `מוצאי שושן פורים` turns on **Sunday Tzeis → Monday Alos**.
 
 ---
