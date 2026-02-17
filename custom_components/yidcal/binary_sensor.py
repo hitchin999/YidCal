@@ -39,6 +39,7 @@ from .eruv_tavshilin import EruvTavshilinSensor
 from .dst_sensor import DSTSensor
 from .erev_after_chatzos_sensor import ErevAfterChatzosSensor
 from .longer_shabbos_shachris_sensor import LongerShabbosSensor
+from .three_day_yomtov_sensor import ThreeDayYomTovSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -172,6 +173,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ערב יום טוב שחל בשבת":   "erev_yomtov_shechal_beshabbos",
     "מוצאי שבת שחל ביום טוב": "motzi_shabbos_shechal_byomtov",
     "מוצאי יום טוב שחל בשבת": "motzi_yomtov_shechal_beshabbos",
+    "שבת ערב פורים":          "shabbos_erev_purim",
 }
 
 # ─── The fixed dynamic‐attribute binary sensor ────────────────────────────────
@@ -817,6 +819,7 @@ async def async_setup_entry(
         DSTSensor(hass),
         ErevAfterChatzosSensor(hass, candle),
         LongerShabbosSensor(hass, candle, havdalah),
+        ThreeDayYomTovSensor(hass, candle, havdalah),
     ]
     if include_attrs:
         # Filter the list so we don’t create sensors that will never be used
