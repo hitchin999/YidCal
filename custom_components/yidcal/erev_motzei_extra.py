@@ -18,6 +18,7 @@ EXTRA_ATTRS = [
     "ערב יום טוב שחל בשבת",
     "מוצאי שבת שחל ביום טוב",
     "מוצאי יום טוב שחל בשבת",
+    "שבת ערב פורים",
 ]
 
 
@@ -168,5 +169,15 @@ def compute_erev_motzei_flags(
     if yt_shabbos_base:
         s, e = _motzei_window(yt_shabbos_base)
         flags["מוצאי יום טוב שחל בשבת"] = _in(s, e)
+
+    # שבת ערב פורים (Shabbos that is 13 Adar / Erev Purim), Alos..Candle
+    if is_sat:
+        from pyluach.dates import HebrewDate as PHebrewDate
+        from pyluach.hebrewcal import Year as PYear
+        hd_sat = PHebrewDate.from_pydate(today)
+        is_leap = PYear(hd_sat.year).leap
+        adar_month = 13 if is_leap else 12
+        if hd_sat.month == adar_month and hd_sat.day == 13:
+            flags["שבת ערב פורים"] = _in(alos, candle)
 
     return flags
