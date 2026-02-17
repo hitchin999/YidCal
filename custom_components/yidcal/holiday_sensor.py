@@ -129,8 +129,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שובבים ת\"ת",
         "צום עשרה בטבת",
         "חמשה עשר בשבט",
-        "תענית אסתר",
         "תענית אסתר מוקדם",
+        "שבת ערב פורים",
+        "תענית אסתר",
         "פורים",
         "שושן פורים",
         "מוצאי שושן פורים",
@@ -600,6 +601,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         is_bedikat_day = (hd_py.month == 1 and hd_py.day == bedikat_day)
         #_LOGGER.debug(f"Bedikat: prev_sunset={prev_sunset}, dawn={dawn}, now={now}, is_bedikat_day={is_bedikat_day}")
         is_erev_pesach_on_shabbos = (erev_greg.weekday() == 5)  # 14 Nisan is Shabbat
+
+        # Erev Shavuos on Shabbos: 5 Sivan falls on Saturday
+        erev_shav_greg = PHebrewDate(hd_py.year, 3, 5).to_pydate()
+        is_erev_shavuos_on_shabbos = (erev_shav_greg.weekday() == 5)
         
         # Engage only when TODAY's halachic date (hd_fest) is the day *before* a chag
         # and that eve is actually Shabbos. We hold off until havdalah.
@@ -787,7 +792,15 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if (hd_py.month == 7 and hd_py.day == 23) or (hd_fest.month == 7 and hd_fest.day == 23):
                 attrs["שמחת תורה"] = True
             # Sukkos Asru-Chag: 24 Tishrei (galus) vs 23 Tishrei (Israel)
-            if (self._diaspora and hd_fest.day == 24) or (not self._diaspora and hd_fest.day == 23):
+            # When 24 Tishrei falls on Shabbos (RH on Thu), defer to 25 Tishrei (Sunday).
+            if self._diaspora:
+                asru_sukkos_greg = PHebrewDate(hd_fest.year, 7, 24).to_pydate()
+                if asru_sukkos_greg.weekday() == 5:
+                    if hd_fest.day == 25:
+                        attrs["אסרו חג סוכות"] = True
+                elif hd_fest.day == 24:
+                    attrs["אסרו חג סוכות"] = True
+            elif not self._diaspora and hd_fest.day == 23:
                 attrs["אסרו חג סוכות"] = True
 
         # ─── Chanukah (8-day span from 25 Kislev) ─────────────────────────
@@ -932,7 +945,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Shavuot & Erev
         if hd_py.month == 3:
-            if hd_py.day == 5:
+            # Turn on Erev Shavuos on 5 Sivan (normal) OR on 4 Sivan when 5 falls on Shabbos
+            if hd_py.day == 5 or (is_erev_shavuos_on_shabbos and hd_py.day == 4):
                 attrs["ערב שבועות"] = True
             # SHAVUOS day 1
             if (hd_py.day == 6) or (hd_fest.month == 3 and hd_fest.day == 6):
