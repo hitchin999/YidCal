@@ -17,25 +17,23 @@ from .device import YidCalZmanDevice
 from .zman_sensors import get_geo
 
 
-def _get_bedikat_day_year(today_date: date) -> tuple[int, int]:
-    """Return (Hebrew year, day in Nisan) for Chametz search day (14 or 12 Nisan)."""
+def _get_pesach_info(today_date: date) -> tuple[int, bool]:
+    """Return (Hebrew year, is_deferred) for the upcoming Pesach.
+
+    is_deferred is True when 14 Nisan falls on Shabbos (15 Nisan = Sunday).
+    """
     for delta in (0, 1):
         civil_year = today_date.year + delta
         hy = pl_dates.GregorianDate(civil_year, 4, 1).to_heb().year
 
-        # normally 14 Nisan
-        candidate = pl_dates.HebrewDate(hy, 1, 14)
-        # but if 15 Nisan falls on a Sunday, use 12 Nisan
-        fifteenth = pl_dates.HebrewDate(hy, 1, 15)
-        if fifteenth.to_pydate().weekday() == 6:
-            candidate = pl_dates.HebrewDate(hy, 1, 12)
-
-        cdate = candidate.to_pydate()
+        fourteenth = pl_dates.HebrewDate(hy, 1, 14)
+        cdate = fourteenth.to_pydate()
         if cdate >= today_date:
-            return hy, candidate.day
+            deferred = (cdate.weekday() == 5)  # 14 Nisan is Shabbos
+            return hy, deferred
 
-    # fallback to next year's 14 Nisan
-    return hy + 1, 14
+    hy_next = pl_dates.GregorianDate(today_date.year + 2, 4, 1).to_heb().year
+    return hy_next, False
 
 
 class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
@@ -83,21 +81,16 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     async def _midnight_update(self, now: datetime) -> None:
         await self.async_update()
 
-    def _compute_target(self, hours_from_dawn: float) -> datetime:
-        """Compute dawn + hours * sha'ah_zmanit on the correct Nisan date."""
-        now_local = dt_util.now().astimezone(self._tz)
-        hy, day   = _get_bedikat_day_year(now_local.date())
+    def _compute_for_date(self, civil_date: date, hours_from_dawn: float) -> tuple[datetime, str]:
+        """Compute dawn + hours × sha'ah zmanit for a given civil date.
 
-        # Hebrew→civil date
-        heb  = pl_dates.HebrewDate(hy, 1, day)
-        g_py = heb.to_pydate()
-
-        # get geometric sunrise & sunset
-        cal     = ZmanimCalendar(geo_location=self._geo, date=g_py)
+        Returns (floored_local_dt, raw_iso_string).
+        """
+        cal     = ZmanimCalendar(geo_location=self._geo, date=civil_date)
         sunrise = cal.sunrise().astimezone(self._tz)
         sunset  = cal.sunset().astimezone(self._tz)
 
-        # MGA “day”: dawn = sunrise − havdalah, nightfall = sunset + havdalah
+        # MGA "day": dawn = sunrise − havdalah, nightfall = sunset + havdalah
         dawn      = sunrise - timedelta(minutes=self._havdalah)
         nightfall = sunset  + timedelta(minutes=self._havdalah)
 
@@ -106,25 +99,22 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
         # raw target
         raw = dawn + hour_len * hours_from_dawn
+        raw_iso = raw.isoformat()
 
-        # debug attrs (with seconds)
-        self._attr_extra_state_attributes = {
-            #"dawn":        dawn.isoformat(),
-            #"sunrise":     sunrise.isoformat(),
-            #"sunset":      sunset.isoformat(),
-            #"nightfall":   nightfall.isoformat(),
-            #"hour_len_s":  hour_len.total_seconds(),  # seconds per sha'ah
-            "Sof_Zman_Chumetz_With_Seconds":  raw.isoformat(),
-        }
+        # floor to the minute
+        floored = raw.replace(second=0, microsecond=0)
 
-        # floor to the minute (any seconds 0–59)
-        return raw.replace(second=0, microsecond=0)
-        
+        return floored, raw_iso
+
     # subclasses implement async_update()
 
 
 class SofZmanAchilasChumetzSensor(_BaseChumetzSensor):
-    """סוף-זמן אכילת חמץ עפ\"י המג\"א (4 שעות זמניות)."""
+    """סוף-זמן אכילת חמץ עפ\"י המג\"א (4 שעות זמניות).
+
+    Always computed on 14 Nisan — even in a deferred year,
+    the halachic deadline for eating chametz is Shabbos morning.
+    """
 
     def __init__(self, hass: HomeAssistant, candle: int, havdalah: int) -> None:
         super().__init__(
@@ -140,21 +130,32 @@ class SofZmanAchilasChumetzSensor(_BaseChumetzSensor):
     async def async_update(self, now: datetime | None = None) -> None:
         if not self._geo:
             return
-        target = self._compute_target(4.0)
-        self._attr_native_value = target.astimezone(timezone.utc)
-        
-        # 3. build your human‐readable string
-        local = target.astimezone(self._tz)
-        human = self._format_simple_time(local)
 
-        # 4. merge it into the existing attributes
-        attrs = {**(self._attr_extra_state_attributes or {})}
-        attrs["Sof_Zman_Achilas_Chumetz_Simple"] = human
-        self._attr_extra_state_attributes = attrs
+        now_local = (now or dt_util.now()).astimezone(self._tz)
+        hy, _ = _get_pesach_info(now_local.date())
+
+        # Always 14 Nisan
+        civil_14 = pl_dates.HebrewDate(hy, 1, 14).to_pydate()
+        target, raw_iso = self._compute_for_date(civil_14, 4.0)
+
+        self._attr_native_value = target.astimezone(timezone.utc)
+
+        human = self._format_simple_time(target.astimezone(self._tz))
+        self._attr_extra_state_attributes = {
+            "Sof_Zman_Chumetz_With_Seconds": raw_iso,
+            "Sof_Zman_Achilas_Chumetz_Simple": human,
+        }
 
 
 class SofZmanSriefesChumetzSensor(_BaseChumetzSensor):
-    """סוף-זמן שריפת חמץ עפ\"י המג\"א (5 שעות זמניות)."""
+    """סוף-זמן שריפת חמץ עפ\"י המג\"א (5 שעות זמניות).
+
+    Normal year: state + _Simple = 14 Nisan 5th hour.
+    Deferred year (14 Nisan on Shabbos): state + _Simple = 13 Nisan
+    Friday 5th hour (physical sriefa before Shabbos). An additional
+    Sof_Zman_Biur_Simple attribute shows the 14 Nisan Shabbos 5th hour
+    (halachic deadline for disposing of remaining chametz via bitul/flush).
+    """
 
     def __init__(self, hass: HomeAssistant, candle: int, havdalah: int) -> None:
         super().__init__(
@@ -170,14 +171,37 @@ class SofZmanSriefesChumetzSensor(_BaseChumetzSensor):
     async def async_update(self, now: datetime | None = None) -> None:
         if not self._geo:
             return
-        target = self._compute_target(5.0)
+
+        now_local = (now or dt_util.now()).astimezone(self._tz)
+        hy, deferred = _get_pesach_info(now_local.date())
+
+        if deferred:
+            # Sriefa is Friday (13 Nisan) — state + _Simple
+            civil_13 = pl_dates.HebrewDate(hy, 1, 13).to_pydate()
+            target, raw_iso = self._compute_for_date(civil_13, 5.0)
+
+            # Biur is Shabbos (14 Nisan) — attribute only
+            civil_14 = pl_dates.HebrewDate(hy, 1, 14).to_pydate()
+            biur_target, biur_raw_iso = self._compute_for_date(civil_14, 5.0)
+        else:
+            # Normal year — sriefa and biur are the same day
+            civil_14 = pl_dates.HebrewDate(hy, 1, 14).to_pydate()
+            target, raw_iso = self._compute_for_date(civil_14, 5.0)
+            biur_target = None
+            biur_raw_iso = None
+
         self._attr_native_value = target.astimezone(timezone.utc)
 
-        # 3. build your human‐readable string
-        local = target.astimezone(self._tz)
-        human = self._format_simple_time(local)
+        human = self._format_simple_time(target.astimezone(self._tz))
+        attrs: dict[str, object] = {
+            "Sof_Zman_Chumetz_With_Seconds": raw_iso,
+            "Sof_Zman_Sriefes_Chumetz_Simple": human,
+        }
 
-        # 4. merge it into the existing attributes
-        attrs = {**(self._attr_extra_state_attributes or {})}
-        attrs["Sof_Zman_Sriefes_Chumetz_Simple"] = human
+        if biur_target is not None:
+            attrs["Sof_Zman_Biur_With_Seconds"] = biur_raw_iso
+            attrs["Sof_Zman_Biur_Simple"] = self._format_simple_time(
+                biur_target.astimezone(self._tz)
+            )
+
         self._attr_extra_state_attributes = attrs
