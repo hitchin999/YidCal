@@ -135,6 +135,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "פורים",
         "שושן פורים",
         "מוצאי שושן פורים",
+        "ערב בדיקת חמץ",
         "ליל בדיקת חמץ",
         "ערב פסח מוקדם",
         "שבת ערב פסח",
@@ -297,6 +298,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "תענית אסתר מוקדם":                "alos_havdalah",
         "פורים":                         "havdalah_havdalah",
         "שושן פורים":                     "havdalah_havdalah",
+        "ערב בדיקת חמץ":                  "alos_candle",
         "ליל בדיקת חמץ":                   "candle_alos",
         "ערב פסח מוקדם":                  "havdalah_candle",
         "שבת ערב פסח":                   "candle_candle",
@@ -881,6 +883,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         
                 # Only show "שושן פורים" in that deferred window; otherwise suppress it
                 attrs["שושן פורים"] = (shushan_start <= now <= shushan_end)
+
+        # Erev Bedikat Chametz (daytime before bedika night)
+        # Normal year: bedikat_day=14 → erev=13 Nisan
+        # Deferred (Erev Pesach on Shabbos): bedikat_day=13 → erev=12 Nisan
+        if hd_py.month == 1 and hd_py.day == (bedikat_day - 1):
+            attrs["ערב בדיקת חמץ"] = True
 
         # Bedikat Chametz
         if is_bedikat_day:
