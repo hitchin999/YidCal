@@ -109,6 +109,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * פורים
   * שושן פורים
   * מוצאי שושן פורים
+  * ערב בדיקת חמץ
   * ליל בדיקת חמץ
   * ערב פסח מוקדם
   * שבת ערב פסח
@@ -318,9 +319,13 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Zman Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset)
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
-* **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – midnight of night
+* **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – halachic midnight (6 שעות זמניות from nightfall). Anchored to the halachic night: between civil midnight and עלות the sensor still shows the current night's חצות; transitions to the next night at עלות.
 * **Plag HaMincha (MGA)** (`sensor.yidcal_plag_hamincha`) *(friendly name changed only)*
 * **Plag HaMincha (GRA)** (`sensor.yidcal_plag_hamincha_gra`) *(new)*
+* **Sof Zman Achilas Chumetz** (`sensor.yidcal_sof_zman_achilas_chumetz`) – last time to eat chametz (4 שעות זמניות MGA), always computed on 14 Nisan
+  *Attributes:* `Sof_Zman_Chumetz_With_Seconds`, `Sof_Zman_Achilas_Chumetz_Simple`
+* **Sof Zman Sriefes Chumetz** (`sensor.yidcal_sof_zman_sriefes_chumetz`) – last time to burn chametz (5 שעות זמניות MGA). In a deferred year (14 Nisan on Shabbos), state and `_Simple` show the Friday (13 Nisan) zman for the physical sriefa; additional `Sof_Zman_Biur_Simple` and `Sof_Zman_Biur_With_Seconds` attributes show the Shabbos (14 Nisan) biur deadline.
+  *Attributes:* `Sof_Zman_Chumetz_With_Seconds`, `Sof_Zman_Sriefes_Chumetz_Simple`, `Sof_Zman_Biur_With_Seconds` *(deferred only)*, `Sof_Zman_Biur_Simple` *(deferred only)*
 
 > Note: You may see some sensors with “Simple” attributes (Today/Tomorrow/Yesterday). Those are affected by the **Simple Zmanim time format** option below.
 
