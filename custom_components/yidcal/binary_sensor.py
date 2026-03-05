@@ -126,6 +126,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "פורים":                "purim",
     "שושן פורים":           "shushan_purim",
     "מוצאי שושן פורים":     "motzei_shushan_purim",
+    "ערב בדיקת חמץ":        "erev_bedikas_chumetz",
     "ליל בדיקת חמץ":        "leil_bedikas_chumetz",
     "ערב פסח":              "erev_pesach",
     "ערב פסח מוקדם":       "erev_pesach_mukdam",
