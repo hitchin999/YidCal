@@ -112,7 +112,7 @@ def get_special_shabbos_name(today: date | dates.GregorianDate | dates.HebrewDat
     # Next month/year
     if shabbat_heb.month == 13 or (shabbat_heb.month == 12 and not hebrewcal.Year(shabbat_heb.year).leap):
         next_month_num = 1
-        next_month_year = shabbat_heb.year + 1
+        next_month_year = shabbat_heb.year      # Nissan is still in the same pyluach year
     else:
         next_month_num = shabbat_heb.month + 1
         next_month_year = shabbat_heb.year
