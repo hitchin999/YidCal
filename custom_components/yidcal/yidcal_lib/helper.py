@@ -304,32 +304,37 @@ class YidCalHelper:
         if molad_date > first_of_month:
             molad_date -= timedelta(days=7)
 
-        # 5) Build a tz-aware datetime in Jerusalem time
-        jer_tz = ZoneInfo("Asia/Jerusalem")
-        jer_dt = datetime(
+        # 5) Build a naive datetime with the raw molad time from pyluach.
+        #    pyluach returns the traditional announcement time (no timezone).
+        #    Communities adjust for their own DST: when local clocks spring
+        #    forward, add 1 hour so the announced time matches the clock.
+        molad_dt = datetime(
             molad_date.year,
             molad_date.month,
             molad_date.day,
             ann["hour"],
             ann["minutes"],
-            tzinfo=jer_tz,
         )
 
-        # pyluach gives you “Jerusalem standard” — if that date is in DST, add it
-        dst = jer_dt.dst()
+        # Check if the user's local timezone has DST active on the molad date
+        local_dt = molad_dt.replace(tzinfo=self.tz)
+        dst = local_dt.dst()
         if dst:
-            jer_dt += dst
+            molad_dt += dst
 
-        # 6) Format into 12-hour + chalakim (use local time)
-        h24 = jer_dt.hour
-        minute = jer_dt.minute
+        # 6) Format into 12-hour + chalakim
+        h24 = molad_dt.hour
+        minute = molad_dt.minute
         parts  = ann["parts"]
         ampm   = "am" if h24 < 12 else "pm"
         h12    = h24 % 12 or 12
-        dayname = self.get_day_of_week(jer_dt.date())
+        dayname = self.get_day_of_week(molad_dt.date())
         friendly = f"{dayname}, {h12}:{minute:02d} {ampm} and {parts} chalakim"
 
-        return Molad(dayname, h12, minute, ampm, parts, friendly, jer_dt.date(), jer_dt)
+        # Store tz-aware datetime for the Molad object
+        molad_dt = molad_dt.replace(tzinfo=self.tz)
+
+        return Molad(dayname, h12, minute, ampm, parts, friendly, molad_dt.date(), molad_dt)
 
     def get_molad(self, today: datetime.date) -> MoladDetails:
         """
