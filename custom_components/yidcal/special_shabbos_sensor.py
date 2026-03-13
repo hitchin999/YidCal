@@ -70,7 +70,7 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
         self._attr_native_value = raw or ""
 
         parts = [p.strip() for p in re.split(r"\s*[־-]\s*", raw) if p.strip()] if raw else []
-        attrs = {ev: (ev in parts) for ev in self.POSSIBLE_EVENTS}
+        attrs = {ev: str(ev in parts).lower() for ev in self.POSSIBLE_EVENTS}
 
         is_mev = False
         mev_month = None
@@ -81,7 +81,7 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
                 break
 
         attrs.update({
-            "שבת מברכים": is_mev,
+            "שבת מברכים": str(is_mev).lower(),
             "חודש_מברכים": mev_month,
         })
 
