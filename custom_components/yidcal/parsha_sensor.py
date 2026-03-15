@@ -93,10 +93,38 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             return True
         return False
 
+    def _is_during_regel(self, hd) -> bool:
+        """Return True if the Hebrew date falls during one of the three
+        regalim (Pesach, Shavuos, Sukkos) including Chol HaMoed and
+        Yom Tov Sheni — periods where the parsha name is suspended."""
+        m, d = hd.month, hd.day
+        last_pesach = 22 if self._diaspora else 21
+        last_sukkos = 23 if self._diaspora else 22
+        last_shavuos = 7 if self._diaspora else 6
+        if m == 1 and 15 <= d <= last_pesach:
+            return True
+        if m == 3 and 6 <= d <= last_shavuos:
+            return True
+        if m == 7 and 15 <= d <= last_sukkos:
+            return True
+        return False
+
     async def _update_state(self) -> None:
         """Recompute which Parsha applies based on the upcoming Shabbat."""
         today = date.today()
         self._last_calculated_date = today
+
+        # During the three regalim the week is identified by the holiday,
+        # not by a parsha — show empty.
+        hd_today = dates.GregorianDate(today.year, today.month, today.day).to_heb()
+        if self._is_during_regel(hd_today):
+            self._state = ""
+            self._attr_extra_state_attributes = {
+                "Next_Shabbos_Date": (today + timedelta(days=(5 - today.weekday()) % 7)).isoformat(),
+                "Diaspora": self._diaspora,
+            }
+            self.async_write_ha_state()
+            return
 
         # Find the next Saturday (weekday==5)
         offset = (5 - today.weekday()) % 7
