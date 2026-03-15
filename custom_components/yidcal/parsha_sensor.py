@@ -58,6 +58,41 @@ class ParshaSensor(YidCalDevice, SensorEntity):
     def state(self) -> str:
         return self._state or ""
 
+    def _has_regular_mon_thu(self, shabbat: date) -> bool:
+        """Check if there's a regular Mon or Thu this week (Sun–Shabbat) that
+        falls before any Yom Tov / Chol HaMoed — i.e. a day with a normal
+        parsha-based kriah."""
+        # Walk Sun(–1d from Mon) through Fri of this week
+        week_start = shabbat - timedelta(days=6)  # Sunday
+        for i in range(6):  # Sun=0 .. Fri=5
+            d = week_start + timedelta(days=i)
+            if d.weekday() not in (0, 3):  # Mon=0, Thu=3
+                continue
+            hd = dates.GregorianDate(d.year, d.month, d.day).to_heb()
+            if self._is_during_yom_tov(hd):
+                continue
+            # This Mon or Thu is a regular weekday → parsha-based kriah
+            return True
+        return False
+
+    def _is_during_yom_tov(self, hd) -> bool:
+        """Return True if the Hebrew date falls during a Yom Tov or
+        Chol HaMoed period (when there's no regular parsha-based kriah)."""
+        m, d = hd.month, hd.day
+        last_pesach = 22 if self._diaspora else 21
+        last_sukkos = 23 if self._diaspora else 22
+        last_shavuos = 7 if self._diaspora else 6
+        # Pesach
+        if m == 1 and 15 <= d <= last_pesach:
+            return True
+        # Shavuos
+        if m == 3 and 6 <= d <= last_shavuos:
+            return True
+        # Tishrei holidays (RH, YK, Sukkos, Shmini Atzeres, Simchas Torah)
+        if m == 7 and (d in (1, 2, 10) or 15 <= d <= last_sukkos):
+            return True
+        return False
+
     async def _update_state(self) -> None:
         """Recompute which Parsha applies based on the upcoming Shabbat."""
         today = date.today()
@@ -69,7 +104,6 @@ class ParshaSensor(YidCalDevice, SensorEntity):
 
         # Use pyluach to get that week's Parsha
         greg = dates.GregorianDate(shabbat.year, shabbat.month, shabbat.day)
-        hd_shabbat = greg.to_heb()
         # pyluach uses israel=True/False (inverse of diaspora)
         parsha_indices = parshios.getparsha(greg, israel=not self._diaspora)
 
@@ -77,22 +111,32 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             heb = parshios.getparsha_string(greg, israel=not self._diaspora, hebrew=True) or ""
             # Join double parshiyos with a hyphen for your card formatting
             combined = heb.replace(", ", "-").strip()
-            self._state = f"פרשת {combined}" if combined else ""
+
+            # Check if this follows an א׳ week: previous Shabbos had no parsha
+            # AND that week had a regular Mon/Thu (i.e. it was an א׳ week).
+            suffix = ""
+            prev_shabbat = shabbat - timedelta(days=7)
+            prev_greg = dates.GregorianDate(prev_shabbat.year, prev_shabbat.month, prev_shabbat.day)
+            prev_indices = parshios.getparsha(prev_greg, israel=not self._diaspora)
+            if not prev_indices:
+                prev_hd = prev_greg.to_heb()
+                # Only add ב׳ if it wasn't Tishrei and the prev week had a regular Mon/Thu
+                if not (prev_hd.month == 7 and prev_hd.day >= 15):
+                    if self._has_regular_mon_thu(prev_shabbat):
+                        suffix = " ב׳"
+
+            self._state = f"פרשת {combined}{suffix}" if combined else ""
         else:
-            # Upcoming Shabbos has no parsha (Yom Tov) — find the right one
+            # Upcoming Shabbos has no parsha (Yom Tov).
+            # Only show a parsha with א׳ if there's a regular Mon/Thu
+            # this week with a parsha-based kriah (before Yom Tov starts).
+            # Sukkot/Tishrei → always empty.
+            hd_shabbat = greg.to_heb()
             if hd_shabbat.month == 7 and hd_shabbat.day >= 15:
-                # Tishrei (Sukkos area) → look backward
-                prev_shabbat = shabbat - timedelta(days=7)
-                prev_greg = dates.GregorianDate(prev_shabbat.year, prev_shabbat.month, prev_shabbat.day)
-                parsha_indices = parshios.getparsha(prev_greg, israel=not self._diaspora)
-                if parsha_indices:
-                    heb = parshios.getparsha_string(prev_greg, israel=not self._diaspora, hebrew=True) or ""
-                    combined = heb.replace(", ", "-").strip()
-                    self._state = f"פרשת {combined} ב׳" if combined else ""
-                else:
-                    self._state = ""
-            else:
-                # Pesach / Shavuos / other → look forward
+                # Sukkot area — no parsha association
+                self._state = ""
+            elif self._has_regular_mon_thu(shabbat):
+                # There's a Mon/Thu with a regular kriah → find next parsha
                 scan = shabbat + timedelta(days=7)
                 found = False
                 for _ in range(4):
@@ -107,6 +151,9 @@ class ParshaSensor(YidCalDevice, SensorEntity):
                     scan += timedelta(days=7)
                 if not found:
                     self._state = ""
+            else:
+                # All Mon/Thu are during Yom Tov — no parsha
+                self._state = ""
 
         # A couple of helpful attributes
         self._attr_extra_state_attributes = {
