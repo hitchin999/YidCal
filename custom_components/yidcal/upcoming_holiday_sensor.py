@@ -385,6 +385,8 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         attrs: Dict[str, object] = {}
         attrs.update(flags)
         attrs.update(meta)  # only {'lookahead_days': 2}
+        # Convert bool attrs to lowercase strings for HA state condition compatibility
+        attrs = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in attrs.items()}
         self._attr_native_value = state
         self._attr_extra_state_attributes = attrs
 
@@ -430,13 +432,13 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         sim = HolidaySensor(self.hass, self._candle_offset, self._havdalah_offset)
         fake_now = dt.datetime.combine(date_, dt.time(0, 2, 0, tzinfo=tz))
         await sim.async_update(fake_now)
-        return dict(sim.extra_state_attributes or {})
+        return dict(getattr(sim, '_bool_attrs', {}) or {})
 
     async def _simulate_attrs_at(self, date_: dt.date, tz: ZoneInfo, *, hour: int, minute: int) -> Dict[str, object]:
         sim = HolidaySensor(self.hass, self._candle_offset, self._havdalah_offset)
         fake_now = dt.datetime.combine(date_, dt.time(hour, minute, 0, tzinfo=tz))
         await sim.async_update(fake_now)
-        return dict(sim.extra_state_attributes or {})
+        return dict(getattr(sim, '_bool_attrs', {}) or {})
 
     async def _find_block_start(self, start_hal_day: dt.date, tz: ZoneInfo) -> Optional[Tuple[str, dt.date, "PHebrewDate"]]:
         from pyluach.hebrewcal import HebrewDate as PHebrewDate
