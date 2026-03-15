@@ -69,6 +69,7 @@ class ParshaSensor(YidCalDevice, SensorEntity):
 
         # Use pyluach to get that week's Parsha
         greg = dates.GregorianDate(shabbat.year, shabbat.month, shabbat.day)
+        hd_shabbat = greg.to_heb()
         # pyluach uses israel=True/False (inverse of diaspora)
         parsha_indices = parshios.getparsha(greg, israel=not self._diaspora)
 
@@ -78,7 +79,34 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             combined = heb.replace(", ", "-").strip()
             self._state = f"פרשת {combined}" if combined else ""
         else:
-            self._state = ""
+            # Upcoming Shabbos has no parsha (Yom Tov) — find the right one
+            if hd_shabbat.month == 7 and hd_shabbat.day >= 15:
+                # Tishrei (Sukkos area) → look backward
+                prev_shabbat = shabbat - timedelta(days=7)
+                prev_greg = dates.GregorianDate(prev_shabbat.year, prev_shabbat.month, prev_shabbat.day)
+                parsha_indices = parshios.getparsha(prev_greg, israel=not self._diaspora)
+                if parsha_indices:
+                    heb = parshios.getparsha_string(prev_greg, israel=not self._diaspora, hebrew=True) or ""
+                    combined = heb.replace(", ", "-").strip()
+                    self._state = f"פרשת {combined} ב׳" if combined else ""
+                else:
+                    self._state = ""
+            else:
+                # Pesach / Shavuos / other → look forward
+                scan = shabbat + timedelta(days=7)
+                found = False
+                for _ in range(4):
+                    scan_greg = dates.GregorianDate(scan.year, scan.month, scan.day)
+                    scan_indices = parshios.getparsha(scan_greg, israel=not self._diaspora)
+                    if scan_indices:
+                        heb = parshios.getparsha_string(scan_greg, israel=not self._diaspora, hebrew=True) or ""
+                        combined = heb.replace(", ", "-").strip()
+                        self._state = f"פרשת {combined} א׳" if combined else ""
+                        found = True
+                        break
+                    scan += timedelta(days=7)
+                if not found:
+                    self._state = ""
 
         # A couple of helpful attributes
         self._attr_extra_state_attributes = {
