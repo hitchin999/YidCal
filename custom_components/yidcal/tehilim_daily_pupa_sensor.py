@@ -298,7 +298,7 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
         in_ayt = (hd_today.month == 7 and 3 <= hd_today.day <= 9)
 
         # Start with ALL labels present (Regular + Elul + AYT), all False
-        attrs: dict[str, bool | str] = {L: False for L in ALL_LABELS}
+        attrs: dict[str, bool | str] = {L: "false" for L in ALL_LABELS}
         scheme = "regular"
 
         if in_ayt:
@@ -315,7 +315,7 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
                     idx = (n - 1) % len(AYT_BLOCKS)
                     s, e = AYT_BLOCKS[idx]
                     label = _label(s, e)
-                    attrs[label] = True
+                    attrs[label] = "true"
                     self._state = label
 
         elif in_elul:
@@ -333,7 +333,7 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
                     idx = (n - 1) % len(ELUL_BLOCKS)
                     s, e = ELUL_BLOCKS[idx]
                     label = _label(s, e)
-                    attrs[label] = True
+                    attrs[label] = "true"
                     self._state = label
 
         else:
@@ -347,7 +347,7 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
                 start_ch = idx * BLOCK_SIZE + 1
                 end_ch = min(start_ch + BLOCK_SIZE - 1, CHAPTER_COUNT)
                 label = _label(start_ch, end_ch)
-                attrs[label] = True
+                attrs[label] = "true"
                 self._state = label
 
         # Expose everything
