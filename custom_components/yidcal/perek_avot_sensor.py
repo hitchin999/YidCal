@@ -132,7 +132,7 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
         # If this Shabbos is a skip, surface the reason and stop.
         reason = self._skip_reason(shabbat_of_week)
         if reason:
-            attrs["skipped"] = True
+            attrs["skipped"] = "true"
             attrs["skipped_reason"] = reason
             state = reason
             self._attr_extra_state_attributes = attrs
