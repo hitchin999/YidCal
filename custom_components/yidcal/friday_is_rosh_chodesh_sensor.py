@@ -70,7 +70,6 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
         self._attr_native_value = ""
 
         self._attr_extra_state_attributes = {
-            "Possible states": STATE_OPTIONS,
             "Activation_Logic": (
                 "Shows on Thu if upcoming Rosh Chodesh is Fri (1 day) "
                 "or Fri/Sat (2 days). Shows on Wed if upcoming Rosh Chodesh "
@@ -263,5 +262,3 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
                 "Active_Window_Today": active,
             }
         )
-
-
