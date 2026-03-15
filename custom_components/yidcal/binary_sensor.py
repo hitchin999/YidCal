@@ -256,7 +256,8 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
     async def async_update(self, now=None) -> None:
         """Fetch the latest binary state from sensor.yidcal_holiday's attributes."""
         src = self.hass.states.get("sensor.yidcal_holiday")
-        self._attr_is_on = bool(src and src.attributes.get(self.attr_name, False))
+        val = src.attributes.get(self.attr_name, False) if src else False
+        self._attr_is_on = str(val).lower() == "true"
 
 class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     """True from alos ha-shachar until entry-time on Erev Shabbos or any Erev-Yom-Tov.
