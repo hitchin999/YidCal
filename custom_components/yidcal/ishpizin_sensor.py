@@ -92,7 +92,7 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         self.entity_id = "sensor.yidcal_ishpizin"
         self._attr_name = "Ishpizin"
         self._attr_native_value = ""
-        self._attr_extra_state_attributes = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
+        self._attr_extra_state_attributes = {f"אושפיזא ד{name}": "false" for name in ISHPIZIN_NAMES}
 
         cfg = hass.data[DOMAIN]["config"]
         self._diaspora: bool = cfg.get("diaspora", True)
@@ -121,7 +121,7 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             self._attr_native_value = last.state
             for key in self._attr_extra_state_attributes:
                 if key in last.attributes:
-                    self._attr_extra_state_attributes[key] = last.attributes.get(key, False)
+                    self._attr_extra_state_attributes[key] = last.attributes.get(key, "false")
 
         await self.async_update()
         async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
@@ -142,7 +142,7 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         motzaei_st = _round_ceil(motzaei_st_raw)
         schedule_year = heb_year_now + 1 if now_local >= motzaei_st else heb_year_now
 
-        attrs: dict[str, object] = {f"אושפיזא ד{name}": False for name in ISHPIZIN_NAMES}
+        attrs: dict[str, object] = {f"אושפיזא ד{name}": "false" for name in ISHPIZIN_NAMES}
         lines: list[str] = []
         active_state = ""
 
@@ -177,12 +177,11 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
             if schedule_year == heb_year_now and start <= now_local < end:
                 active_state = f"אושפיזא ד{name}"
-                attrs[active_state] = True
+                attrs[active_state] = "true"
 
         self._attr_native_value = active_state if active_state in ISHPIZIN_STATES else ""
         self._attr_name = "Ishpizin"
         attrs["די סקעדזשועל איז פאר יאר"] = _hebrew_year_string(schedule_year)
         attrs["Ishpizin Schedule"] = "\n\n".join(lines)
-        attrs["Possible states"] = [f"אושפיזא ד{name}" for name in ISHPIZIN_NAMES] + [""]
 
         self._attr_extra_state_attributes = attrs
