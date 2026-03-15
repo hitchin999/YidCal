@@ -81,10 +81,14 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
     async def _midnight_update(self, now: datetime) -> None:
         await self.async_update()
 
-    def _compute_for_date(self, civil_date: date, hours_from_dawn: float) -> tuple[datetime, str]:
+    def _compute_for_date(
+        self, civil_date: date, hours_from_dawn: float, *, round_half_up: bool = False,
+    ) -> tuple[datetime, str]:
         """Compute dawn + hours × sha'ah zmanit for a given civil date.
 
-        Returns (floored_local_dt, raw_iso_string).
+        Returns (rounded_local_dt, raw_iso_string).
+        round_half_up=False (default) → floor to minute (machmir for deadlines).
+        round_half_up=True            → ≥30s rounds up, <30s floors.
         """
         cal     = ZmanimCalendar(geo_location=self._geo, date=civil_date)
         sunrise = cal.sunrise().astimezone(self._tz)
@@ -101,10 +105,13 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         raw = dawn + hour_len * hours_from_dawn
         raw_iso = raw.isoformat()
 
-        # floor to the minute
-        floored = raw.replace(second=0, microsecond=0)
+        # rounding
+        if round_half_up and raw.second >= 30:
+            rounded = (raw + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        else:
+            rounded = raw.replace(second=0, microsecond=0)
 
-        return floored, raw_iso
+        return rounded, raw_iso
 
     # subclasses implement async_update()
 
@@ -178,15 +185,15 @@ class SofZmanSriefesChumetzSensor(_BaseChumetzSensor):
         if deferred:
             # Sriefa is Friday (13 Nisan) — state + _Simple
             civil_13 = pl_dates.HebrewDate(hy, 1, 13).to_pydate()
-            target, raw_iso = self._compute_for_date(civil_13, 5.0)
+            target, raw_iso = self._compute_for_date(civil_13, 5.0, round_half_up=True)
 
             # Biur is Shabbos (14 Nisan) — attribute only
             civil_14 = pl_dates.HebrewDate(hy, 1, 14).to_pydate()
-            biur_target, biur_raw_iso = self._compute_for_date(civil_14, 5.0)
+            biur_target, biur_raw_iso = self._compute_for_date(civil_14, 5.0, round_half_up=True)
         else:
             # Normal year — sriefa and biur are the same day
             civil_14 = pl_dates.HebrewDate(hy, 1, 14).to_pydate()
-            target, raw_iso = self._compute_for_date(civil_14, 5.0)
+            target, raw_iso = self._compute_for_date(civil_14, 5.0, round_half_up=True)
             biur_target = None
             biur_raw_iso = None
 
