@@ -74,7 +74,7 @@ class TehilimDailySensor(YidCalDisplayDevice, SensorEntity):
             s = i * BLOCK_SIZE + 1
             e = min(s + BLOCK_SIZE - 1, CHAPTER_COUNT)
             lbl = f"{clean(int_to_hebrew(s))} - {clean(int_to_hebrew(e))}"
-            attrs[lbl] = False
+            attrs[lbl] = "false"
 
         if is_skip:
             self._state = ""
@@ -108,7 +108,7 @@ class TehilimDailySensor(YidCalDisplayDevice, SensorEntity):
             self._state = today_label
 
             # Mark the today's block as True
-            attrs[today_label] = True
+            attrs[today_label] = "true"
 
         # 4) set _attr_extra_state_attributes to our new boolean map
         self._attr_extra_state_attributes = attrs
