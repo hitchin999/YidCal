@@ -90,10 +90,9 @@ def _is_fast_day(pydate: datetime.date) -> bool:
         return False
 
 def _attrs_for_state(state: str) -> dict:
-    flags = {name: (name == state) for name in POSSIBLE_STATES}
+    flags = {name: str(name == state).lower() for name in POSSIBLE_STATES}
     return {
         **flags,
-        "Possible states": POSSIBLE_STATES,
     }
 
 class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
