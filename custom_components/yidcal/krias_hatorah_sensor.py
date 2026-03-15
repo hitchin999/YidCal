@@ -201,7 +201,12 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         return None
 
     def _get_weekly_parsha(self, hd: PHebrewDate) -> str | None:
-        """Get the parsha for the week. Usually the upcoming Shabbos, but if that's Yom Tov, use previous."""
+        """Get the parsha for the week.
+
+        Usually the upcoming Shabbos. If that Shabbos is Yom Tov (no parsha):
+        - In Tishrei (Sukkos/Shmini Atzeres period): look *backward*
+        - Otherwise (Pesach, Shavuos, etc.): look *forward*
+        """
         try:
             py_date = hd.to_pydate()
             wd = py_date.weekday()  # Mon=0 ... Sat=5, Sun=6
@@ -219,11 +224,21 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             
             idxs = getparsha(hd_shabbos, israel=not self._diaspora)
             
-            # If upcoming Shabbos has no parsha (Yom Tov), try previous Shabbos
-            if not idxs and wd != 5:  # Don't go back if we're ON Shabbos
-                prev_shabbos = shabbos_date - timedelta(days=7)
-                hd_prev = PHebrewDate.from_pydate(prev_shabbos)
-                idxs = getparsha(hd_prev, israel=not self._diaspora)
+            if not idxs and wd != 5:
+                # Tishrei (Sukkos area) → look backward
+                if hd_shabbos.month == 7 and hd_shabbos.day >= 15:
+                    prev_shabbos = shabbos_date - timedelta(days=7)
+                    hd_prev = PHebrewDate.from_pydate(prev_shabbos)
+                    idxs = getparsha(hd_prev, israel=not self._diaspora)
+                else:
+                    # Pesach / Shavuos / other → look forward
+                    scan = shabbos_date + timedelta(days=7)
+                    for _ in range(4):
+                        hd_scan = PHebrewDate.from_pydate(scan)
+                        idxs = getparsha(hd_scan, israel=not self._diaspora)
+                        if idxs:
+                            break
+                        scan += timedelta(days=7)
             
             if not idxs:
                 return None
