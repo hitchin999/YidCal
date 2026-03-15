@@ -405,7 +405,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     def _prune_attrs_for_mode(self, attrs: dict[str, bool | str]) -> dict[str, bool | str]:
         allowed = set(self._empty_attrs_for_mode().keys())
         # keep special meta keys
-        keep_always = {"Possible states", "מען פאַסט אויס און", "מען פאַסט אַן און"}
+        keep_always = {"מען פאַסט אויס און", "מען פאַסט אַן און"}
         return {k: v for k, v in attrs.items() if (k in allowed or k in keep_always)}
     
     @staticmethod
@@ -478,7 +478,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
     
-        # Always start from a clean base that includes "Possible states"
+        # Always start from a clean base
         attrs = self._empty_attrs_for_mode()
     
         if last:
@@ -489,7 +489,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         else:
             self._attr_native_value = ""
             
-        attrs["Possible states"] = self._possible_states_for_mode()
         self._attr_extra_state_attributes = attrs
     
         # cache geo once
@@ -733,9 +732,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         #_LOGGER.debug(f"Fast times: start_time_fast={start_time_fast}, end_time={end_time}, now={now}")
 
-        # Build raw attrs (always includes 'Possible states')
+        # Build raw attrs
         attrs = self._empty_attrs_for_mode()
-        attrs["Possible states"] = self._possible_states_for_mode()
 
         # Alef Slichos
         if hd_py.month == 6 and 21 <= hd_py.day <= 26 and wd_py == 6:
@@ -1446,6 +1444,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Prune to mode after all flags are computed
         attrs = self._prune_attrs_for_mode(attrs)
+
+        # Keep raw bools for internal consumers (e.g. upcoming_holiday_sensor)
+        self._bool_attrs = dict(attrs)
+
+        # Convert bool attrs to lowercase strings for HA state condition compatibility
+        attrs = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in attrs.items()}
 
         self._attr_native_value = picked
         self._attr_extra_state_attributes = attrs
