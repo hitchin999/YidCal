@@ -141,7 +141,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         # 3b) Shabbos Erev Pesach: if this Shabbos is Erev Pesach (מוקדם year),
         # surface "ערב פסח" throughout Shabbos.
         if hol and getattr(hol, "attributes", None):
-            if hol.attributes.get("שבת ערב פסח", False):
+            if str(hol.attributes.get("שבת ערב פסח", False)).lower() == "true":
                 if "ערב פסח" not in text:
                     text += " ~ ערב פסח"
 
