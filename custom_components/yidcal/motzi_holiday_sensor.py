@@ -522,10 +522,10 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         # ── Build attributes ──
         attrs: dict[str, bool | str] = {
             "Now": now.isoformat(),
-            "Blocked_Motzi_Shabbos": blocked_shabbos,
-            "Blocked_Motzi_Yom_Tov": blocked_holiday,
-            "Is_Shabbos_Today":      is_sat_today,
-            "Is_Yom_Tov_Today":      hd_today.is_yom_tov,
+            "Blocked_Motzi_Shabbos": str(blocked_shabbos).lower(),
+            "Blocked_Motzi_Yom_Tov": str(blocked_holiday).lower(),
+            "Is_Shabbos_Today":      str(is_sat_today).lower(),
+            "Is_Yom_Tov_Today":      str(hd_today.is_yom_tov).lower(),
         }
         
         # ── יקנה"ז (Yaknehaz): only when Motzaei Shabbos is Yom Tov night ──
@@ -556,12 +556,12 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 tzinfo=self._tz,
             )
             yak_active = yak_start <= now < yak_end
-            attrs['יקנה"ז'] = yak_active
+            attrs['יקנה"ז'] = str(yak_active).lower()
             # (Optional) helpful for debugging; remove if you want fewer attrs:
             attrs['Yaknehaz_Start'] = yak_start.isoformat()
             attrs['Yaknehaz_End']   = yak_end.isoformat()
         else:
-            attrs['יקנה"ז'] = False
+            attrs['יקנה"ז'] = "false"
 
         # ── Next window look-ahead (YT-span aware, skip blocked, and FREEZE) ──
         cand_start = cand_end = None
