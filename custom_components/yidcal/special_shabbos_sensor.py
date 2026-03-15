@@ -21,6 +21,7 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
     POSSIBLE_EVENTS = [
         "שבת שירה",
         "שבת שקלים",
+        "שבת הפסקה",
         "שבת זכור",
         "שבת החודש",
         "שבת פרה",
@@ -79,6 +80,9 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
                 is_mev = True
                 mev_month = p.replace("מברכים חודש", "", 1).strip() or None
                 break
+
+        is_hafsaka = specials.is_shabbos_hafsaka()
+        attrs["שבת הפסקה"] = str(is_hafsaka).lower()
 
         attrs.update({
             "שבת מברכים": str(is_mev).lower(),
