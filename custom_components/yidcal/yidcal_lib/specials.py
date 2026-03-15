@@ -153,3 +153,46 @@ def get_special_shabbos_name(today: date | dates.GregorianDate | dates.HebrewDat
 
     # Return a single string with ASCII hyphen (the sensor now splits both)
     return "-".join(events) if events else ""
+
+
+def _shabbos_on_or_before(target: date) -> date:
+    """Return the Shabbos (Saturday) on or before *target*."""
+    wd = target.weekday()  # Mon=0 … Sat=5, Sun=6
+    return target - timedelta(days=(wd - 5) % 7)
+
+
+def is_shabbos_hafsaka(
+    today: date | dates.GregorianDate | dates.HebrewDate | None = None,
+) -> bool:
+    """True when this Shabbos falls between the ד׳ פרשיות but has none of them."""
+    if today is None:
+        today_date = date.today()
+    elif isinstance(today, date):
+        today_date = today
+    elif isinstance(today, dates.GregorianDate):
+        today_date = today.to_pydate()
+    elif isinstance(today, dates.HebrewDate):
+        today_date = today.to_greg().to_pydate()
+    else:
+        raise ValueError("Unsupported date type for 'today'")
+
+    shabbat_date = _upcoming_shabbos(today_date)
+    shabbat_heb = dates.GregorianDate.from_pydate(shabbat_date).to_heb()
+    Y = shabbat_heb.year
+    adar_month = 13 if hebrewcal.Year(Y).leap else 12
+
+    # Compute each parsha's Shabbos date
+    rc_adar = dates.HebrewDate(Y, adar_month, 1).to_pydate()
+    shekalim = _shabbos_on_or_before(rc_adar)
+
+    purim = dates.HebrewDate(Y, adar_month, 14).to_pydate()
+    zachor = _shabbos_on_or_before(purim - timedelta(days=1))
+
+    rc_nisan = dates.HebrewDate(Y, 1, 1).to_pydate()
+    hachodesh = _shabbos_on_or_before(rc_nisan)
+
+    parah = hachodesh - timedelta(days=7)
+
+    four = {shekalim, zachor, parah, hachodesh}
+
+    return shabbat_date not in four and shekalim < shabbat_date < hachodesh
