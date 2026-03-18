@@ -21,10 +21,14 @@
           "haftorah_minhag": "הפטרה סענסאר מנהג",  
           "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
+          "enable_multiday_candles": "צולייגען באזונדערע הדלקת הנרות סענסאָרס פאר 2טע/3טע נאכט",
           "enable_daf_hayomi": "צולייגען דף היומי סענסאר",
           "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
           "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די",
           "time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
+        },
+        "data_description": {
+          "enable_multiday_candles": "ווען דאס איז אנגעצינדן, בלייבט דער זמן ערב סענסאר אויף די ערשטע נאכט, און טוישט זיך הערשט 12 ביינאכט מוצאי."
         }
       },
       "yurtzeit": {
@@ -62,10 +66,14 @@
           "include_date": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום",
           "haftorah_minhag": "הפטרה סענסאר מנהג",  
           "include_attribute_sensors": "צולייגען באזונדערע סענסאָרס פאר די ימים טובים",
+          "enable_multiday_candles": "צולייגען באזונדערע הדלקת הנרות סענסאָרס פאר 2טע/3טע נאכט",
           "enable_daf_hayomi": "צולייגען דף היומי סענסאר",
           "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
           "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די",
           "time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
+        },
+        "data_description": {
+          "enable_multiday_candles": "ווען דאס איז אנגעצינדן, בלייבט דער זמן ערב סענסאר אויף די ערשטע נאכט, און טוישט זיך הערשט 12 ביינאכט מוצאי."
         }
       },
       "yurtzeit": {
