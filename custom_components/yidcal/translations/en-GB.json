@@ -21,10 +21,14 @@
           "include_date": "Include Hebrew date on the Full Display sensor",
           "haftorah_minhag": "Haftorah sensor minhag",
           "include_attribute_sensors": "Create separate sensors for holiday attributes",
+          "enable_multiday_candles": "Create separate candle lighting sensors for Night 2/Night 3",
           "enable_daf_hayomi": "Create Daf HaYomi sensor",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
           "time_format": "Time format (For Simple Zmanim only)"
+        },
+        "data_description": {
+          "enable_multiday_candles": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night"
         }
       },
       "yurtzeit": {
@@ -62,10 +66,14 @@
           "include_date": "Include Hebrew date on the Full Display sensor",
           "haftorah_minhag": "Haftorah sensor minhag",
           "include_attribute_sensors": "Create separate sensors for holiday attributes",
+          "enable_multiday_candles": "Create separate candle lighting sensors for Night 2/Night 3",
           "enable_daf_hayomi": "Create Daf HaYomi sensor",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
           "time_format": "Time format (For Simple Zmanim only)"
+        },
+        "data_description": {
+          "enable_multiday_candles": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night"
         }
       },
       "yurtzeit": {
