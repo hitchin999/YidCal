@@ -21,10 +21,14 @@
           "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
           "haftorah_minhag": "מנהג ההפטרה",
           "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
+          "enable_multiday_candles": "יצירת חיישני הדלקת נרות נפרדים עבור לילה 2/לילה 3",
           "enable_daf_hayomi": "הוספת חיישן דף היומי",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
           "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+        },
+        "data_description": {
+          "enable_multiday_candles": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי"
         }
       },
       "yurtzeit": {
@@ -62,10 +66,14 @@
           "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
           "haftorah_minhag": "מנהג ההפטרה",
           "include_attribute_sensors": "יצירת חיישני־משנה נפרדים עבור ימי החג",
+          "enable_multiday_candles": "יצירת חיישני הדלקת נרות נפרדים עבור לילה 2/לילה 3",
           "enable_daf_hayomi": "הוספת חיישן דף היומי",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
           "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+        },
+        "data_description": {
+          "enable_multiday_candles": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי"
         }
       },
       "yurtzeit": {
