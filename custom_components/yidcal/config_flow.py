@@ -20,7 +20,11 @@ DEFAULT_UPCOMING_LOOKAHEAD_DAYS = 2
 CONF_IS_IN_ISRAEL = "is_in_israel"
 DEFAULT_IS_IN_ISRAEL = False
 CONF_TIME_FORMAT = "time_format"
-DEFAULT_TIME_FORMAT = "12" 
+DEFAULT_TIME_FORMAT = "12"
+
+# ============ Multi-day candle lighting sensors ============
+CONF_ENABLE_MULTIDAY_CANDLES = "enable_multiday_candles"
+DEFAULT_ENABLE_MULTIDAY_CANDLES = False
 
 # ============ Haftorah Minhag (NEW) ============
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
@@ -146,6 +150,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
+                    vol.Optional(CONF_ENABLE_MULTIDAY_CANDLES, default=DEFAULT_ENABLE_MULTIDAY_CANDLES): bool,
                     vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=DEFAULT_ENABLE_DAF_HAYOMI): bool,
                     vol.Optional(
                         CONF_SLICHOS_LABEL_ROLLOVER,
@@ -312,6 +317,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=get(CONF_INCLUDE_DATE, False)): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=get(CONF_INCLUDE_ATTR_SENSORS, True)): bool,
+                    vol.Optional(CONF_ENABLE_MULTIDAY_CANDLES, default=get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES)): bool,
                     vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI)): bool,
                     vol.Optional(
                         CONF_SLICHOS_LABEL_ROLLOVER,
