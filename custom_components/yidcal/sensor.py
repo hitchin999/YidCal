@@ -90,6 +90,7 @@ from .config_flow import (
     CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS,
     CONF_ENABLE_EARLY_YOMTOV,  DEFAULT_ENABLE_EARLY_YOMTOV,
     CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI,
+    CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -196,6 +197,12 @@ async def async_setup_entry(
     sfirah_helper = await SfirahHelper.async_create(hass, havdalah_offset)
     strip_nikud = entry.options.get("strip_nikud", False)
 
+    # Multi-day candle lighting sensors option
+    enable_multiday_candles = entry.options.get(
+        CONF_ENABLE_MULTIDAY_CANDLES,
+        entry.data.get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES),
+    )
+
     sensors = [
         MoladSensor(hass, yidcal_helper, candle_offset, havdalah_offset),
         DayLabelYiddishSensor(hass, candle_offset, havdalah_offset),
@@ -214,7 +221,7 @@ async def async_setup_entry(
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
         SeasonSensor(hass),
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
-        ZmanErevSensor(hass, candle_offset, havdalah_offset),
+        ZmanErevSensor(hass, candle_offset, havdalah_offset, static_mode=bool(enable_multiday_candles)),
         ZmanMotziSensor(hass, candle_offset, havdalah_offset),
         SofZmanKriasShmaMGASensor(hass),
         ChatzosHayomSensor(hass),
@@ -266,6 +273,17 @@ async def async_setup_entry(
 
     if enable_es or enable_ey:
         sensors.append(EarlyShabbosYtStartTimeSensor(hass, entry))
+
+    # ─────────────────────────────────────────────────────────────
+    # Multi-day candle lighting sensors (optional)
+    # ─────────────────────────────────────────────────────────────
+    if enable_multiday_candles:
+        from .zman_multiday_candle_sensors import (
+            Night2CandleLightingSensor,
+            Night3CandleLightingSensor,
+        )
+        sensors.append(Night2CandleLightingSensor(hass, candle_offset, havdalah_offset))
+        sensors.append(Night3CandleLightingSensor(hass, candle_offset, havdalah_offset))
 
     # ─────────────────────────────────────────────────────────────
     # Daf HaYomi (optional)
