@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import (
     async_track_time_change,
+    async_track_point_in_time,
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
@@ -161,11 +162,14 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         hass: HomeAssistant,
         candle_offset: int,
         havdalah_offset: int,
+        *,
+        static_mode: bool = False,
     ) -> None:
         super().__init__()
         slug = "zman_erev"
         self.entity_id = f"sensor.yidcal_{slug}"
         self.hass = hass
+        self._static_mode = static_mode
 
         config = hass.data[DOMAIN]["config"]
         self._candle  = config.get("candlelighting_offset", candle_offset)
@@ -211,6 +215,12 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             candle_offset=self._candle,
             havdalah_offset=self._havdalah,
         )
+
+        # Static mode: only show Night 1 (erev_before_sunset) events;
+        # Night 2/3 are handled by their own dedicated sensors.
+        if self._static_mode and today_kind != "erev_before_sunset":
+            today_event = None
+            today_kind = "none"
         
         # ---- Helpers: first-night (erev_before_sunset) only ----
         def _next_erev_before_sunset_after(ref_dt: datetime.datetime) -> datetime.datetime | None:
@@ -261,7 +271,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         def most_recent_lighting_before(d0: datetime.date) -> datetime.datetime | None:
             for back in range(1, 11):
                 d = d0 - timedelta(days=back)
-                ev, _ = lighting_event_for_day(
+                ev, kind = lighting_event_for_day(
                     d,
                     diaspora=self._diaspora,
                     tz=self._tz,
@@ -270,6 +280,9 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                     havdalah_offset=self._havdalah,
                 )
                 if ev is not None:
+                    # Static mode: only accept Night 1 events
+                    if self._static_mode and kind != "erev_before_sunset":
+                        continue
                     return ev
             return None
 
@@ -304,7 +317,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                     chosen = None
                     for i in range(1, 11):
                         d = today + timedelta(days=i)
-                        ev, _ = lighting_event_for_day(
+                        ev, fwd_kind = lighting_event_for_day(
                             d,
                             diaspora=self._diaspora,
                             tz=self._tz,
@@ -313,6 +326,9 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                             havdalah_offset=self._havdalah,
                         )
                         if ev is not None:
+                            # Static mode: only accept Night 1 events
+                            if self._static_mode and fwd_kind != "erev_before_sunset":
+                                continue
                             chosen_unrounded = ev
                             chosen = half_up(ev)
                             break
@@ -495,6 +511,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         self._diaspora = config.get("diaspora", True)
         self._tz = ZoneInfo(config.get("tzname", hass.config.time_zone))
         self._geo: GeoLocation | None = None
+        self._alos_unsub = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -504,6 +521,24 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
     async def _midnight_update(self, now: datetime.datetime) -> None:
         await self.async_update()
+
+    async def _alos_update(self, now: datetime.datetime) -> None:
+        await self.async_update()
+
+    def _alos_for_date(self, d: datetime.date) -> datetime.datetime:
+        """Compute Alos (sunrise − 72 min) for the given civil date, aware in local tz."""
+        cal = ZmanimCalendar(geo_location=self._geo, date=d)
+        sunrise = cal.sunrise().astimezone(self._tz)
+        return sunrise - timedelta(minutes=72)
+
+    def _schedule_alos_update(self, d: datetime.date) -> None:
+        """Schedule a one-shot update at Alos for the given civil date."""
+        alos_dt = self._alos_for_date(d)
+        self._register_listener(
+            async_track_point_in_time(
+                self.hass, self._alos_update, alos_dt,
+            )
+        )
 
     # ---- Helper: find true end of current YT span (handles SA→ST in diaspora) ----
     def _yt_span_end(self, start: datetime.date) -> datetime.date:
@@ -532,7 +567,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
-        midnight_next = datetime.datetime.combine(today + timedelta(days=1), datetime.time(0), tzinfo=self._tz)
+        alos_next_morning = self._alos_for_date(today + timedelta(days=1))
 
         def ceil_minute(dt_local: datetime.datetime) -> datetime.datetime:
             return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
@@ -574,8 +609,10 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             target_unrounded = sunset_on(end_date) + timedelta(minutes=self._havdalah)
             full_iso = target_unrounded.isoformat()
 
-            # freeze tonight (last YT day) until midnight
-            if today == end_date and now >= target_unrounded and now < midnight_next:
+            # freeze tonight (last YT day) until Alos next morning
+            # (after midnight the post-span freeze in the NOT-IN-YT section takes over)
+            if today == end_date and now >= target_unrounded and now < alos_next_morning:
+                self._schedule_alos_update(today + timedelta(days=1))
                 pass
 
             target = ceil_minute(target_unrounded)
@@ -639,12 +676,39 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         chosen_iso: str | None = None
 
         # Freeze-first: if it's Saturday night and we've already passed havdalah,
-        # keep *tonight's* Shabbos havdalah until 12:00 AM (no advancing yet).
+        # keep *tonight's* Shabbos havdalah until Alos next morning (no advancing yet).
         if wd == 5:
             havdalah_tonight = sunset_on(today) + timedelta(minutes=self._havdalah)
-            if now >= havdalah_tonight and now < midnight_next:
+            if now >= havdalah_tonight and now < alos_next_morning:
                 chosen_unrounded = havdalah_tonight
                 chosen_iso = havdalah_tonight.isoformat()
+                self._schedule_alos_update(today + timedelta(days=1))
+
+        # Post-span freeze: if yesterday was last day of YT or Shabbos and we
+        # haven't reached Alos this morning, keep yesterday's havdalah value.
+        if chosen_unrounded is None:
+            alos_today = self._alos_for_date(today)
+            if now < alos_today:
+                yesterday = today - timedelta(days=1)
+                hd_yesterday = HDateInfo(yesterday, diaspora=self._diaspora)
+
+                if hd_yesterday.is_yom_tov:
+                    # Yesterday was last YT day → freeze on span-end havdalah
+                    yt_start = yesterday
+                    while HDateInfo(yt_start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                        yt_start -= timedelta(days=1)
+                    yt_end = self._yt_span_end(yt_start)
+                    freeze_val = sunset_on(yt_end) + timedelta(minutes=self._havdalah)
+                    chosen_unrounded = freeze_val
+                    chosen_iso = freeze_val.isoformat()
+                    self._schedule_alos_update(today)
+
+                elif yesterday.weekday() == 5:
+                    # Yesterday was Shabbos → freeze on Saturday havdalah
+                    freeze_val = sunset_on(yesterday) + timedelta(minutes=self._havdalah)
+                    chosen_unrounded = freeze_val
+                    chosen_iso = freeze_val.isoformat()
+                    self._schedule_alos_update(today)
 
         if chosen_unrounded is None:
             def next_saturday_future(now_date: datetime.date) -> datetime.date:
