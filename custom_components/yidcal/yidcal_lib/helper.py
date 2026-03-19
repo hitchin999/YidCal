@@ -95,8 +95,8 @@ class YidCalHelper:
             PMonth(hy, nm)     # valid within the same Hebrew year?
             return {"year": hy, "month": nm}
         except ValueError:
-            # overflow (e.g., Adar II → Nissan in short form)
-            return {"year": hy + 1, "month": 1}
+            # overflow (e.g., Adar → Nissan): same pyluach year
+            return {"year": hy, "month": 1}
 
     def get_gdate(self, numeric_date: dict[str, int], day: int) -> datetime.date:
         """
@@ -150,7 +150,7 @@ class YidCalHelper:
             try:
                 PMonth(hy_next, nm)
             except ValueError:
-                hy_next, nm = hy + 1, 1
+                hy_next, nm = hy, 1   # Adar → Nissan: same pyluach year
 
         hd1_next = PHebrewDate(hy_next, nm, 1)
 
