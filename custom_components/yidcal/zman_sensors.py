@@ -203,6 +203,15 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 dt_local += timedelta(minutes=1)
             return dt_local.replace(second=0, microsecond=0)
 
+        def ceil_minute(dt_local: datetime.datetime) -> datetime.datetime:
+            return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+        def round_for_kind(dt_local: datetime.datetime, kind: str) -> datetime.datetime:
+            """After-tzeis candle lighting rounds up (chumrah); before-sunset uses half-up."""
+            if kind in ("between_yt_after_tzeis", "motzaei_shabbos_after_tzeis"):
+                return ceil_minute(dt_local)
+            return half_up(dt_local)
+
         cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
         sunset_today = cal_today.sunset().astimezone(self._tz)
         candle_today_std = sunset_today - timedelta(minutes=self._candle)
@@ -268,7 +277,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                     return ev
             return None
 
-        def most_recent_lighting_before(d0: datetime.date) -> datetime.datetime | None:
+        def most_recent_lighting_before(d0: datetime.date) -> tuple[datetime.datetime, str] | None:
             for back in range(1, 11):
                 d = d0 - timedelta(days=back)
                 ev, kind = lighting_event_for_day(
@@ -283,7 +292,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                     # Static mode: only accept Night 1 events
                     if self._static_mode and kind != "erev_before_sunset":
                         continue
-                    return ev
+                    return ev, kind
             return None
 
         # Allow forward jump on/after the civil day that begins after the last Motzi
@@ -304,13 +313,18 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
         # Freeze rule
         if (today.weekday() == 5 or hd_today.is_yom_tov) and now < midnight_next and today_event is None:
-            y_event = most_recent_lighting_before(today) or (sunset_today - timedelta(minutes=self._candle))
+            result = most_recent_lighting_before(today)
+            if result is not None:
+                y_event, y_kind = result
+            else:
+                y_event = sunset_today - timedelta(minutes=self._candle)
+                y_kind = "erev_before_sunset"
             chosen_unrounded = y_event
-            chosen = half_up(y_event)
+            chosen = round_for_kind(y_event, y_kind)
         else:
             if today_event is not None:
                 chosen_unrounded = today_event
-                chosen = half_up(today_event)
+                chosen = round_for_kind(today_event, today_kind)
             else:
                 if allow_forward_jump_today:
                     chosen_unrounded = None
@@ -330,7 +344,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                             if self._static_mode and fwd_kind != "erev_before_sunset":
                                 continue
                             chosen_unrounded = ev
-                            chosen = half_up(ev)
+                            chosen = round_for_kind(ev, fwd_kind)
                             break
                     if chosen is None:
                         wd = today.weekday()
@@ -341,11 +355,14 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                         chosen_unrounded = s_fri - timedelta(minutes=self._candle)
                         chosen = half_up(chosen_unrounded)
                 else:
-                    y_event = most_recent_lighting_before(today)
-                    if y_event is None:
-                        y_event = (sunset_today - timedelta(minutes=self._candle))
+                    result = most_recent_lighting_before(today)
+                    if result is not None:
+                        y_event, y_kind = result
+                    else:
+                        y_event = sunset_today - timedelta(minutes=self._candle)
+                        y_kind = "erev_before_sunset"
                     chosen_unrounded = y_event
-                    chosen = half_up(y_event)
+                    chosen = round_for_kind(y_event, y_kind)
 
         # State (UTC)
         self._attr_native_value = chosen.astimezone(timezone.utc)
@@ -456,11 +473,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             if show_days:
                 for idx, (d, ev, kind) in enumerate(active_cluster[:3], start=1):
                     ev_unrounded_local = ev.astimezone(self._tz)
-                    ev_rounded_local = (
-                        (ev_unrounded_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
-                        if ev_unrounded_local.second >= 30
-                        else ev_unrounded_local.replace(second=0, microsecond=0)
-                    )
+                    ev_rounded_local = round_for_kind(ev_unrounded_local, kind)
                     label = label_for_kind_and_context(d, kind, diaspora=self._diaspora)
 
                     attrs[f"Day_{idx}_Label"]  = label
