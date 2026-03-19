@@ -785,7 +785,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             self._get_readings_for_date, civil_today, tz
         )
 
-        # Get readings for today and tomorrow (run blocking zmanim calls in executor)
+        # Get readings for today and tomorrow
         readings_today, has_kriah_today, sefer_max_today, aliyah_max_today, reason_today, nasi_today = \
             await self.hass.async_add_executor_job(self._get_readings_for_date, today, tz)
         
@@ -793,13 +793,16 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         readings_tomorrow, has_kriah_tomorrow, sefer_max_tomorrow, aliyah_max_tomorrow, reason_tomorrow, nasi_tomorrow = \
             await self.hass.async_add_executor_job(self._get_readings_for_date, tomorrow, tz)
 
-        # Determine which reading is "current" vs "next"
-        # Find if we're in a reading window, before one, or past all today's readings
+        # --- NASI LOGIC (Decoupled from Torah Reading) ---
+        # We use 'today' which already accounts for the Tzeis/Havdalah rollover.
+        nasi_for_display = nasi_today
+        nasi_display_date = today
+
+        # --- KRIAH DISPLAY LOGIC ---
         current_reading: dict | None = None
         next_reading: dict | None = None
-        showing_next = False  # True if we're showing upcoming (not current)
+        showing_next = False
         
-        # Check if we're currently in a reading window
         for reading in readings_today:
             ws, we = reading.get("window_start"), reading.get("window_end")
             if ws and we:
@@ -811,21 +814,17 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                     pass
         
         if current_reading:
-            # We're in a reading window - show current
             showing_next = False
             display_reading = current_reading
             display_readings = [current_reading]
             display_reason = reason_today
             display_sefer_count = current_reading.get("sefer_torah_count", 1)
             display_aliyah_count = current_reading.get("aliyah_count", 3)
-            display_nasi = nasi_today
-            display_date = today  # Current reading is for today
+            display_date = today 
         else:
-            # Not in a reading window - find next upcoming
             showing_next = True
-            display_date = today  # Default to today
+            display_date = today 
             
-            # Check for upcoming reading today
             for reading in readings_today:
                 ws = reading.get("window_start")
                 if ws:
@@ -837,9 +836,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                         pass
             
             if next_reading:
-                # There's still reading(s) later today - show all remaining
                 display_reading = next_reading
-                # Get all readings from this point forward for today
                 display_readings = []
                 found_next = False
                 for reading in readings_today:
@@ -848,33 +845,26 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                     if found_next:
                         display_readings.append(reading)
                 display_date = today
-                # Use the day's overall reason
                 display_reason = reason_today
                 display_sefer_count = sefer_max_today
                 display_aliyah_count = aliyah_max_today
-                display_nasi = nasi_today
             elif has_kriah_tomorrow:
-                # Show tomorrow's readings
                 display_reading = readings_tomorrow[0] if readings_tomorrow else None
                 display_readings = readings_tomorrow
                 display_date = tomorrow
                 display_reason = reason_tomorrow
                 display_sefer_count = sefer_max_tomorrow
                 display_aliyah_count = aliyah_max_tomorrow
-                display_nasi = nasi_tomorrow
             else:
-                # No reading today or tomorrow - find next kriah day
                 display_reading = None
                 display_readings = []
                 display_reason = ""
                 display_sefer_count = 0
                 display_aliyah_count = 0
-                display_nasi = None
                 display_date = None
-                # Look ahead up to 7 days
                 for days_ahead in range(2, 8):
                     future_date = today + timedelta(days=days_ahead)
-                    future_readings, future_has, future_sefer, future_aliyah, future_reason, future_nasi = \
+                    future_readings, future_has, future_sefer, future_aliyah, future_reason, _future_nasi = \
                         await self.hass.async_add_executor_job(self._get_readings_for_date, future_date, tz)
                     if future_has:
                         display_reading = future_readings[0] if future_readings else None
@@ -883,11 +873,9 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                         display_reason = future_reason
                         display_sefer_count = future_sefer
                         display_aliyah_count = future_aliyah
-                        display_nasi = future_nasi
                         break
 
         # Update last completed anchor for prep_now logic
-        # Check CIVIL day's readings (not halachic) since we need to know what was completed today
         readings_civil_today, _, _, _, _, _ = await self.hass.async_add_executor_job(
             self._get_readings_for_date, civil_today, tz
         )
@@ -904,27 +892,18 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 except:
                     pass
 
-        # Prep now logic - true when showing_next and anchor differs from last completed
         prep_now = False
         if showing_next and display_reading:
             next_upcoming_anchor = display_reading.get("_scroll_anchor", "")
-            # If we have a last completed anchor and it differs from next, prep is needed
             if self._last_completed_anchor and next_upcoming_anchor:
                 if self._last_completed_anchor != next_upcoming_anchor:
                     prep_now = True
 
-        # Week display should stay civil-date based (so it matches your expectation)
-        hd = PHebrewDate.from_pydate(civil_today)
-        kriah_days = self._get_kriah_days_this_week(civil_today, hd)
-
-        # Build summary for state
+        hd_civil = PHebrewDate.from_pydate(civil_today)
+        kriah_days = self._get_kriah_days_this_week(civil_today, hd_civil)
         display_sifrei = display_reading.get("sifrei_torah", []) if display_reading else []
         summary = self._build_summary(display_sifrei)
-
-        # Kriah_Now is true only when we're inside a reading window
         kriah_now = current_reading is not None
-
-        # Build attributes with dynamic naming
         reason_key = "Reason_Next" if showing_next else "Reason_Today"
         
         attrs: dict[str, Any] = {
@@ -937,11 +916,9 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             "Prep_Now": prep_now,
         }
 
-        # Flatten readings into header-style attributes
         tefilah_english = {"שחרית": "Shacharis", "מנחה": "Mincha", "ערבית": "Maariv"}
         
-        # Determine the day suffix for future readings
-        # If display_date is not civil_today, show "ליום ב׳:" etc.
+        # Determine the day suffix for future Torah readings
         day_suffix = ""
         if showing_next and display_date and display_date != civil_today:
             display_weekday = display_date.weekday()
@@ -955,11 +932,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             single_sefer = len(sifrei) == 1
             has_haftorah = reading.get("has_maftir", False)
             
-            # Add tefilah header - show day name for future days, nothing for same day
-            if showing_next:
-                header = f"{tefilah}{day_suffix}:"
-            else:
-                header = tefilah
+            header = f"{tefilah}{day_suffix}:" if showing_next else tefilah
             attrs[header] = ""
             
             for sefer in sifrei:
@@ -969,13 +942,11 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                 parsha_source = sefer.get("parsha_source", "")
                 reason = sefer.get("reason", "")
                 
-                # Build source string
                 if reason and reason != parsha_source:
                     source_str = f"{source_sefer} - {parsha_source} ({reason})"
                 else:
                     source_str = f"{source_sefer} - {parsha_source}"
                 
-                # Use simpler names when only 1 sefer (no "_Sefer_1")
                 if single_sefer:
                     attrs[f"{tefilah_eng}_Start_Pasuk"] = opening
                     attrs[f"{tefilah_eng}_Source"] = source_str
@@ -983,21 +954,23 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                     attrs[f"{tefilah_eng}_Sefer_{sefer_num}"] = opening
                     attrs[f"{tefilah_eng}_Sefer_{sefer_num}_Source"] = source_str
             
-            # Add Has_Haftorah for this tefilah
             attrs[f"{tefilah_eng}_Has_Haftorah"] = has_haftorah
 
-        # Add Nasi reading if applicable
-        if display_nasi:
-            if showing_next and display_date and display_date != today:
-                nasi_header = f"נשיא{day_suffix}:"
-            elif showing_next:
-                nasi_header = "נשיא:"
+        # --- ADDING NASI ATTRIBUTES ---
+        if nasi_for_display:
+            # If the Nasi being shown is for a future day, add a suffix (e.g., "Nasi for Friday")
+            if nasi_display_date and nasi_display_date != civil_today:
+                nasi_weekday = nasi_display_date.weekday()
+                nasi_day_name = HEBREW_DAYS.get(nasi_weekday, "")
+                nasi_day_suffix = f" ל{nasi_day_name}" if nasi_day_name else ""
+                nasi_header = f"נשיא{nasi_day_suffix}:"
             else:
-                nasi_header = "נשיא"
+                nasi_header = "נשיא:"
+                
             attrs[nasi_header] = ""
-            attrs["Nasi_Today"] = f"נשיא {display_nasi['nasi']}"
-            attrs["Nasi_Start_Pasuk"] = display_nasi["opening_words"]
-            attrs["Nasi_Source"] = display_nasi["pesukim"]
+            attrs["Nasi_Today"] = f"נשיא {nasi_for_display['nasi']}"
+            attrs["Nasi_Start_Pasuk"] = nasi_for_display["opening_words"]
+            attrs["Nasi_Source"] = nasi_for_display["pesukim"]
 
         # State is the summary
         self._attr_native_value = summary if summary else None
