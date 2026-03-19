@@ -149,23 +149,32 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
     async def _midnight_update(self, now: datetime.datetime) -> None:
         await self.async_update()
 
+    def _ceil_minute(self, dt_local: datetime.datetime) -> datetime.datetime:
+        return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
     def _half_up(self, dt_local: datetime.datetime) -> datetime.datetime:
         if dt_local.second >= 30:
             dt_local += timedelta(minutes=1)
         return dt_local.replace(second=0, microsecond=0)
 
+    def _round_for_kind(self, dt_local: datetime.datetime, kind: str) -> datetime.datetime:
+        """After-tzeis candle lighting rounds up (chumrah); before-sunset uses half-up."""
+        if kind in ("between_yt_after_tzeis", "motzaei_shabbos_after_tzeis"):
+            return self._ceil_minute(dt_local)
+        return self._half_up(dt_local)
+
     def _find_current_or_next(
         self, today: datetime.date, now: datetime.datetime
-    ) -> tuple[datetime.datetime | None, list | None]:
+    ) -> tuple[datetime.datetime | None, str, list | None]:
         """
         Find the cluster that currently applies (we're still inside its
         span, before midnight-advance) or the next future cluster that has
         enough nights.
 
-        Returns (target_event_dt, cluster) or (None, None).
+        Returns (target_event_dt, kind, cluster) or (None, "none", None).
         """
         if not self._geo:
-            return None, None
+            return None, "none", None
 
         # First check: are we inside an active span that hasn't advanced yet?
         # Look back up to 10 days to find a cluster whose span we might still be in.
@@ -186,7 +195,8 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
             advance_date = _motzi_civil_advance_date(span_end)
             # If we haven't hit the advance date yet, this cluster is active
             if today < advance_date:
-                return cl[self._night_index][1], cl
+                entry = cl[self._night_index]
+                return entry[1], entry[2], cl
 
         # Not inside an active span — scan forward for the next occurrence
         clusters_fwd = _build_lighting_clusters(
@@ -202,17 +212,18 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
         for cl in clusters_fwd:
             if len(cl) < self._night_index + 1:
                 continue
-            target_ev = cl[self._night_index][1]
+            entry = cl[self._night_index]
+            target_ev = entry[1]
             # Must be in the future (or at least today)
             if target_ev.date() >= today:
-                return target_ev, cl
+                return target_ev, entry[2], cl
             # Even if the event date is past, check if we're still in the span
             span_end = _span_end_date(cl[-1][0], diaspora=self._diaspora)
             advance_date = _motzi_civil_advance_date(span_end)
             if today < advance_date:
-                return target_ev, cl
+                return target_ev, entry[2], cl
 
-        return None, None
+        return None, "none", None
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         if not self._geo:
@@ -221,7 +232,7 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
         now = (now or dt_util.now()).astimezone(self._tz)
         today = now.date()
 
-        target_dt, cluster = self._find_current_or_next(today, now)
+        target_dt, kind, cluster = self._find_current_or_next(today, now)
 
         if target_dt is None:
             self._attr_native_value = None
@@ -233,7 +244,7 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
             return
 
         target_local = target_dt.astimezone(self._tz)
-        rounded = self._half_up(target_local)
+        rounded = self._round_for_kind(target_local, kind)
 
         self._attr_native_value = rounded.astimezone(timezone.utc)
         self._attr_extra_state_attributes = {
