@@ -35,6 +35,8 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     Freeze rule (like Zman Erev):
       • Do NOT advance to a new target until 12:00 AM of the civil day AFTER the most recent Motzi
         (Shabbos or Yom Tov). All “Next_On” calculations respect this gate.
+      • Forward gate: if there is an upcoming Shabbos or Yom Tov between now and the
+        target’s erev, do NOT turn on until 12:00 AM the day after that Motzi.
     """
 
     _attr_name = "Upcoming Yom Tov"
@@ -233,6 +235,29 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         return ("", None)
 
+    def _latest_forward_gate(self, from_date: datetime.date, before_date: datetime.date) -> datetime.date | None:
+        """Find the latest Shabbos/YT end between from_date and before_date (exclusive).
+
+        Returns the civil day AFTER that Motzi (the 12 AM gate day), or None.
+        Scans for: Saturdays (Shabbos ends) and last days of YT spans.
+        """
+        latest_gate: datetime.date | None = None
+        d = from_date
+        while d < before_date:
+            # Saturday = Shabbos end
+            if d.weekday() == 5:
+                gate = d + timedelta(days=1)  # Sunday
+                if gate < before_date:
+                    latest_gate = gate
+            # Last day of a YT span (is YT today, not YT tomorrow)
+            if self._is_yomtov(d) and not self._is_yomtov(d + timedelta(days=1)):
+                gate = d + timedelta(days=1)
+                if gate < before_date:
+                    if latest_gate is None or gate > latest_gate:
+                        latest_gate = gate
+            d += timedelta(days=1)
+        return latest_gate
+
     def _candle_lighting_prev_day(self, target: datetime.date) -> datetime.datetime:
         """Candle-lighting time for the eve of `target` (prev civil day before sunset)."""
         assert self._geo is not None
@@ -280,6 +305,14 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             else:
                 next_on_time = theoretical_on
 
+            # Forward gate: if there's a Shabbos/YT between now and the target,
+            # don't turn on until 12 AM the day after that Motzi.
+            erev_date = next_date - timedelta(days=1)
+            fwd_gate = self._latest_forward_gate(today, erev_date)
+            if fwd_gate is not None:
+                fwd_midnight = datetime.datetime(fwd_gate.year, fwd_gate.month, fwd_gate.day, 0, 0, tzinfo=tz)
+                next_on_time = max(next_on_time, fwd_midnight)
+
             is_on = (now >= next_on_time) and (now < off_time)
 
         # --- Decide what to show as Next_On (always future-facing) ---
@@ -306,6 +339,17 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                         0, 0, tzinfo=tz
                     )
                     next_on_for = max(theoretical_on2, gate_midnight)
+                    # Forward gate for following target too
+                    erev2_date = next2_date - timedelta(days=1)
+                    fwd_gate2 = self._latest_forward_gate(
+                        (next_date + timedelta(days=1)), erev2_date
+                    )
+                    if fwd_gate2 is not None:
+                        fwd2_midnight = datetime.datetime(
+                            fwd_gate2.year, fwd_gate2.month, fwd_gate2.day,
+                            0, 0, tzinfo=tz
+                        )
+                        next_on_for = max(next_on_for, fwd2_midnight)
             else:
                 next_on_for = next_on_time
 
@@ -325,6 +369,11 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Next_Holiday": next_name,
             "Date": next_date.isoformat() if next_date else "",
             "Next_On": next_on_for.isoformat() if next_on_for else "",
+            "Activation_Logic": (
+                "ON at 12:00 AM after the latest Motzi (Shabbos or Yom Tov), "
+                "leading into the next target. OFF at candle-lighting of the "
+                "target's erev."
+            ),
         }
 
         self._attr_is_on = is_on
