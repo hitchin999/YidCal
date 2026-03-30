@@ -1408,6 +1408,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             ]
             picked = next(n for n in asru_list if attrs.get(n))
 
+        elif attrs.get("שביעי של פסח"):
+            picked = "שביעי של פסח"
+
         else:
             picked = next((n for n in self.ALLOWED_HOLIDAYS if attrs.get(n)), "")
             # Flip single-day forms like "סוכות א׳" → "א׳ דסוכות" when applicable
