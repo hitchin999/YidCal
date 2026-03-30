@@ -298,8 +298,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "תענית אסתר מוקדם":                "alos_havdalah",
         "פורים":                         "havdalah_havdalah",
         "שושן פורים":                     "havdalah_havdalah",
-        "ערב בדיקת חמץ":                  "alos_candle",
-        "ליל בדיקת חמץ":                   "candle_alos",
+        "ערב בדיקת חמץ":                  "alos_havdalah",
+        "ליל בדיקת חמץ":                   "havdalah_alos",
         "ערב פסח מוקדם":                  "havdalah_candle",
         "שבת ערב פסח":                   "candle_candle",
         "ערב פסח":                       "havdalah_candle",
@@ -649,6 +649,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             prev_sunset_raw - timedelta(minutes=self._candle_offset)
         )
         candle_alos_end = dawn
+
+        havdalah_alos_start = _round_ceil(
+            prev_sunset_raw + timedelta(minutes=self._havdalah_offset)
+        )
+        havdalah_alos_end = dawn
 
         shabbat_second = festival_date.weekday() == 5
         if shabbat_second:
@@ -1202,6 +1207,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             elif w == "alos_candle" and not (alos_candle_start <= now <= alos_candle_end):
                 attrs[name] = False
             elif w == "candle_alos" and not (candle_alos_start <= now <= candle_alos_end):
+                attrs[name] = False
+            elif w == "havdalah_alos" and not (havdalah_alos_start <= now <= havdalah_alos_end):
                 attrs[name] = False
             elif w == "candle_both" and not (candle_both_start <= now <= candle_both_end):
                 attrs[name] = False
