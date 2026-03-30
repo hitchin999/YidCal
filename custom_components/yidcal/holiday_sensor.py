@@ -887,6 +887,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Deferred (Erev Pesach on Shabbos): bedikat_day=13 → erev=12 Nisan
         if hd_py.month == 1 and hd_py.day == (bedikat_day - 1):
             attrs["ערב בדיקת חמץ"] = True
+        # Extend through the candle-time → tzeis gap:
+        # hd_py has already rolled to bedikat_day (past candle time), but civil date
+        # is still bedikat_day-1 and tzeis hasn't arrived yet — keep ערב ON.
+        elif (hd_py.month == 1 and hd_py.day == bedikat_day
+              and hd_py_fast.month == 1 and hd_py_fast.day == (bedikat_day - 1)
+              and now < havdalah_cut):
+            attrs["ערב בדיקת חמץ"] = True
 
         # Bedikat Chametz
         if is_bedikat_day:
