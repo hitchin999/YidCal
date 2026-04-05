@@ -55,6 +55,47 @@ def get_holiday_duration(pydate: datetime.date, *, diaspora: bool) -> int:
     return length
 
 
+# ─── No-melacha block helper ────────────────────────────────────────────────
+
+def _no_melacha_block(
+    d: datetime.date, *, diaspora: bool
+) -> tuple[datetime.date, datetime.date] | None:
+    """
+    If *d* is Shabbos or Yom Tov, return (first_day, last_day) of the
+    continuous no-melacha block that contains *d*.
+
+    A "block" is a maximal run of consecutive days that are each either
+    Shabbos (Saturday) or Yom Tov.  For example:
+      YT Thu – YT Fri – Shabbos Sat  →  (Thu, Sat)
+      Shabbos Sat – YT Sun – YT Mon  →  (Sat, Mon)
+    Returns None when *d* is neither Shabbos nor Yom Tov.
+    """
+    def _is_no_mel(dd: datetime.date) -> bool:
+        return dd.weekday() == 5 or HDateInfo(dd, diaspora=diaspora).is_yom_tov
+
+    if not _is_no_mel(d):
+        return None
+
+    start = d
+    while _is_no_mel(start - timedelta(days=1)):
+        start -= timedelta(days=1)
+
+    end = d
+    while _is_no_mel(end + timedelta(days=1)):
+        end += timedelta(days=1)
+
+    # Diaspora: Shemini Atzeres → Simchas Torah bridge
+    if diaspora:
+        name_end  = PHebrewDate.from_pydate(end).holiday(hebrew=True, prefix_day=False)
+        name_next = PHebrewDate.from_pydate(end + timedelta(days=1)).holiday(
+            hebrew=True, prefix_day=False
+        )
+        if name_end == "שמיני עצרת" and name_next == "שמחת תורה":
+            end = end + timedelta(days=1)
+
+    return (start, end)
+
+
 # ─── Geo helpers ────────────────────────────────────────────────────────────
 
 def _create_geo(hass: HomeAssistant) -> GeoLocation:
@@ -311,8 +352,32 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         cutoff = last_motzi_cutoff_date(today)
         allow_forward_jump_today = (cutoff is not None and today >= cutoff)
 
-        # Freeze rule
-        if (today.weekday() == 5 or hd_today.is_yom_tov) and now < midnight_next and today_event is None:
+        # ── Block freeze: if today is inside a multi-day no-melacha block,
+        #    freeze on the candle-lighting that ENTERED the block (the erev).
+        block = _no_melacha_block(today, diaspora=self._diaspora)
+        if block is not None and block[1] > block[0]:
+            # Multi-day block (YT+Shabbos, Shabbos+YT, multi-day YT, etc.)
+            erev_day = block[0] - timedelta(days=1)
+            entry_ev, entry_kind = lighting_event_for_day(
+                erev_day,
+                diaspora=self._diaspora,
+                tz=self._tz,
+                geo=self._geo,
+                candle_offset=self._candle,
+                havdalah_offset=self._havdalah,
+            )
+            if entry_ev is not None:
+                chosen_unrounded = entry_ev
+                chosen = round_for_kind(entry_ev, entry_kind)
+            else:
+                # Fallback: compute candle time for erev_day
+                cal_erev = ZmanimCalendar(geo_location=self._geo, date=erev_day)
+                s_erev = cal_erev.sunset().astimezone(self._tz)
+                chosen_unrounded = s_erev - timedelta(minutes=self._candle)
+                chosen = half_up(chosen_unrounded)
+
+        # Freeze rule (single-day blocks: plain Shabbos or single-day YT)
+        elif (today.weekday() == 5 or hd_today.is_yom_tov) and now < midnight_next and today_event is None:
             result = most_recent_lighting_before(today)
             if result is not None:
                 y_event, y_kind = result
@@ -588,45 +653,32 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         def sunset_on(d: datetime.date) -> datetime.datetime:
             return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
             
-        # Helper: nearest earlier Motzi (Shabbos havdalah or YT-span end) before a reference datetime
+        # Helper: nearest earlier Motzi (block-end havdalah) before a reference datetime
         def _last_motzi_before(ref_dt: datetime.datetime) -> datetime.datetime | None:
             best: datetime.datetime | None = None
+            seen_blocks: set[datetime.date] = set()
             for i in range(1, 30):  # look back up to ~1 month
                 d = ref_dt.date() - timedelta(days=i)
-
-                # Shabbos candidate
-                if d.weekday() == 5:
-                    cand = sunset_on(d) + timedelta(minutes=self._havdalah)
+                blk = _no_melacha_block(d, diaspora=self._diaspora)
+                if blk is not None and blk[1] not in seen_blocks:
+                    seen_blocks.add(blk[1])
+                    cand = sunset_on(blk[1]) + timedelta(minutes=self._havdalah)
                     if cand < ref_dt and (best is None or cand > best):
                         best = cand
-
-                # Yom Tov span end candidate (first day of a YT span → walk to end)
-                if HDateInfo(d, diaspora=self._diaspora).is_yom_tov and not HDateInfo(d - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                    span_end = self._yt_span_end(d)  # handles SA→ST in diaspora
-                    end_dt = sunset_on(span_end) + timedelta(minutes=self._havdalah)
-                    if end_dt < ref_dt and (best is None or end_dt > best):
-                        best = end_dt
             return best
 
-        # ---------------- IN-SPAN YOM TOV: target current span's end ----------------
+        # ---------------- IN NO-MELACHA BLOCK: target block's end ----------------
         hd_today = HDateInfo(today, diaspora=self._diaspora)
-        if hd_today.is_yom_tov:
-            # walk back to span start
-            start = today
-            while HDateInfo(start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                start -= timedelta(days=1)
+        block = _no_melacha_block(today, diaspora=self._diaspora)
+        if block is not None:
+            block_start, block_end = block
 
-            # NEW: robust end (handles SA→ST)
-            end_date = self._yt_span_end(start)
-
-            target_unrounded = sunset_on(end_date) + timedelta(minutes=self._havdalah)
+            target_unrounded = sunset_on(block_end) + timedelta(minutes=self._havdalah)
             full_iso = target_unrounded.isoformat()
 
-            # freeze tonight (last YT day) until Alos next morning
-            # (after midnight the post-span freeze in the NOT-IN-YT section takes over)
-            if today == end_date and now >= target_unrounded and now < alos_next_morning:
+            # freeze on last day of block after havdalah until Alos next morning
+            if today == block_end and now >= target_unrounded and now < alos_next_morning:
                 self._schedule_alos_update(today + timedelta(days=1))
-                pass
 
             target = ceil_minute(target_unrounded)
             self._attr_native_value = target.astimezone(timezone.utc)
@@ -645,13 +697,14 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                     cand = sunset_on(sat) + timedelta(minutes=self._havdalah)
                 return sat, cand
 
-            # Next YT end after ref
+            # Next YT end after ref (including connected Shabbos)
             def next_yt_end_after(ref_dt: datetime.datetime) -> tuple[datetime.date, datetime.datetime] | None:
                 start_scan = ref_dt.date() + timedelta(days=1)
                 for i in range(0, 30):
                     d = start_scan + timedelta(days=i)
                     if HDateInfo(d, diaspora=self._diaspora).is_yom_tov and not HDateInfo(d - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                        span_end = self._yt_span_end(d)
+                        blk = _no_melacha_block(d, diaspora=self._diaspora)
+                        span_end = blk[1] if blk else self._yt_span_end(d)
                         end_dt = sunset_on(span_end) + timedelta(minutes=self._havdalah)
                         if end_dt > ref_dt:
                             return span_end, end_dt
@@ -682,46 +735,23 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             }
             return
 
-        # ---------------- NOT IN YT TODAY: compute candidates (with freeze-first) ----------------
+        # ---------------- NOT IN BLOCK: compute candidates (with post-span freeze) --------
         wd = today.weekday()  # Mon=0..Sun=6; Sat=5
 
         chosen_unrounded: datetime.datetime | None = None
         chosen_iso: str | None = None
 
-        # Freeze-first: if it's Saturday night and we've already passed havdalah,
-        # keep *tonight's* Shabbos havdalah until Alos next morning (no advancing yet).
-        if wd == 5:
-            havdalah_tonight = sunset_on(today) + timedelta(minutes=self._havdalah)
-            if now >= havdalah_tonight and now < alos_next_morning:
-                chosen_unrounded = havdalah_tonight
-                chosen_iso = havdalah_tonight.isoformat()
-                self._schedule_alos_update(today + timedelta(days=1))
-
-        # Post-span freeze: if yesterday was last day of YT or Shabbos and we
-        # haven't reached Alos this morning, keep yesterday's havdalah value.
-        if chosen_unrounded is None:
-            alos_today = self._alos_for_date(today)
-            if now < alos_today:
-                yesterday = today - timedelta(days=1)
-                hd_yesterday = HDateInfo(yesterday, diaspora=self._diaspora)
-
-                if hd_yesterday.is_yom_tov:
-                    # Yesterday was last YT day → freeze on span-end havdalah
-                    yt_start = yesterday
-                    while HDateInfo(yt_start - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                        yt_start -= timedelta(days=1)
-                    yt_end = self._yt_span_end(yt_start)
-                    freeze_val = sunset_on(yt_end) + timedelta(minutes=self._havdalah)
-                    chosen_unrounded = freeze_val
-                    chosen_iso = freeze_val.isoformat()
-                    self._schedule_alos_update(today)
-
-                elif yesterday.weekday() == 5:
-                    # Yesterday was Shabbos → freeze on Saturday havdalah
-                    freeze_val = sunset_on(yesterday) + timedelta(minutes=self._havdalah)
-                    chosen_unrounded = freeze_val
-                    chosen_iso = freeze_val.isoformat()
-                    self._schedule_alos_update(today)
+        # Post-span freeze: if yesterday was the last day of a no-melacha block
+        # and we haven't reached Alos this morning, keep yesterday's havdalah.
+        alos_today = self._alos_for_date(today)
+        if now < alos_today:
+            yesterday = today - timedelta(days=1)
+            yest_block = _no_melacha_block(yesterday, diaspora=self._diaspora)
+            if yest_block is not None:
+                freeze_val = sunset_on(yest_block[1]) + timedelta(minutes=self._havdalah)
+                chosen_unrounded = freeze_val
+                chosen_iso = freeze_val.isoformat()
+                self._schedule_alos_update(today)
 
         if chosen_unrounded is None:
             def next_saturday_future(now_date: datetime.date) -> datetime.date:
@@ -730,12 +760,17 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 base_hav = sunset_on(base) + timedelta(minutes=self._havdalah)
                 return base if base_hav >= now else (base + timedelta(days=7))
 
-            # 1) Next Shabbos havdalah (guaranteed future-facing)
+            # 1) Next Shabbos havdalah (block-aware: extends through connected YT)
             shabbos_date = next_saturday_future(today)
-            shabbos_havdalah_unrounded = sunset_on(shabbos_date) + timedelta(minutes=self._havdalah)
+            shabbos_block = _no_melacha_block(shabbos_date, diaspora=self._diaspora)
+            if shabbos_block and shabbos_block[1] > shabbos_date:
+                shabbos_end = shabbos_block[1]
+            else:
+                shabbos_end = shabbos_date
+            shabbos_havdalah_unrounded = sunset_on(shabbos_end) + timedelta(minutes=self._havdalah)
             shabbos_havdalah_iso = shabbos_havdalah_unrounded.isoformat()
 
-            # 2) Next Yom Tov span END havdalah (guaranteed future-facing)
+            # 2) Next Yom Tov block END havdalah (block-aware: extends through connected Shabbos)
             yt_start: datetime.date | None = None
             yt_end_havdalah_unrounded: datetime.datetime | None = None
             yt_end_havdalah_iso: str | None = None
@@ -745,7 +780,8 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 hd_d = HDateInfo(d, diaspora=self._diaspora)
                 hd_prev = HDateInfo(d - timedelta(days=1), diaspora=self._diaspora)
                 if hd_d.is_yom_tov and not hd_prev.is_yom_tov:
-                    span_end = self._yt_span_end(d)  # handles Shemini Atzeres → Simchas Torah
+                    blk = _no_melacha_block(d, diaspora=self._diaspora)
+                    span_end = blk[1] if blk else self._yt_span_end(d)
                     cand_unrounded = sunset_on(span_end) + timedelta(minutes=self._havdalah)
                     if cand_unrounded >= now:
                         yt_start = d
@@ -753,19 +789,13 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                         yt_end_havdalah_iso = cand_unrounded.isoformat()
                         break
 
-            # 3) Cluster override: if next YT starts the day AFTER the next Shabbos,
-            #    show the END of that YT span (not Motzaei Shabbos).
-            if yt_start is not None and yt_start == (shabbos_date + timedelta(days=1)):
+            # Pick the earliest FUTURE candidate
+            if yt_end_havdalah_unrounded is not None and yt_end_havdalah_unrounded < shabbos_havdalah_unrounded:
                 chosen_unrounded = yt_end_havdalah_unrounded
                 chosen_iso = yt_end_havdalah_iso
             else:
-                # Otherwise pick the earliest FUTURE candidate that exists
-                if yt_end_havdalah_unrounded is not None and yt_end_havdalah_unrounded < shabbos_havdalah_unrounded:
-                    chosen_unrounded = yt_end_havdalah_unrounded
-                    chosen_iso = yt_end_havdalah_iso
-                else:
-                    chosen_unrounded = shabbos_havdalah_unrounded
-                    chosen_iso = shabbos_havdalah_iso
+                chosen_unrounded = shabbos_havdalah_unrounded
+                chosen_iso = shabbos_havdalah_iso
 
         # ---------------- publish current ----------------
         target = ceil_minute(chosen_unrounded)
@@ -788,13 +818,14 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 cand = sunset_on(sat) + timedelta(minutes=self._havdalah)
             return sat, cand
 
-        # next YT end after chosen
+        # next YT end after chosen (including connected Shabbos)
         def next_yt_end_after(ref_dt: datetime.datetime) -> tuple[datetime.date, datetime.datetime] | None:
             start_scan = ref_dt.date() + timedelta(days=1)
             for i in range(0, 30):
                 d2 = start_scan + timedelta(days=i)
                 if HDateInfo(d2, diaspora=self._diaspora).is_yom_tov and not HDateInfo(d2 - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
-                    span_end2 = self._yt_span_end(d2)
+                    blk2 = _no_melacha_block(d2, diaspora=self._diaspora)
+                    span_end2 = blk2[1] if blk2 else self._yt_span_end(d2)
                     end_dt2 = sunset_on(span_end2) + timedelta(minutes=self._havdalah)
                     if end_dt2 > ref_dt:
                         return span_end2, end_dt2
