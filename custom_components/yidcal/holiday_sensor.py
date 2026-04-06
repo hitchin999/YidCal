@@ -168,6 +168,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "צום שבעה עשר בתמוז",
         "מוצאי צום שבעה עשר בתמוז",
         "ערב תשעה באב",
+        "ערב תשעה באב שחל בשבת",
         "תשעה באב",
         "תשעה באב נדחה",
         "מוצאי תשעה באב",
@@ -703,6 +704,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         av9_greg = PHebrewDate(hd_fest.year, 5, 9).to_pydate()
         is_tisha_on_shabbat = av9_greg.weekday() == 5
 
+        # Tzom 17 Tammuz Deferred — when 17 Tammuz falls on Shabbos, fast moves to Sunday 18 Tammuz
+        tammuz_17_day = 17
+        tammuz_17_greg = PHebrewDate(hd_fest.year, 4, 17).to_pydate()
+        if tammuz_17_greg.weekday() == 5:
+            tammuz_17_day = 18
+
         # ─── Fast start/end times
         # Default for regular fasts
         start_time_fast = dawn
@@ -711,7 +718,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Force default for minor fasts to prevent extension
         if (hd_py_fast.month == 7 and hd_py_fast.day == gedaliah_day) or \
            (hd_py_fast.month == 10 and hd_py_fast.day == 10) or \
-           (hd_py_fast.month == 4 and hd_py_fast.day == 17) or \
+           (hd_py_fast.month == 4 and hd_py_fast.day == tammuz_17_day) or \
            (hd_py.month in (12, 13) and hd_py.day == 13):
             start_time_fast = dawn
             end_time = actual_sunset + timedelta(minutes=self._havdalah_offset)
@@ -929,17 +936,23 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if self._diaspora and ((hd_fest.month == 1 and hd_fest.day == 16) or (hd_havdalah.month == 1 and hd_havdalah.day == 16)):
                 attrs["פסח ב׳"] = True
                 attrs["פסח א׳ וב׳"] = True
-            if hd_fest.day == 17:
+            # Chol HaMoed Pesach — day labels differ diaspora vs Israel:
+            # Diaspora: Nisan 17=א׳, 18=ב׳, 19=ג׳, 20=ד׳ (4 days)
+            # Israel:   Nisan 16=א׳, 17=ב׳, 18=ג׳, 19=ד׳, 20=ה׳ (5 days)
+            if not self._diaspora and hd_fest.day == 16:
                 attrs["א׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
+            if hd_fest.day == 17:
+                attrs["ב׳ דחול המועד פסח" if not self._diaspora else "א׳ דחול המועד פסח"] = True
+                attrs["חול המועד פסח"] = True
             if hd_fest.day == 18:
-                attrs["ב׳ דחול המועד פסח"] = True
+                attrs["ג׳ דחול המועד פסח" if not self._diaspora else "ב׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
             if hd_fest.day == 19:
-                attrs["ג׳ דחול המועד פסח"] = True
+                attrs["ד׳ דחול המועד פסח" if not self._diaspora else "ג׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
             if hd_fest.day == 20:
-                attrs["ד׳ דחול המועד פסח"] = True
+                attrs["ה׳ דחול המועד פסח" if not self._diaspora else "ד׳ דחול המועד פסח"] = True
                 attrs["חול המועד פסח"] = True
             if (hd_py.month == 1 and hd_py.day == 21) or (hd_fest.month == 1 and hd_fest.day == 21):
                 attrs["שביעי של פסח"] = True
@@ -978,8 +991,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_fest.day in (1, 30) and not (hd_fest.month == 7 and hd_fest.day == 1):
             attrs["ראש חודש"] = True
 
-        # Tzom Shiva Usor Betamuz
-        if hd_py_fast.month == 4 and hd_py_fast.day == 17 and dawn <= now <= end_time:
+        # Tzom Shiva Usor Betamuz (deferred to 18 Tammuz when 17 Tammuz on Shabbos)
+        if hd_py_fast.month == 4 and hd_py_fast.day == tammuz_17_day and dawn <= now <= end_time:
             attrs["צום שבעה עשר בתמוז"] = True
 
         # Fixed: Erev Tisha B’Av with extension to sunset and deferred handling
@@ -988,21 +1001,38 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["ערב תשעה באב"] = True
 
         # Fixed: Tisha B’Av proper - use hd_sunset to prevent early turn-on
+        # In a Nidche year (9 Av on Shabbos), skip setting תשעה באב here — it will
+        # be set via the נדחה block below from Sat shkiah through Sun tzeis, matching
+        # the observed fast time. Still clear ערב תשעה באב so it doesn't leak through.
         if (hd_sunset.month == 5 and hd_sunset.day == 9) or (hd_fest.month == 5 and hd_fest.day == 9):
-            attrs["תשעה באב"] = True
-            attrs["ערב תשעה באב"] = False  # Unset Erev after fast starts
+            if not is_tisha_on_shabbat:
+                attrs["תשעה באב"] = True
+                attrs["ערב תשעה באב"] = False  # Unset Erev after fast starts (normal year only)
 
-        # Fixed: Deferred Tisha B’Av - use hd_sunset to prevent late turn-on
+        # Fixed: Deferred Tisha B’Av - use hd_sunset OR hd_fest to cover the full
+        # fast span (Sat sunset → Sun tzeis). hd_sunset rolls at sunset, so it fails
+        # between Sun sunset and Sun tzeis; hd_fest rolls at havdalah/tzeis, so it
+        # covers that final ~40-72 minutes of the fast.
         if (
-            hd_sunset.month == 5
-            and hd_sunset.day == 10
-            and wd_sunset == 6
+            (
+                (hd_sunset.month == 5 and hd_sunset.day == 10 and wd_sunset == 6)
+                or (hd_fest.month == 5 and hd_fest.day == 10 and wd_fest == 6)
+            )
             and start_time_fast <= now <= end_time
         ):
             attrs["תשעה באב נדחה"] = True
             attrs["תשעה באב"] = True  # <- keep the generic flag on too
+
+        # ערב תשעה באב שחל בשבת: Chatzos → Shkia on Shabbos 9 Av (Nidche year)
+        # Attribute-only flag (not in ALLOWED_HOLIDAYS). Window is narrow because
+        # Shabbos observance takes precedence; mourning practices don't begin until
+        # Motzei Shabbos, but Chatzos is a common marker for the "erev" mood.
+        if is_tisha_on_shabbat and wd == 5 and hd_py.month == 5 and hd_py.day == 9:
+            chatzos_shabbos_9av = _compute_chatzos_hayom(self._geo, actual_date, tz)
+            if chatzos_shabbos_9av <= now < actual_sunset:
+                attrs["ערב תשעה באב שחל בשבת"] = True
             
-         # Tu BiShvat
+         # Tu B'Av (15 Av)
         if hd_fest.month == 5 and hd_fest.day == 15:
             attrs["ט\"ו באב"] = True
             
@@ -1238,6 +1268,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             "ב׳ דחול המועד פסח",
             "ג׳ דחול המועד פסח",
             "ד׳ דחול המועד פסח",
+            "ה׳ דחול המועד פסח",
             "שביעי של פסח",
             "אחרון של פסח",
         ])
