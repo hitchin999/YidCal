@@ -160,6 +160,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "צום שבעה עשר בתמוז":      "shiva_usor_btammuz",
     "מוצאי צום שבעה עשר בתמוז":  "motzei_shiva_usor_btammuz",
     "ערב תשעה באב":           "erev_tisha_bav",
+    "ערב תשעה באב שחל בשבת":  "erev_tisha_bav_shechal_beshabbos",
     "תשעה באב":              "tisha_bav",
     "תשעה באב נדחה":          "tisha_bav_nidche",
     "מוצאי תשעה באב":         "motzei_tisha_bav",
