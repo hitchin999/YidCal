@@ -60,7 +60,8 @@ def compute_erev_motzei_flags(
     Windows:
       • ערב שבת / ערב יום טוב → Alos..Candle
       • מוצאי שבת / מוצאי יום טוב → Havdalah..02:00
-      • ערב שבת שחל ביום טוב / ערב יום טוב שחל בשבת → Chatzos..Candle
+      • ערב שבת שחל ביום טוב → Alos..Candle
+      • ערב יום טוב שחל בשבת → Alos..Havdalah (candle-lighting is at tzeis)
       • מוצאי שבת שחל ביום טוב / מוצאי יום טוב שחל בשבת → Havdalah..02:00
     """
     today = now.date()
@@ -73,7 +74,7 @@ def compute_erev_motzei_flags(
 
     alos   = _round_half_up(sunrise - timedelta(minutes=72))
     candle = _round_half_up(sunset  - timedelta(minutes=candle_offset))
-    chatzos = _chatzos(cal_today, tz)
+    havdalah = _round_ceil(sunset + timedelta(minutes=havdalah_offset))
 
     hd_y = HDateInfo(yesterday, diaspora=diaspora)
     hd_t = HDateInfo(today,    diaspora=diaspora)
@@ -108,13 +109,14 @@ def compute_erev_motzei_flags(
     if (not is_sat) and (not is_yomtov_today) and is_yomtov_tom:
         flags["ערב יום טוב"] = _in(alos, candle)
 
-    # ── ערב שבת שחל ביום טוב (Friday that IS YT today), Chatzos..Candle
+    # ── ערב שבת שחל ביום טוב (Friday that IS YT today), Alos..Candle
     if is_fri and is_yomtov_today:
-        flags["ערב שבת שחל ביום טוב"] = _in(chatzos, candle)
+        flags["ערב שבת שחל ביום טוב"] = _in(alos, candle)
 
-    # ── ערב יום טוב שחל בשבת (Shabbos that is Erev YT), Chatzos..Candle
+    # ── ערב יום טוב שחל בשבת (Shabbos that is Erev YT), Alos..Havdalah
+    # Hadlakas neiros for YT happens after Shabbos ends (tzeis), not pre-sunset.
     if is_sat and is_yomtov_tom:
-        flags["ערב יום טוב שחל בשבת"] = _in(chatzos, candle)
+        flags["ערב יום טוב שחל בשבת"] = _in(alos, havdalah)
 
     # ── מוצאי שבת (Shabbos → chol only), Havdalah..02:00
     # Block Shabbos→Yom Tov (yaknehaz); that’s handled by מוצאי שבת שחל ביום טוב.
@@ -170,7 +172,8 @@ def compute_erev_motzei_flags(
         s, e = _motzei_window(yt_shabbos_base)
         flags["מוצאי יום טוב שחל בשבת"] = _in(s, e)
 
-    # שבת ערב פורים (Shabbos that is 13 Adar / Erev Purim), Alos..Candle
+    # שבת ערב פורים (Shabbos that is 13 Adar / Erev Purim), Alos..Havdalah
+    # Purim starts Motzei Shabbos (Megillah reading at Tzeis), so end at havdalah/tzeis.
     if is_sat:
         from pyluach.dates import HebrewDate as PHebrewDate
         from pyluach.hebrewcal import Year as PYear
@@ -178,6 +181,6 @@ def compute_erev_motzei_flags(
         is_leap = PYear(hd_sat.year).leap
         adar_month = 13 if is_leap else 12
         if hd_sat.month == adar_month and hd_sat.day == 13:
-            flags["שבת ערב פורים"] = _in(alos, candle)
+            flags["שבת ערב פורים"] = _in(alos, havdalah)
 
     return flags
