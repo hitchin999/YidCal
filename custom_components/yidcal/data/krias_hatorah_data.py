@@ -291,10 +291,41 @@ PESACH_READINGS: dict = {
             {"sefer_number": 2, "opening_words": "והקרבתם אשה עולה לה׳", "sefer": "במדבר", "parsha_source": "פינחס", "reason": "מפטיר - קרבנות היום", "aliyos": "מפטיר"},
         ],
     },
-    "chol_hamoed_1": {"display_title": "א׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False, "sifrei_torah": [{"sefer_number": 1, "opening_words": "קדש לי כל בכור פטר כל רחם", "sefer": "שמות", "parsha_source": "בא", "reason": "קדש לי", "aliyos": "4 עליות"}]},
-    "chol_hamoed_2": {"display_title": "ב׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False, "sifrei_torah": [{"sefer_number": 1, "opening_words": "אם כסף תלוה את עמי", "sefer": "שמות", "parsha_source": "משפטים", "reason": "אם כסף תלוה", "aliyos": "4 עליות"}]},
-    "chol_hamoed_3": {"display_title": "ג׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False, "sifrei_torah": [{"sefer_number": 1, "opening_words": "פסל לך שני לוחות אבנים", "sefer": "שמות", "parsha_source": "כי תשא", "reason": "פסל לך", "aliyos": "4 עליות"}]},
-    "chol_hamoed_4": {"display_title": "ד׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False, "sifrei_torah": [{"sefer_number": 1, "opening_words": "וידבר ה׳ אל משה לאמר קדש לי כל בכור", "sefer": "במדבר", "parsha_source": "בהעלותך", "reason": "בהעלותך", "aliyos": "4 עליות"}]},
+    "chol_hamoed_israel_day_1": {
+        "display_title": "א׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False,
+        "sifrei_torah": [
+            {"sefer_number": 1, "opening_words": "שור או כשב או עז כי יולד", "sefer": "ויקרא", "parsha_source": "אמור", "reason": "פרשת המועדות", "aliyos": "3 עליות"},
+            {"sefer_number": 2, "opening_words": "והקרבתם אשה עולה לה׳", "sefer": "במדבר", "parsha_source": "פינחס", "reason": "קרבנות היום", "aliyos": "רביעי"}
+        ]
+    },
+    "chol_hamoed_1": {
+        "display_title": "א׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False,
+        "sifrei_torah": [
+            {"sefer_number": 1, "opening_words": "קדש לי כל בכור פטר כל רחם", "sefer": "שמות", "parsha_source": "בא", "reason": "קדש לי", "aliyos": "3 עליות"},
+            {"sefer_number": 2, "opening_words": "והקרבתם אשה עולה לה׳", "sefer": "במדבר", "parsha_source": "פינחס", "reason": "קרבנות היום", "aliyos": "רביעי"}
+        ]
+    },
+    "chol_hamoed_2": {
+        "display_title": "ב׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False,
+        "sifrei_torah": [
+            {"sefer_number": 1, "opening_words": "אם כסף תלוה את עמי", "sefer": "שמות", "parsha_source": "משפטים", "reason": "אם כסף תלוה", "aliyos": "3 עליות"},
+            {"sefer_number": 2, "opening_words": "והקרבתם אשה עולה לה׳", "sefer": "במדבר", "parsha_source": "פינחס", "reason": "קרבנות היום", "aliyos": "רביעי"}
+        ]
+    },
+    "chol_hamoed_3": {
+        "display_title": "ג׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False,
+        "sifrei_torah": [
+            {"sefer_number": 1, "opening_words": "פסל לך שני לוחות אבנים", "sefer": "שמות", "parsha_source": "כי תשא", "reason": "פסל לך", "aliyos": "3 עליות"},
+            {"sefer_number": 2, "opening_words": "והקרבתם אשה עולה לה׳", "sefer": "במדבר", "parsha_source": "פינחס", "reason": "קרבנות היום", "aliyos": "רביעי"}
+        ]
+    },
+    "chol_hamoed_4": {
+        "display_title": "ד׳ דחול המועד פסח", "reason": "חול המועד פסח", "aliyah_count": 4, "has_maftir": False,
+        "sifrei_torah": [
+            {"sefer_number": 1, "opening_words": "וידבר ה׳ אל משה במדבר סיני", "sefer": "במדבר", "parsha_source": "בהעלותך", "reason": "פסח שני", "aliyos": "3 עליות"},
+            {"sefer_number": 2, "opening_words": "והקרבתם אשה עולה לה׳", "sefer": "במדבר", "parsha_source": "פינחס", "reason": "קרבנות היום", "aliyos": "רביעי"}
+        ]
+    },
     "shabbos_chol_hamoed": {
         "display_title": "שבת חול המועד פסח", "reason": "שבת חול המועד", "aliyah_count": 7, "has_maftir": True,
         "sifrei_torah": [
@@ -375,6 +406,7 @@ NESIIM_READINGS: dict[int, dict] = {
 }
 
 MONDAY = 0
+TUESDAY = 1
 THURSDAY = 3
 FRIDAY = 4
 SATURDAY = 5
