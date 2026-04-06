@@ -29,7 +29,7 @@ from .data.krias_hatorah_data import (
     SUKKOS_READINGS, SHMINI_ATZERES_READINGS, PESACH_READINGS, SHAVUOS_READINGS,
     PURIM_READING, SCROLL_ANCHORS, NESIIM_READINGS,
     KORBANOS_READING, MISHNE_TORAH_READING,
-    MONDAY, THURSDAY, SATURDAY, HEBREW_DAYS,
+    MONDAY, TUESDAY, THURSDAY, SATURDAY, SUNDAY, HEBREW_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -387,11 +387,36 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         if m == 1 and d == 16 and self._diaspora: return {"key": "pesach_2", "data": PESACH_READINGS["day_2_diaspora"]}
         if m == 1 and wd != SATURDAY:
             chm_start = 17 if self._diaspora else 16
-            chm_map = {1: "chol_hamoed_1", 2: "chol_hamoed_2", 3: "chol_hamoed_3", 4: "chol_hamoed_4"}
             if chm_start <= d <= 20:
                 chm_day = d - chm_start + 1
-                if chm_day in chm_map and chm_map[chm_day] in PESACH_READINGS:
-                    return {"key": chm_map[chm_day], "data": PESACH_READINGS[chm_map[chm_day]]}
+                # Israel day 1 (Nisan 16) = Shor O Kesev from Emor (unique to Israel)
+                if not self._diaspora and chm_day == 1:
+                    return {"key": "chol_hamoed_israel_day_1", "data": PESACH_READINGS["chol_hamoed_israel_day_1"]}
+                # For Israel days 2-5, remap to diaspora-equivalent position 1-4
+                # (luach: "ובא"י ב' דחוה"מ" for diaspora day 1, etc.)
+                dia_day = chm_day if self._diaspora else chm_day - 1
+                position_key = f"chol_hamoed_{dia_day}"
+                if position_key not in PESACH_READINGS:
+                    return None
+                position_data = PESACH_READINGS[position_key]
+                # Luach weekday overrides (shift readings forward when early Shabbos CH"M
+                # displaces day 1 or day 2):
+                #   Day 2 on Sunday  → read Day 1 content (קדש לי)
+                #   Day 3 on Monday  → read Day 2 content (אם כסף)
+                #   Day 4 on Tuesday → read Day 3 content (פסל לך)
+                # Display title stays position-based; only sifrei_torah is swapped.
+                override_key = None
+                if dia_day == 2 and wd == SUNDAY:
+                    override_key = "chol_hamoed_1"
+                elif dia_day == 3 and wd == MONDAY:
+                    override_key = "chol_hamoed_2"
+                elif dia_day == 4 and wd == TUESDAY:
+                    override_key = "chol_hamoed_3"
+                if override_key:
+                    override_data = PESACH_READINGS[override_key]
+                    data = {**position_data, "sifrei_torah": override_data["sifrei_torah"]}
+                    return {"key": position_key, "data": data}
+                return {"key": position_key, "data": position_data}
         if m == 1 and d == 21: return {"key": "shvii_pesach", "data": PESACH_READINGS["day_7"]}
         if m == 1 and d == 22 and self._diaspora: return {"key": "acharon_pesach", "data": PESACH_READINGS["day_8_diaspora"]}
         if m == 3 and d == 6: return {"key": "shavuos_1", "data": SHAVUOS_READINGS["day_1"]}
