@@ -114,18 +114,6 @@ class ParshaSensor(YidCalDevice, SensorEntity):
         today = date.today()
         self._last_calculated_date = today
 
-        # During the three regalim the week is identified by the holiday,
-        # not by a parsha — show empty.
-        hd_today = dates.GregorianDate(today.year, today.month, today.day).to_heb()
-        if self._is_during_regel(hd_today):
-            self._state = ""
-            self._attr_extra_state_attributes = {
-                "Next_Shabbos_Date": (today + timedelta(days=(5 - today.weekday()) % 7)).isoformat(),
-                "Diaspora": self._diaspora,
-            }
-            self.async_write_ha_state()
-            return
-
         # Find the next Saturday (weekday==5)
         offset = (5 - today.weekday()) % 7
         shabbat = today + timedelta(days=offset)
@@ -140,20 +128,8 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             # Join double parshiyos with a hyphen for your card formatting
             combined = heb.replace(", ", "-").strip()
 
-            # Check if this follows an א׳ week: previous Shabbos had no parsha
-            # AND that week had a regular Mon/Thu (i.e. it was an א׳ week).
-            suffix = ""
-            prev_shabbat = shabbat - timedelta(days=7)
-            prev_greg = dates.GregorianDate(prev_shabbat.year, prev_shabbat.month, prev_shabbat.day)
-            prev_indices = parshios.getparsha(prev_greg, israel=not self._diaspora)
-            if not prev_indices:
-                prev_hd = prev_greg.to_heb()
-                # Only add ב׳ if it wasn't Tishrei and the prev week had a regular Mon/Thu
-                if not (prev_hd.month == 7 and prev_hd.day >= 15):
-                    if self._has_regular_mon_thu(prev_shabbat):
-                        suffix = " ב׳"
-
-            self._state = f"פרשת {combined}{suffix}" if combined else ""
+            # Regular parsha - no suffix needed
+            self._state = f"פרשת {combined}" if combined else ""
         else:
             # Upcoming Shabbos has no parsha (Yom Tov).
             # Only show a parsha with א׳ if there's a regular Mon/Thu
