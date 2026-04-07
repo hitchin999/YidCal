@@ -15,6 +15,7 @@ from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
+from pyluach import dates
 from .zman_sensors import get_geo
 
 def _round_half_up(local_dt: datetime.datetime) -> datetime.datetime:
@@ -51,8 +52,25 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         self._include_date      = cfg.get("include_date", False)
         self._candle_offset     = cfg.get("candle_offset", 15)
         self._havdalah_offset = cfg.get("havdalah_offset", 72)
+        self._diaspora = cfg.get("diaspora", True)
         self._geo: GeoLocation | None = None
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+
+    def _is_during_regel(self, hd) -> bool:
+        """Return True if the Hebrew date falls during one of the three
+        regalim (Pesach, Shavuos, Sukkos) including Chol HaMoed and
+        Yom Tov Sheni — periods where the parsha name is suspended."""
+        m, d = hd.month, hd.day
+        last_pesach = 22 if self._diaspora else 21
+        last_sukkos = 23 if self._diaspora else 22
+        last_shavuos = 7 if self._diaspora else 6
+        if m == 1 and 15 <= d <= last_pesach:
+            return True
+        if m == 3 and 6 <= d <= last_shavuos:
+            return True
+        if m == 7 and 15 <= d <= last_sukkos:
+            return True
+        return False
 
     async def async_added_to_hass(self) -> None:
         """Register initial update and start once-per-minute polling."""
@@ -98,12 +116,16 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         if day and _ok(day.state):
             text = day.state.strip()
 
-        # 2) Parsha (suppress sentinel "None")
+        # 2) Parsha (suppress during regalim and sentinel "None")
         parsha = self.hass.states.get("sensor.yidcal_parsha")
         if parsha and _ok(parsha.state):
             ps = str(parsha.state).strip()
             if ps.lower() not in ("none", "פרשת none"):
-                text += f" {ps}"
+                # Check if we're during a regel - suppress parsha display
+                today = now.date()
+                hd_today = dates.GregorianDate(today.year, today.month, today.day).to_heb()
+                if not self._is_during_regel(hd_today):
+                    text += f" {ps}"
 
         # 3) Holiday — single state from sensor.yidcal_holiday
         hol = self.hass.states.get("sensor.yidcal_holiday")
