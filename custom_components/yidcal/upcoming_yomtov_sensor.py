@@ -197,7 +197,12 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         for j in range(1, 366):
             d2 = base_date + timedelta(days=j)
             if self._is_yomtov(d2):
-                nm = PHebrewDate.from_pydate(d2).holiday(hebrew=True) or ""
+                ph = PHebrewDate.from_pydate(d2)
+                nm = ph.holiday(hebrew=True) or ""
+                # Relabel the last days of Pesach (Nisan 21 = שביעי, Nisan 22 = אחרון)
+                # so the sensor distinguishes them from the first days of פסח.
+                if ph.month == 1 and ph.day in (21, 22):
+                    nm = "שביעי של פסח"
                 if nm:
                     next_yt_name, next_yt_date = nm, d2
                     break
