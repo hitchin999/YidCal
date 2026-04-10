@@ -337,10 +337,10 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Zman Netz HaChamah** (`sensor.yidcal_netz`) – sunrise
 * **Zman Alos HaShachar** (`sensor.yidcal_alos`) – dawn
 * **Zman Chatzos** (`sensor.yidcal_chatzos_hayom`) – halakhic midday
-* **Zman Shkiat HaChamah** (`sensor.yidcal_shkia`) – sunset
-* **Zman Maariv +60m** (`sensor.yidcal_zman_maariv_60`) – 60 min after sunset
-* **Zman Maariv R"T** (`sensor.yidcal_zman_maariv_rt`) – 72 min after sunset
-* **Zman Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset)
+* **Zman Shkiat HaChamah** (`sensor.yidcal_shkia`) – sunset. Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations keep reporting the current night's shkia through the night.
+* **Zman Maariv +60m** (`sensor.yidcal_zman_maariv_60`) – 60 min after sunset. Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations keep reporting the current night's value through the night.
+* **Zman Maariv R"T** (`sensor.yidcal_zman_maariv_rt`) – 72 min after sunset. Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations keep reporting the current night's value through the night.
+* **Zman Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset). Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations (e.g. "6 hours after Tzies Hakochavim") keep working through the night.
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
 * **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – halachic midnight (6 שעות זמניות from nightfall). Anchored to the halachic night: between civil midnight and עלות the sensor still shows the current night's חצות; transitions to the next night at עלות.
