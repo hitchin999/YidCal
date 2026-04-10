@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone, date as date_cls
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
@@ -33,17 +33,45 @@ class ZmanMaariv60Sensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
         self._geo: GeoLocation | None = None
+        self._unsub_alos = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        async_track_time_change(
-            self.hass, self._midnight_update, hour=0, minute=0, second=0
+        # recompute each day at Alos HaShachar (instead of civil midnight)
+        self._schedule_next_alos()
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub_alos is not None:
+            self._unsub_alos()
+            self._unsub_alos = None
+
+    def _compute_alos_local(self, base_date: date_cls) -> datetime:
+        """Alos HaShachar (MGA: sunrise - 72m) for base_date, in local tz."""
+        assert self._geo is not None
+        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
+        return (cal.sunrise() - timedelta(minutes=72)).astimezone(self._tz)
+
+    def _schedule_next_alos(self) -> None:
+        """Schedule the next async_update to fire at the next Alos HaShachar."""
+        if self._unsub_alos is not None:
+            self._unsub_alos()
+            self._unsub_alos = None
+        if not self._geo:
+            return
+        now_local = dt_util.now().astimezone(self._tz)
+        today = now_local.date()
+        next_alos = self._compute_alos_local(today)
+        if next_alos <= now_local:
+            next_alos = self._compute_alos_local(today + timedelta(days=1))
+        self._unsub_alos = async_track_point_in_time(
+            self.hass, self._alos_update, next_alos
         )
 
-    async def _midnight_update(self, now: datetime) -> None:
+    async def _alos_update(self, now: datetime) -> None:
         await self.async_update()
+        self._schedule_next_alos()
 
     def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
         """Maariv 60 for base_date = sunset(base_date) + 60m; ceil to minute."""
@@ -67,7 +95,16 @@ class ZmanMaariv60Sensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
         # local date
         now_local = (now or dt_util.now()).astimezone(self._tz)
-        today     = now_local.date()
+        today_civil = now_local.date()
+
+        # Treat the day as not yet rolled over until Alos HaShachar.
+        # This keeps last night's value stable for nighttime automations
+        # that run after civil midnight (e.g. summer 6h-after-tzeis automations).
+        today_alos = self._compute_alos_local(today_civil)
+        if now_local < today_alos:
+            today = today_civil - timedelta(days=1)
+        else:
+            today = today_civil
 
         # compute today / yesterday / tomorrow
         local_today_dt, full_iso_today = self._compute_for_date(today)
