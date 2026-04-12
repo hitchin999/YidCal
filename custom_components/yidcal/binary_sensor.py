@@ -724,7 +724,7 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             self._attr_is_on = False
             self._attr_extra_state_attributes = {
                 "Now": now.isoformat(),
-                "In_Window": False,
+                "In_Window": "false",
             }
             return
 
@@ -777,9 +777,9 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Upcoming_Festival_Name": upcoming_festival,
             "Window_Start": window_start.isoformat(),
             "Window_End": window_end.isoformat(),
-            "In_Window": in_window,
-            "Is_Yom_Tov": in_window and is_yt_cluster,
-            "Is_Shabbos": in_window and (festival_name == "שבת"),
+            "In_Window": str(bool(in_window)).lower(),
+            "Is_Yom_Tov": str(bool(in_window and is_yt_cluster)).lower(),
+            "Is_Shabbos": str(bool(in_window and (festival_name == "שבת"))).lower(),
             "Early_Shabbos_Map_Keys": list(eff_shabbos_map.keys()),
             "Early_YomTov_Map_Keys": list(eff_yomtov_map.keys()),
         }
