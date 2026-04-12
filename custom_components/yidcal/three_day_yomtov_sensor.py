@@ -172,8 +172,8 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
 
                         shabbos_first = self._shabbos_first(d)
                         self._attr_extra_state_attributes = {
-                            'שבת ואח"כ יום טוב': shabbos_first and is_on,
-                            'יום טוב ואח"כ שבת': (not shabbos_first) and is_on,
+                            'שבת ואח"כ יום טוב': str(bool(shabbos_first and is_on)).lower(),
+                            'יום טוב ואח"כ שבת': str(bool((not shabbos_first) and is_on)).lower(),
                         }
                         found = True
                         break
@@ -186,6 +186,6 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         if not found:
             self._attr_is_on = False
             self._attr_extra_state_attributes = {
-                'שבת ואח"כ יום טוב': False,
-                'יום טוב ואח"כ שבת': False,
+                'שבת ואח"כ יום טוב': "false",
+                'יום טוב ואח"כ שבת': "false",
             }
