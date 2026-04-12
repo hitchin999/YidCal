@@ -12,6 +12,8 @@ DEFAULT_TALLIS_TEFILIN_OFFSET = 22
 CONF_INCLUDE_DATE = "include_date"
 DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 CONF_INCLUDE_ATTR_SENSORS = "include_attribute_sensors"
+CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL = "include_sefirah_short_in_full"
+DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL = False
 CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"  # keep key name as-is
 CONF_SLICHOS_LABEL_ROLLOVER = "slichos_label_rollover"
 DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
@@ -150,6 +152,10 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
+                    vol.Optional(
+                        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+                        default=DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+                    ): bool,
                     vol.Optional(CONF_ENABLE_MULTIDAY_CANDLES, default=DEFAULT_ENABLE_MULTIDAY_CANDLES): bool,
                     vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=DEFAULT_ENABLE_DAF_HAYOMI): bool,
                     vol.Optional(
@@ -317,6 +323,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     }),
                     vol.Optional(CONF_INCLUDE_DATE, default=get(CONF_INCLUDE_DATE, False)): bool,
                     vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=get(CONF_INCLUDE_ATTR_SENSORS, True)): bool,
+                    vol.Optional(
+                        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+                        default=get(
+                            CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+                            DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+                        ),
+                    ): bool,
                     vol.Optional(CONF_ENABLE_MULTIDAY_CANDLES, default=get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES)): bool,
                     vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI)): bool,
                     vol.Optional(
