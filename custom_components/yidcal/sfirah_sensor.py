@@ -153,3 +153,29 @@ class SefirahCounterMiddos(BaseSefirahSensor):
 
     def _get_text(self) -> str:
         return self._helper.get_middos_text()
+
+
+class SefirahCounterShort(BaseSefirahSensor):
+    """Sensor for the short Sefirah count (e.g. 'ח׳ בעומר')."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        helper: SfirahHelper,
+        strip_nikud: bool,
+        havdalah_offset: int,
+    ) -> None:
+        slug = "sefirah_counter_short"
+        super().__init__(
+            hass,
+            helper,
+            "Sefirah Counter Short",
+            f"yidcal_{slug}",
+            strip_nikud,
+            havdalah_offset,
+        )
+        # Correct domain for a SensorEntity
+        self.entity_id = f"sensor.yidcal_{slug}"
+
+    def _get_text(self) -> str:
+        return self._helper.get_sefirah_short_text()
