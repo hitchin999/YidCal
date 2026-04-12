@@ -30,7 +30,7 @@ from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .yidcal_lib.helper import YidCalHelper, MoladDetails
 from .yidcal_lib.sfirah_helper import SfirahHelper
-from .sfirah_sensor import SefirahCounter, SefirahCounterMiddos
+from .sfirah_sensor import SefirahCounter, SefirahCounterMiddos, SefirahCounterShort
 from .special_shabbos_sensor import SpecialShabbosSensor
 from .parsha_sensor import ParshaSensor
 from .date_sensor import DateSensor, ChodeshSensor, YomLChodeshSensor
@@ -209,6 +209,7 @@ async def async_setup_entry(
         SpecialShabbosSensor(),
         SefirahCounter(hass, sfirah_helper, strip_nikud, havdalah_offset),
         SefirahCounterMiddos(hass, sfirah_helper, strip_nikud, havdalah_offset),
+        SefirahCounterShort(hass, sfirah_helper, strip_nikud, havdalah_offset),
         RoshChodeshToday(hass, yidcal_helper, havdalah_offset),
         ParshaSensor(hass),
         DateSensor(hass, havdalah_offset),
