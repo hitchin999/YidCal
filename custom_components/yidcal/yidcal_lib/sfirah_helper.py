@@ -126,6 +126,42 @@ SEFIRA_MIDDOS = [
   "מַלְכוּת שֶׁבְּמַלְכוּת"
 ]
 
+# Hebrew gematria letters for Sefirah short form (e.g. ח׳ בעומר, ל"ג בעומר)
+_GEMATRIA_UNITS = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"]
+_GEMATRIA_TENS = ["", "י", "כ", "ל", "מ"]  # 10, 20, 30, 40 — enough for 1..49
+
+
+def _int_to_gematria(n: int) -> str:
+    """Convert an integer 1..49 to its Hebrew gematria representation.
+
+    Single-letter values get a geresh (׳); multi-letter values get a
+    gershayim ("). Special cases 15→ט״ו and 16→ט״ז are handled to avoid
+    spelling a Divine Name.
+    """
+    if n <= 0 or n > 49:
+        return ""
+    if n == 15:
+        return "ט\"ו"
+    if n == 16:
+        return "ט\"ז"
+    tens = n // 10
+    units = n % 10
+    t = _GEMATRIA_TENS[tens]
+    u = _GEMATRIA_UNITS[units]
+    if tens == 0:
+        return f"{u}׳"
+    if units == 0:
+        return f"{t}׳"
+    return f'{t}"{u}'
+
+
+# Texts for short Sefirah Counter (e.g. "ח׳ בעומר")
+# Index 0 mirrors the long form title for when Omer isn't active.
+SEFIRA_SHORT: list[str] = ["ספירת העומר"] + [
+    f"{_int_to_gematria(i)} בעומר" for i in range(1, 50)
+]
+
+
 def _round_ceil(dt: datetime) -> datetime:
     """Always bump to next minute (matches Motzi-style boundaries)."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
@@ -207,3 +243,7 @@ class SfirahHelper:
 
     def get_middos_text(self) -> str:
         return SEFIRA_MIDDOS[self.get_effective_omer_day()]
+
+    def get_sefirah_short_text(self) -> str:
+        """Short Sefirah text, e.g. 'ח׳ בעומר' or 'ל\"ג בעומר'."""
+        return SEFIRA_SHORT[self.get_effective_omer_day()]
