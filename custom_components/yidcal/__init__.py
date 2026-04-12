@@ -15,6 +15,8 @@ from .config_flow import (
     # General / existing
     CONF_INCLUDE_ATTR_SENSORS,
     CONF_INCLUDE_DATE,
+    CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+    DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
     CONF_ENABLE_WEEKLY_YURTZEIT,  # (keep existing key name & behavior)
     CONF_SLICHOS_LABEL_ROLLOVER,
     CONF_UPCOMING_LOOKAHEAD_DAYS,
@@ -263,6 +265,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_INCLUDE_DATE,
         initial.get(CONF_INCLUDE_DATE, False),
     )
+    include_sefirah_short_in_full = opts.get(
+        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+        initial.get(
+            CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+            DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+        ),
+    )
     enable_weekly = opts.get(
         CONF_ENABLE_WEEKLY_YURTZEIT,
         initial.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
@@ -421,6 +430,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_HAFTORAH_MINHAG: haftorah_minhag,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
+        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL: include_sefirah_short_in_full,
         # Yurtzeit new fields
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
         CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
@@ -464,6 +474,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
         "include_date": include_date,
+        "include_sefirah_short_in_full": include_sefirah_short_in_full,
         "havdalah_offset": havdala,
         CONF_HAFTORAH_MINHAG: haftorah_minhag,
         # Yurtzeit new fields (so sensors can read them directly if desired)
@@ -534,6 +545,13 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     include_date = opts.get(
         CONF_INCLUDE_DATE,
         initial.get(CONF_INCLUDE_DATE, False),
+    )
+    include_sefirah_short_in_full = opts.get(
+        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+        initial.get(
+            CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+            DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+        ),
     )
     enable_weekly = opts.get(
         CONF_ENABLE_WEEKLY_YURTZEIT,
@@ -649,6 +667,7 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_HAFTORAH_MINHAG: haftorah_minhag,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
+        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL: include_sefirah_short_in_full,
         # Yurtzeit new fields
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
         CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
