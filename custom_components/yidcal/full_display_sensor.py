@@ -50,6 +50,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         cfg = hass.data[DOMAIN]["config"]
         self._day_label_language = cfg.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE)
         self._include_date      = cfg.get("include_date", False)
+        self._include_sefirah_short = cfg.get("include_sefirah_short_in_full", False)
         self._candle_offset     = cfg.get("candle_offset", 15)
         self._havdalah_offset = cfg.get("havdalah_offset", 72)
         self._diaspora = cfg.get("diaspora", True)
@@ -224,7 +225,18 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
             ):
                 text += f" ~ {rosh.state.strip()}"
 
-        # 6) Optional “today’s date”
+        # 6) Optional Sefirah Counter (Short) — e.g. "ח׳ בעומר"
+        # Skipped on ל"ג בעומר and מוצאי ל"ג בעומר (already shown by the
+        # holiday sensor) — the "בעומר" substring check covers both.
+        if self._include_sefirah_short and "בעומר" not in text:
+            sef_short = self.hass.states.get("sensor.yidcal_sefirah_counter_short")
+            if sef_short and _ok(sef_short.state):
+                sstate_short = str(sef_short.state).strip()
+                # Only show when we're actually counting (skip the day-0 title)
+                if sstate_short and sstate_short != "ספירת העומר":
+                    text += f" ~ {sstate_short}"
+
+        # 7) Optional “today’s date”
         if self._include_date:
             date_ent = self.hass.states.get("sensor.yidcal_date")
             if date_ent and _ok(date_ent.state):
