@@ -71,9 +71,11 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         self._attr_extra_state_attributes = {
             "Activation_Logic": (
-                "Shows on Thu if upcoming Rosh Chodesh is Fri (1 day) "
-                "or Fri/Sat (2 days). Shows on Wed if upcoming Rosh Chodesh "
-                "is Thu/Fri (2 days). Excludes Tishrei except the Elul→Tishrei overlap."
+                "When Friday is Rosh Chodesh but Thursday is not: "
+                "shows Wed Alos through Thu havdalah (nails cut Thu "
+                "grow back on Shabbos). When Thu/Fri are both RC: "
+                "shows Wed only (Alos–havdalah). Excludes Tishrei "
+                "except the Elul→Tishrei overlap."
             ),
         }
 
@@ -156,10 +158,16 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         return [first_day], year, month
 
-    def _compute_reminder_day(
+    def _compute_reminder_days(
         self, rc_gdays: list[date], rc_month: int
-    ) -> date | None:
-        """Determine which Gregorian day should show the reminder, or None."""
+    ) -> tuple[date, date] | None:
+        """Return (window_start_day, window_end_day) or None.
+
+        Nail-cutting minhag: nails cut on Thursday grow back on Shabbos,
+        so when Friday is RC but Thursday is NOT, the window starts
+        Wednesday and extends through Thursday havdalah.  When Thursday
+        IS also RC (Thu/Fri pattern), Wednesday only.
+        """
 
         # Exclude "pure Tishrei" RC,
         # but allow Elul→Tishrei overlap (30 Elul + 1 Tishrei).
@@ -170,32 +178,37 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         wds = [d.weekday() for d in rc_gdays]  # Mon=0..Sun=6
 
-        # 1-day RC on Friday -> show Thursday
+        # 1-day RC on Friday -> Wed..Thu (Thu not RC)
         if len(rc_gdays) == 1 and wds[0] == 4:
-            return rc_gdays[0] - timedelta(days=1)
+            fri = rc_gdays[0]
+            return (fri - timedelta(days=2), fri - timedelta(days=1))
 
         # 2-day patterns
         if len(rc_gdays) == 2:
-            # Fri/Sat RC -> show Thursday
+            # Fri/Sat RC -> Wed..Thu (Thu not RC)
             if wds[0] == 4 and wds[1] == 5:
-                return rc_gdays[0] - timedelta(days=1)
-            # Thu/Fri RC -> show Wednesday
+                fri = rc_gdays[0]
+                return (fri - timedelta(days=2), fri - timedelta(days=1))
+            # Thu/Fri RC -> Wed only (Thu IS RC, can cut that day)
             if wds[0] == 3 and wds[1] == 4:
-                return rc_gdays[0] - timedelta(days=1)
+                wed = rc_gdays[0] - timedelta(days=1)
+                return (wed, wed)
 
         return None
 
-    def _window_for_day(self, d: date) -> tuple[datetime, datetime]:
-        """Return (rounded_start, rounded_end) for reminder day d."""
-        ws_raw = self._alos(d)
-        we_raw = self._sunset(d) + timedelta(minutes=self._havdalah_offset)
+    def _window_for_days(
+        self, start_day: date, end_day: date
+    ) -> tuple[datetime, datetime]:
+        """Return (rounded Alos of start_day, rounded havdalah of end_day)."""
+        ws_raw = self._alos(start_day)
+        we_raw = self._sunset(end_day) + timedelta(minutes=self._havdalah_offset)
         return _round_half_up(ws_raw), _round_ceil(we_raw)
 
     def _next_window_after(self, ref_local: datetime):
         """
         Find the next reminder window (or current one if we're inside it).
         Scans forward ~½ year.
-        Returns (start_dt, end_dt, reminder_date) rounded.
+        Returns (start_dt, end_dt, start_day) rounded.
         """
         ref_date = ref_local.date()
 
@@ -204,14 +217,15 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
             try:
                 rc_gdays, _rc_year, rc_month = self._get_upcoming_rosh_chodesh_gdays(d)
-                reminder_day = self._compute_reminder_day(rc_gdays, rc_month)
+                result = self._compute_reminder_days(rc_gdays, rc_month)
             except Exception:
                 continue
 
-            if reminder_day != d:
+            # Only trigger on the start day of the window
+            if not result or result[0] != d:
                 continue
 
-            ws, we = self._window_for_day(d)
+            ws, we = self._window_for_days(result[0], result[1])
 
             # If this window isn't fully in the past, it's the next one (or current)
             if we > ref_local:
@@ -230,7 +244,7 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         try:
             rc_gdays, rc_year, rc_month = self._get_upcoming_rosh_chodesh_gdays(today)
-            reminder_day = self._compute_reminder_day(rc_gdays, rc_month)
+            result = self._compute_reminder_days(rc_gdays, rc_month)
         except Exception as e:
             _LOGGER.error("FridayIsRoshChodesh update failed: %s", e)
             self._attr_native_value = ""
@@ -240,10 +254,12 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
         window_end = None
         active = False
 
-        # Only show current Window_* if TODAY is the reminder day
-        if reminder_day == today:
-            window_start, window_end = self._window_for_day(today)
-            active = window_start <= now_local < window_end
+        # Check if today falls within the reminder window
+        if result:
+            start_day, end_day = result
+            if start_day <= today <= end_day:
+                window_start, window_end = self._window_for_days(start_day, end_day)
+                active = window_start <= now_local < window_end
 
         self._attr_native_value = NAILS_TEXT if active else ""
 
@@ -252,12 +268,8 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         self._attr_extra_state_attributes.update(
             {
-                #"Window_Start": window_start.isoformat() if window_start else "",
-                #"Window_End": window_end.isoformat() if window_end else "",
-
                 "Next_Window_Start": next_ws.isoformat() if next_ws else "",
                 "Next_Window_End": next_we.isoformat() if next_we else "",
-                #"Next_Reminder_Day": next_day.isoformat() if next_day else "",
 
                 "Active_Window_Today": active,
             }
