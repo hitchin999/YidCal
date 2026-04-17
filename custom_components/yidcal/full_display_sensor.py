@@ -190,12 +190,26 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                             if "פורים משולש" in sstate:
                                 # For Purim Meshulash, only after (rounded) candles
                                 show_special = now >= candle
+                            elif "שבת ראש חודש" in sstate:
+                                # If today IS Rosh Chodesh, delay שבת ראש חודש
+                                # until candle lighting so the actual RC keeps showing
+                                rc_ent = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
+                                if rc_ent and _ok(rc_ent.state) and rc_ent.state != "Not Rosh Chodesh Today":
+                                    show_special = now >= candle
+                                else:
+                                    show_special = (now.hour >= 12) or (now >= candle)
                             else:
                                 # Normal years: from 12:00 or candles, whichever first
                                 show_special = (now.hour >= 12) or (now >= candle)
                     else:
                         if "פורים משולש" in sstate:
                             show_special = False
+                        elif "שבת ראש חודש" in sstate:
+                            rc_ent = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
+                            if rc_ent and _ok(rc_ent.state) and rc_ent.state != "Not Rosh Chodesh Today":
+                                show_special = False
+                            else:
+                                show_special = now.hour >= 12
                         else:
                             show_special = now.hour >= 12
 
