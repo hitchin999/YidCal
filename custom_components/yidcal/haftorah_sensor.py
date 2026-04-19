@@ -784,6 +784,16 @@ class HaftorahResolver:
             # direct mapping suffix -> id
             return str(rule), f"parsha:{suffix}", extra
 
+        # Combined parsha fallback: use the second (last) parsha's haftarah
+        if len(slugs) > 1:
+            rule = self._rule_by_suffix.get(slugs[-1])
+            if isinstance(rule, dict):
+                hid = rule.get("haftarah_id") or rule.get("id")
+                if hid:
+                    return str(hid), f"parsha:{slugs[-1]}", extra
+            elif rule is not None:
+                return str(rule), f"parsha:{slugs[-1]}", extra
+
         extra["weekly_rule_missing_for_suffix"] = suffix
         return None, None, extra
 
