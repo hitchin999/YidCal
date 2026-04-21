@@ -480,6 +480,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `ווען זאל זיך די סליחות טאג טוישן`                         | `זמן הבדלה` | When the Selichos label advances: `havdalah` (after sunset + offset) or `midnight` (12 AM).                                             |
 | `Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די`   | `2`         | How many **halachic days** ahead Upcoming Holiday pre-activates (range **1–14**). Updates nightly at **12:02 AM** and respects offsets. |
 | `הפטרה סענסאר מנהג`                                        | `אשכנזי`    | Choose the minhag used for the Haftorah sensor: `אשכנזי` or `ספרדי`.                                                                   |
+| `פרשת מצורע אדער פרשת טהרה`                                | `מצורע`     | How parshas **מצורע** is displayed in the Parsha sensor: `מצורע` (default) or `טהרה`. Applies both standalone and in `תזריע-מצורע`. `אחרי מות` is always shortened to `אחרי`. |
 | `?ליינט מען קרבנות אום שלוש עשרה מדות`                     | `false`     | Include **קרבנות** in the Krias HaTorah sensor at מנחה on **שלוש עשרה מדות** days if your shul leins it from the בימה.                |
 | `?ליינט מען משנה תורה הושענא רבה ביינאכט`                  | `false`     | Include **משנה תורה** in the Krias HaTorah sensor for **הושענא רבה ביינאכט** if your minhag is to lein it (not just say it privately). |
 
