@@ -32,6 +32,11 @@ DEFAULT_ENABLE_MULTIDAY_CANDLES = False
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
 DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
 
+# ============ Parsha Metzora display (NEW) ============
+# "metzora" (default) shows "מצורע"; "tahara" shows "טהרה".
+CONF_PARSHA_METZORA_DISPLAY = "parsha_metzora_display"
+DEFAULT_PARSHA_METZORA_DISPLAY = "metzora"
+
 # ============ New Yurtzeit keys ============
 CONF_ENABLE_YURTZEIT_DAILY = "enable_yurtzeit_daily"
 CONF_YURTZEIT_DATABASES = "yurtzeit_databases"
@@ -136,6 +141,17 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "options": [
                                 {"value": "ashkenazi", "label": "אשכנזי"},
                                 {"value": "sephardi",  "label": "ספרדי"},
+                            ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_PARSHA_METZORA_DISPLAY,
+                        default=DEFAULT_PARSHA_METZORA_DISPLAY,
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "metzora", "label": "מצורע"},
+                                {"value": "tahara",  "label": "טהרה"},
                             ]
                         }
                     }),
@@ -307,6 +323,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             "options": [
                                 {"value": "ashkenazi", "label": "אשכנזי"},
                                 {"value": "sephardi",  "label": "ספרדי"},
+                            ]
+                        }
+                    }),
+                    vol.Optional(
+                        CONF_PARSHA_METZORA_DISPLAY,
+                        default=get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
+                    ): selector({
+                        "select": {
+                            "options": [
+                                {"value": "metzora", "label": "מצורע"},
+                                {"value": "tahara",  "label": "טהרה"},
                             ]
                         }
                     }),
