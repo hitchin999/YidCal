@@ -28,6 +28,14 @@ class ParshaSensor(YidCalDevice, SensorEntity):
         # Respect integration setting (default diaspora=True if missing)
         cfg = getattr(hass.data.get(DOMAIN, {}), "get", lambda *_: {})("config") if hasattr(hass.data.get(DOMAIN, {}), "get") else hass.data.get(DOMAIN, {}).get("config", {})
         self._diaspora: bool = (cfg.get("diaspora", True) if isinstance(cfg, dict) else True)
+        # Display option for parshas Metzora / Tazria-Metzora:
+        #   "metzora" (default) → show "מצורע"
+        #   "tahara"            → show "טהרה"
+        self._metzora_display: str = (
+            cfg.get("parsha_metzora_display", "metzora")
+            if isinstance(cfg, dict)
+            else "metzora"
+        )
         self._attr_extra_state_attributes = {}
 
     async def async_added_to_hass(self) -> None:
@@ -109,6 +117,24 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             return True
         return False
 
+    def _apply_display_overrides(self, combined: str) -> str:
+        """Apply Parsha display-name overrides.
+
+        - Always: shorten "אחרי מות" to "אחרי" (both standalone and double,
+          e.g. "אחרי מות-קדושים" → "אחרי-קדושים").
+        - When the config option ``parsha_metzora_display`` is set to
+          ``"tahara"``: replace "מצורע" with "טהרה" (both standalone and
+          double, e.g. "תזריע-מצורע" → "תזריע-טהרה").
+        """
+        if not combined:
+            return combined
+        # Always shorten "אחרי מות" → "אחרי"
+        combined = combined.replace("אחרי מות", "אחרי")
+        # Optional: "מצורע" → "טהרה"
+        if self._metzora_display == "tahara":
+            combined = combined.replace("מצורע", "טהרה")
+        return combined
+
     async def _update_state(self) -> None:
         """Recompute which Parsha applies based on the upcoming Shabbat."""
         today = date.today()
@@ -127,6 +153,8 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             heb = parshios.getparsha_string(greg, israel=not self._diaspora, hebrew=True) or ""
             # Join double parshiyos with a hyphen for your card formatting
             combined = heb.replace(", ", "-").strip()
+            # Apply display-name overrides
+            combined = self._apply_display_overrides(combined)
 
             # Regular parsha - no suffix needed
             self._state = f"פרשת {combined}" if combined else ""
@@ -149,6 +177,8 @@ class ParshaSensor(YidCalDevice, SensorEntity):
                     if scan_indices:
                         heb = parshios.getparsha_string(scan_greg, israel=not self._diaspora, hebrew=True) or ""
                         combined = heb.replace(", ", "-").strip()
+                        # Apply display-name overrides
+                        combined = self._apply_display_overrides(combined)
                         self._state = f"פרשת {combined} א׳" if combined else ""
                         found = True
                         break
