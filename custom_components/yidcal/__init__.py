@@ -26,6 +26,9 @@ from .config_flow import (
     # Haftorah Minhag (NEW)
     CONF_HAFTORAH_MINHAG,
     DEFAULT_HAFTORAH_MINHAG,
+    # Parsha Metzora display (NEW)
+    CONF_PARSHA_METZORA_DISPLAY,
+    DEFAULT_PARSHA_METZORA_DISPLAY,
     # NEW Yurtzeit
     CONF_ENABLE_YURTZEIT_DAILY,
     CONF_YURTZEIT_DATABASES,
@@ -257,6 +260,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_HAFTORAH_MINHAG,
         initial.get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
     )
+    parsha_metzora_display = opts.get(
+        CONF_PARSHA_METZORA_DISPLAY,
+        initial.get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
+    )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
         initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
@@ -428,6 +435,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
         CONF_HAFTORAH_MINHAG: haftorah_minhag,
+        CONF_PARSHA_METZORA_DISPLAY: parsha_metzora_display,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
         CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL: include_sefirah_short_in_full,
@@ -477,6 +485,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "include_sefirah_short_in_full": include_sefirah_short_in_full,
         "havdalah_offset": havdala,
         CONF_HAFTORAH_MINHAG: haftorah_minhag,
+        CONF_PARSHA_METZORA_DISPLAY: parsha_metzora_display,
         # Yurtzeit new fields (so sensors can read them directly if desired)
         CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
         CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
@@ -537,6 +546,10 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     haftorah_minhag = opts.get(
         CONF_HAFTORAH_MINHAG,
         initial.get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
+    )
+    parsha_metzora_display = opts.get(
+        CONF_PARSHA_METZORA_DISPLAY,
+        initial.get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
     )
     include_attrs = opts.get(
         CONF_INCLUDE_ATTR_SENSORS,
@@ -665,6 +678,7 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         "tallis_tefilin_offset": tallis,
         "day_label_language": day_label,
         CONF_HAFTORAH_MINHAG: haftorah_minhag,
+        CONF_PARSHA_METZORA_DISPLAY: parsha_metzora_display,
         CONF_INCLUDE_ATTR_SENSORS: include_attrs,
         CONF_INCLUDE_DATE: include_date,
         CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL: include_sefirah_short_in_full,
