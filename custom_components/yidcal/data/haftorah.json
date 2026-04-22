@@ -396,6 +396,10 @@
       ],
       "from_weekly_mapping": true,
       "id": "31",
+      "minhag": {
+        "ashkenazi": "הלא כבני כשיים (עמוס ט)",
+        "sephardi": "ויהי בשנה השביעית (יחזקאל כ)"
+      },
       "minhag_note": "Ashkenazi: #31a (Halo Kivnei Kushiim), Sephardi: #31b (Vayehi BaShana)",
       "name_english": "Halo Kivnei Kushiim / Vayehi BaShana HaShevi'it",
       "name_hebrew": "הלא כבני כשיים (א) / ויהי בשנה השביעית (ס)",
