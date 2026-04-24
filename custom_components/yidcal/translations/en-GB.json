@@ -15,8 +15,8 @@
           "candlelighting_offset": "Minutes before sunset for candle lighting",
           "havdalah_offset": "Minutes after sunset for Havdalah",
           "tallis_tefilin_offset": "Minutes after dawn for tallis & tefilin",
-					"korbanos_yud_gimmel_midos": "Is Korbanos read at Mincha on Shlosh Esrei Middos?",
-					"mishne_torah_hoshana_rabba": "Is Mishneh Torah read on the night of Hoshana Rabba?",
+          "korbanos_yud_gimmel_midos": "Is Korbanos read at Mincha on Shlosh Esrei Middos?",
+          "mishne_torah_hoshana_rabba": "Is Mishneh Torah read on the night of Hoshana Rabba?",
           "day_label_language": "Day label language for the Full Display sensor",
           "include_date": "Include Hebrew date on the Full Display sensor",
           "haftorah_minhag": "Haftorah sensor minhag",
@@ -62,8 +62,8 @@
           "candlelighting_offset": "Minutes before sunset for candle lighting",
           "havdalah_offset": "Minutes after sunset for Havdalah",
           "tallis_tefilin_offset": "Minutes after dawn for tallis & tefilin",
-					"korbanos_yud_gimmel_midos": "Is Korbanos read at Mincha on Shlosh Esrei Middos?",
-					"mishne_torah_hoshana_rabba": "Is Mishneh Torah read on the night of Hoshana Rabba?",
+          "korbanos_yud_gimmel_midos": "Is Korbanos read at Mincha on Shlosh Esrei Middos?",
+          "mishne_torah_hoshana_rabba": "Is Mishneh Torah read on the night of Hoshana Rabba?",
           "day_label_language": "Day label language for the Full Display sensor",
           "include_date": "Include Hebrew date on the Full Display sensor",
           "haftorah_minhag": "Haftorah sensor minhag",
@@ -74,10 +74,12 @@
           "enable_daf_hayomi": "Create Daf HaYomi sensor",
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
-          "time_format": "Time format (For Simple Zmanim only)"
+          "time_format": "Time format (For Simple Zmanim only)",
+          "enable_zmanim_lookup": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service"
         },
         "data_description": {
-          "enable_multiday_candles": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night"
+          "enable_multiday_candles": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night",
+          "enable_zmanim_lookup": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label."
         }
       },
       "yurtzeit": {
