@@ -1,0 +1,54 @@
+# YidCal services
+#
+# Services are only functional when their corresponding toggle is
+# enabled in the YidCal integration options. If you don't see the
+# yidcal.check_zmanim service do anything, enable "Zmanim Lookup" in
+# Settings → Devices & Services → YidCal → Configure → General.
+
+check_zmanim:
+  name: Check Zmanim
+  description: >
+    Look up the zmanim for up to 5 Gregorian dates and publish them to
+    sensor.yidcal_zmanim_lookup. The sensor state becomes a Hebrew
+    label for the primary date (e.g. 'לשבת פרשת פנחס', 'לפסח א׳',
+    'לפורים'), and the attributes contain all daily zmanim for each
+    date. Useful for planning across a Yom Tov plus the following
+    Shabbos. All dates must be within ±100 years of today.
+  fields:
+    date:
+      name: Date
+      description: >
+        The primary Gregorian date to look up. Its label becomes the
+        sensor's state, and its zmanim appear as un-suffixed attributes.
+      required: true
+      example: "2026-05-22"
+      selector:
+        date:
+    date_2:
+      name: Date 2 (optional)
+      description: >
+        A second date. Its zmanim appear as attributes suffixed with
+        "_2", along with a Label_2 showing its Hebrew day label.
+      required: false
+      example: "2026-05-23"
+      selector:
+        date:
+    date_3:
+      name: Date 3 (optional)
+      description: A third date (suffix "_3").
+      required: false
+      example: "2026-05-30"
+      selector:
+        date:
+    date_4:
+      name: Date 4 (optional)
+      description: A fourth date (suffix "_4").
+      required: false
+      selector:
+        date:
+    date_5:
+      name: Date 5 (optional)
+      description: A fifth date (suffix "_5").
+      required: false
+      selector:
+        date:
