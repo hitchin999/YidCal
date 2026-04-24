@@ -196,7 +196,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) i.e.: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Perek Avos**: current Perek rendered in אבות פרק ה׳
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
-* **Tal U’Matar** (`sensor.yidcal_tal_umatar`) Indicates when to change the prayer between “V’sen Tal u’Matar”/“V’sen Beracha”
+* **Tal U'Matar** (`sensor.yidcal_tal_umatar`) Indicates when to change the prayer between `ותן טל ומטר` and `ותן ברכה`. In Diaspora, switches at Ma'ariv of Dec 4 (or Dec 5 in the year *before* a Gregorian leap year, e.g. 2019, 2023, 2027, 2031) and stays on `ותן ברכה` from first night of Pesach through the summer.
 * **No Music** (`binary_sensor.yidcal_no_music`) Indicates when music is prohibited (e.g., in Sefirah, Three Weeks)
 * **Upcoming Shabbos Mevorchim** (`binary_sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim
 * **Shabbos Mevorchim** (`binary_sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim
@@ -354,6 +354,92 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 > Note: You may see some sensors with “Simple” attributes (Today/Tomorrow/Yesterday). Those are affected by the **Simple Zmanim time format** option below.
 
+### Upcoming Shabbos Zmanim
+
+* **Upcoming Shabbos Zmanim** (`sensor.yidcal_upcoming_shabbos_zmanim`) — daily zmanim for the upcoming Shabbos at a glance.
+
+  * **State:** Hebrew label for the upcoming Shabbos. Examples:
+    * `לשבת פרשת אחרי-קדושים` — a regular Shabbos
+    * `לשבת פרשת נצבים - שבת שובה` — Shabbos with a special name (שבת הגדול, שבת שובה, מברכים חודש…)
+    * `לשבת חול המועד פסח` / `לשבת חול המועד סוכות` — Shabbos Chol HaMoed
+  * **Rollover:** freezes on Saturday itself and advances to the next week's Shabbos at **12:00 AM Sunday**.
+  * **Attributes:** all daily zmanim for that Saturday, in chronological order:
+    עלות השחר → זמן טלית ותפילין → הנץ החמה → סוף זמן קריאת שמע מג״א → סוף זמן קריאת שמע גר״א → סוף זמן תפילה מג״א → סוף זמן תפילה גר״א → חצות היום → מנחה גדולה → מנחה קטנה → פלג המנחה גר״א → פלג המנחה מג״א → שקיעת החמה → צאת הכוכבים → זמן מעריב 60 → חצות הלילה. Also includes `Shabbos_Date`.
+  * **Note:** Candle lighting and Motzi are intentionally omitted — use `sensor.yidcal_zman_erev` and `sensor.yidcal_zman_motzi` for those.
+
+### Upcoming Yom Tov Zmanim
+
+* **Upcoming Yom Tov Zmanim** (`sensor.yidcal_upcoming_yomtov_zmanim`) — daily zmanim for the next Yom Tov block, split per day.
+
+  * **State** (diaspora / Israel aware):
+    * `לימים ראשונים של פסח` / `ליום ראשון של פסח`
+    * `לשביעי ואחרון של פסח` / `לשביעי של פסח`
+    * `לשבועות`
+    * `לראש השנה`
+    * `ליום כיפור`
+    * `לסוכות`
+    * `לשמיני עצרת ושמחת תורה`
+  * **Rollover:** stays on the current block through its final Motzei Yom Tov and advances to the next block at **12:00 AM** the next civil day.
+  * **Attributes:** empty-value headers `יו״ט א׳` and `יו״ט ב׳` divide the block. Each day has its own set of daily zmanim (same chronological order as the Shabbos sensor), prefixed by the header for uniqueness. Israel single-day blocks produce Day 1 only. Also includes `Block_Start_Date` and `Block_Days`.
+
+### Zmanim Lookup *(optional)*
+
+> Requires enabling **"Create the Zmanim Lookup sensor and yidcal.check_zmanim service"** in General options (options-only; not shown during initial setup).
+
+* **Zmanim Lookup** (`sensor.yidcal_zmanim_lookup`) — on-demand zmanim for up to **5 dates** in a single service call.
+
+  * **State** (after a lookup) — a Hebrew label describing the **primary** date (the first one passed to the service). Examples:
+    * `ליום ד׳ פרשת אחרי-קדושים` — regular weekday (weekday name + upcoming parsha)
+    * `לשבת פרשת פנחס` — regular Shabbos
+    * `לשבת פרשת נצבים - שבת שובה` — Shabbos with a special name
+    * `לשבת חול המועד פסח` / `לשבת חול המועד סוכות` — Shabbos Chol HaMoed
+    * `לפסח א׳`, `לראש השנה ב׳`, `ליום כיפור`, `לשמיני עצרת`, `לשמחת תורה`
+    * `לא׳ דחול המועד פסח`, `לב׳ דחול המועד סוכות`
+    * `לשביעי של פסח`, `לאחרון של פסח`, `להושענא רבה`
+    * `לערב פסח`, `לערב שבועות`, `לערב ראש השנה`, `לערב יום כיפור`, `לערב סוכות` — the day before a major Yom Tov
+    * `לפורים`, `לשושן פורים`, `לחנוכה א׳`, `לתענית אסתר`
+    * `לי״ז בתמוז`, `לט׳ באב`, `לי׳ בטבת`, `לצום גדליה`
+    * `לל״ג בעומר`, `לט״ו בשבט`
+    * `לראש חודש סיון` (etc.)
+
+  * **Attributes** (primary date — no suffix):
+    * `Lookup_Date` — the date looked up, formatted as `"Wed, 2026-05-20"` (day-of-week + ISO).
+    * `הדלקת נרות` — *only present when the date has a before-sunset candle-lighting*: Erev Shabbos, Erev Yom Tov (weekday), or a Yom Tov day when the next day is Shabbos (the "Shabbos as 2nd/3rd day" case in a multi-day span).
+    * `מוצאי שבת` or `מוצאי יום טוב` — *only present when the date is inside or the Erev of a no-melucha block*. For multi-day spans (2-day or 3-day), this is always the **final** day's havdalah. Label follows the block's last day: YT wins over Shabbos when both apply (matches the Zman-app convention of "מוציו״ט").
+    * `סוף זמן אכילת חמץ` and `סוף זמן שריפת חמץ` — *only present when the date is 14 Nisan (Erev Pesach)*. Uses the same MGA formula as `sensor.yidcal_sof_zman_achilas_chumetz` / `sensor.yidcal_sof_zman_sriefes_chumetz`.
+    * All daily zmanim for the looked-up date, in chronological order (same ordering as the Shabbos/Yom Tov Zmanim sensors).
+
+  * **Attributes for dates 2–5** (multi-date lookups only) — each subsequent date appends its own set of attributes, suffixed by its position:
+    * `Lookup_Date_2`, `Lookup_Date_3`, … — the date, same `"Wed, 2026-05-20"` format.
+    * `Label_2`, `Label_3`, … — the Hebrew day label (since the sensor's state only shows the primary date's label).
+    * `הדלקת נרות_2`, `מוצאי יום טוב_2`, `סוף זמן אכילת חמץ_2`, `עלות השחר_2`, `הנץ החמה_2`, …, `חצות הלילה_2` — all the same conditional + daily zmanim attributes as above, suffixed.
+
+  * **Service** — `yidcal.check_zmanim`:
+
+    Single-date lookup:
+    ```yaml
+    service: yidcal.check_zmanim
+    data:
+      date: "2026-07-18"
+    ```
+
+    Multi-date lookup — e.g., Shavuos plus the following Shabbos:
+    ```yaml
+    service: yidcal.check_zmanim
+    data:
+      date:   "2026-05-21"   # Erev Shavuos (state will show "לערב שבועות")
+      date_2: "2026-05-22"   # Shavuos Day 1
+      date_3: "2026-05-23"   # Shavuos Day 2 / Shabbos
+      date_4: "2026-05-30"   # following Shabbos (parshas Nasso)
+      # date_5 also available if you need a 5th
+    ```
+
+    All dates must be within **±100 years** of today. Out-of-range dates or invalid input raise a validation error.
+
+  * **Use cases:** plan a multi-day Yom Tov at a glance, check zmanim for a simcha months away, verify a historical date, or build an automation that looks up a rolling future date. The sensor starts empty — call the service once to populate it.
+
+---
+
 ### Simple Zmanim time format
 
 You can choose a time format in config flow options: **12-hour (AM/PM)** or **24-hour**.
@@ -483,6 +569,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `פרשת מצורע אדער פרשת טהרה`                                | `מצורע`     | How parshas **מצורע** is displayed in the Parsha sensor: `מצורע` (default) or `טהרה`. Applies both standalone and in `תזריע-מצורע`. `אחרי מות` is always shortened to `אחרי`. |
 | `?ליינט מען קרבנות אום שלוש עשרה מדות`                     | `false`     | Include **קרבנות** in the Krias HaTorah sensor at מנחה on **שלוש עשרה מדות** days if your shul leins it from the בימה.                |
 | `?ליינט מען משנה תורה הושענא רבה ביינאכט`                  | `false`     | Include **משנה תורה** in the Krias HaTorah sensor for **הושענא רבה ביינאכט** if your minhag is to lein it (not just say it privately). |
+| `צולייגען די זמנים Lookup & service call sensors`         | `false`     | **(Options-only.)** Create `sensor.yidcal_zmanim_lookup` and the `yidcal.check_zmanim` service. The service accepts **up to 5 dates** in a single call (primary + 4 optional), so you can look up a full Yom Tov + the following Shabbos at once. Off by default; not shown during initial setup to avoid exposing a blank sensor. See the **Zmanim Lookup** section above. |
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. Remove them manually via **Settings → Entities**, or delete and re-add the integration with the option turned off.
 
