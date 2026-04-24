@@ -71,6 +71,9 @@ from .friday_is_rosh_chodesh_sensor import FridayIsRoshChodeshSensor
 from .early_shabbos_yt_start_time_sensor import EarlyShabbosYtStartTimeSensor
 from .haftorah_sensor import HaftorahSensor
 from .krias_hatorah_sensor import KriasHaTorahSensor
+from .upcoming_shabbos_zmanim_sensor import UpcomingShabbosZmanimSensor
+from .upcoming_yomtov_zmanim_sensor import UpcomingYomTovZmanimSensor
+from .zmanim_lookup_sensor import ZmanimLookupSensor
 
 from .yurtzeit_sensor import (
     YurtzeitSensor,
@@ -91,6 +94,7 @@ from .config_flow import (
     CONF_ENABLE_EARLY_YOMTOV,  DEFAULT_ENABLE_EARLY_YOMTOV,
     CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI,
     CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES,
+    CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -248,6 +252,8 @@ async def async_setup_entry(
         IshpizinSensor(hass, candle_offset, havdalah_offset),
         DayTypeSensor(hass, candle_offset, havdalah_offset),
         ZmanTziesSensor(hass, havdalah_offset),
+        UpcomingShabbosZmanimSensor(hass, havdalah_offset),
+        UpcomingYomTovZmanimSensor(hass, havdalah_offset),
         FastStartCountdownSensor(hass),
         FastEndCountdownSensor(hass),
         FridayIsRoshChodeshSensor(hass, yidcal_helper, havdalah_offset),
@@ -341,6 +347,14 @@ async def async_setup_entry(
                 sensors.append(
                     YurtzeitWeeklySensor(hass, havdalah_offset, database=db, legacy_ids=(db == "standard"))
                 )
+
+    # Zmanim Lookup sensor (options-only; paired with yidcal.check_zmanim service)
+    enable_zmanim_lookup = entry.options.get(
+        CONF_ENABLE_ZMANIM_LOOKUP,
+        entry.data.get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
+    )
+    if enable_zmanim_lookup:
+        sensors.append(ZmanimLookupSensor(hass, havdalah_offset))
 
     async_add_entities(sensors, update_before_add=False)
 
