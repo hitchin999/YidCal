@@ -415,11 +415,22 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             # After first night of Pesach we always say "ותן ברכה"
             if hd_hal.month == 1 and hd_hal.day >= 15:
                 is_tal_umatar = False
+            elif 2 <= hd_hal.month <= 6:
+                # Post-Pesach through Elul (Iyar=2 … Elul=6): Tal Umatar has
+                # ended and won't resume until the NEXT Dec 4/5 (Diaspora)
+                # or 7 Cheshvan (Israel). Without this, Diaspora wrongly
+                # flips back to "ותן טל ומטר" from Motzei Shevi'i Shel Pesach
+                # through April 30, because the Gregorian Dec 4/5 comparison
+                # still points at the previous winter's start date.
+                is_tal_umatar = False
             else:
                 if self._diaspora:
-                    # Chutz LaAretz: Dec 4 (Dec 5 in Gregorian leap years), at Ma'ariv
+                    # Chutz LaAretz: Ma'ariv of Dec 4, or Dec 5 in the year
+                    # BEFORE a Gregorian leap year (when the upcoming
+                    # February has 29 days). Examples of Dec 5 starts:
+                    # 2019, 2023, 2027, 2031.
                     dec_year = now.year - 1 if now.month <= 4 else now.year
-                    start_day = 5 if calendar.isleap(dec_year) else 4
+                    start_day = 5 if calendar.isleap(dec_year + 1) else 4
                     start_gdate = date(dec_year, 12, start_day)
                     cal_start = ZmanimCalendar(
                         geo_location=self._geo,
