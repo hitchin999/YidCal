@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date as date_cls, datetime, timedelta
 from pathlib import Path
 
-from homeassistant.core import HomeAssistant
+import voluptuous as vol
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_call_later
+import homeassistant.helpers.config_validation as cv
 from timezonefinder import TimezoneFinder
 
 from .const import DOMAIN
@@ -76,6 +80,9 @@ from .config_flow import (
     CONF_ENABLE_MULTIDAY_CANDLES,
     DEFAULT_ENABLE_MULTIDAY_CANDLES,
 
+    CONF_ENABLE_ZMANIM_LOOKUP,
+    DEFAULT_ENABLE_ZMANIM_LOOKUP,
+
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,6 +97,84 @@ DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 # Legacy default for migration fallback
 DEFAULT_YAHRTZEIT_DATABASE = "standard"
 DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
+
+# ─── Zmanim Lookup service ────────────────────────────────────────────
+SERVICE_CHECK_ZMANIM = "check_zmanim"
+# ±100 years from the current year. Solar zmanim and pyluach both handle
+# far greater spans, so 100 years is a conservative safety cap.
+_ZMANIM_LOOKUP_MAX_YEARS = 100
+# Max number of dates accepted per service call (one required + N optional).
+_ZMANIM_LOOKUP_MAX_DATES = 5
+
+_CHECK_ZMANIM_SCHEMA = vol.Schema({
+    vol.Required("date"): cv.date,
+    vol.Optional("date_2"): cv.date,
+    vol.Optional("date_3"): cv.date,
+    vol.Optional("date_4"): cv.date,
+    vol.Optional("date_5"): cv.date,
+})
+
+
+def _async_register_check_zmanim_service(hass: HomeAssistant) -> None:
+    """Register the ``yidcal.check_zmanim`` service.
+
+    Accepts 1–5 dates (``date`` required; ``date_2`` through ``date_5``
+    optional) and writes the combined result to
+    ``sensor.yidcal_zmanim_lookup``. Safe to call multiple times —
+    returns immediately if already registered.
+    """
+    if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
+        return
+
+    def _coerce_date(raw) -> date_cls:
+        if isinstance(raw, datetime):
+            return raw.date()
+        if isinstance(raw, date_cls):
+            return raw
+        try:
+            return date_cls.fromisoformat(str(raw))
+        except Exception as exc:
+            raise ServiceValidationError(
+                f"Invalid date: {raw!r}. Expected ISO format (YYYY-MM-DD)."
+            ) from exc
+
+    async def _handle_check_zmanim(call: ServiceCall) -> None:
+        # Collect the dates in order (primary first, then _2 .. _5)
+        dates: list[date_cls] = []
+        for key in ("date", "date_2", "date_3", "date_4", "date_5"):
+            raw = call.data.get(key)
+            if raw is None:
+                continue
+            dates.append(_coerce_date(raw))
+
+        if not dates:
+            raise ServiceValidationError("At least one date must be provided.")
+
+        today = datetime.now().date()
+        for target in dates:
+            if abs(target.year - today.year) > _ZMANIM_LOOKUP_MAX_YEARS:
+                raise ServiceValidationError(
+                    f"Date {target.isoformat()} is outside the supported "
+                    f"range of ±{_ZMANIM_LOOKUP_MAX_YEARS} years from today."
+                )
+
+        # Late import to avoid circular-import risk at module load.
+        from .zmanim_lookup_sensor import SENSOR_REF_KEY
+        sensor = hass.data.get(DOMAIN, {}).get(SENSOR_REF_KEY)
+        if sensor is None:
+            raise ServiceValidationError(
+                "sensor.yidcal_zmanim_lookup is not available. "
+                "Enable 'Zmanim Lookup' in the YidCal integration options."
+            )
+        await sensor.async_lookup_dates(dates)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CHECK_ZMANIM,
+        _handle_check_zmanim,
+        schema=_CHECK_ZMANIM_SCHEMA,
+    )
+    _LOGGER.debug("YidCal: registered service %s.%s", DOMAIN, SERVICE_CHECK_ZMANIM)
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -382,6 +467,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial.get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES),
     )
 
+    enable_zmanim_lookup = opts.get(
+        CONF_ENABLE_ZMANIM_LOOKUP,
+        initial.get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
+    )
+
     # Resolve and store geo+tz config (with caching to avoid repeated API calls)
     latitude = hass.config.latitude
     longitude = hass.config.longitude
@@ -466,6 +556,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
+        CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
     }
 
     # Store global config for sensors
@@ -511,7 +602,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "mishne_torah_hoshana_rabba": mishne_torah_hoshana_rabba,
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
+        CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
     }
+
+    # Register the yidcal.check_zmanim service if the Zmanim Lookup sensor
+    # is enabled. Unregister if it was previously registered but has now
+    # been turned off (on a reload).
+    if enable_zmanim_lookup:
+        _async_register_check_zmanim_service(hass)
+    else:
+        if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
+            hass.services.async_remove(DOMAIN, SERVICE_CHECK_ZMANIM)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -669,6 +770,11 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         initial.get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES),
     )
 
+    enable_zmanim_lookup = opts.get(
+        CONF_ENABLE_ZMANIM_LOOKUP,
+        initial.get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
+    )
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         CONF_IS_IN_ISRAEL: is_in_israel,
@@ -709,6 +815,7 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
         CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
+        CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
     }
 
     # Schedule the reload shortly after to apply new options
@@ -729,4 +836,8 @@ def _delayed_reload(hass: HomeAssistant, entry_id: str) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    # Remove the check_zmanim service on full unload so it doesn't
+    # linger if the user removes the integration.
+    if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
+        hass.services.async_remove(DOMAIN, SERVICE_CHECK_ZMANIM)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
