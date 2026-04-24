@@ -15,8 +15,8 @@
           "candlelighting_offset": "כמה דקות לפני שקיעה להדלקת נרות",
           "havdalah_offset": "כמה דקות אחרי שקיעה להבדלה",
           "tallis_tefilin_offset": "כמה דקות אחרי עלות השחר לטלית ותפילין",
-					"korbanos_yud_gimmel_midos": "האם יש קריאת קרבנות במנחה של שלוש עשרה מידות?",
-					"mishne_torah_hoshana_rabba": "האם יש קריאת משנה תורה בליל הושענא רבה?",
+          "korbanos_yud_gimmel_midos": "האם יש קריאת קרבנות במנחה של שלוש עשרה מידות?",
+          "mishne_torah_hoshana_rabba": "האם יש קריאת משנה תורה בליל הושענא רבה?",
           "day_label_language": "כיצד להציג את שם היום בחיישן התצוגה המלאה (Full Display Sensor)",
           "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
           "haftorah_minhag": "מנהג ההפטרה",
@@ -62,8 +62,8 @@
           "candlelighting_offset": "כמה דקות לפני שקיעה להדלקת נרות",
           "havdalah_offset": "כמה דקות אחרי שקיעה להבדלה",
           "tallis_tefilin_offset": "כמה דקות אחרי עלות השחר לטלית ותפילין",
-					"korbanos_yud_gimmel_midos": "האם יש קריאת קרבנות במנחה של שלוש עשרה מידות?",
-					"mishne_torah_hoshana_rabba": "האם יש קריאת משנה תורה בליל הושענא רבה?",
+          "korbanos_yud_gimmel_midos": "האם יש קריאת קרבנות במנחה של שלוש עשרה מידות?",
+          "mishne_torah_hoshana_rabba": "האם יש קריאת משנה תורה בליל הושענא רבה?",
           "day_label_language": "כיצד להציג את שם היום בחיישן התצוגה המלאה (Full Display Sensor)",
           "include_date": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)",
           "haftorah_minhag": "מנהג ההפטרה",
@@ -74,10 +74,12 @@
           "enable_daf_hayomi": "הוספת חיישן דף היומי",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
-          "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+          "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)",
+          "enable_zmanim_lookup": "הוספת חיישן Zmanim Lookup ושירות yidcal.check_zmanim"
         },
         "data_description": {
-          "enable_multiday_candles": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי"
+          "enable_multiday_candles": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי",
+          "enable_zmanim_lookup": "מוסיף את החיישן sensor.yidcal_zmanim_lookup ואת השירות yidcal.check_zmanim. ניתן להפעיל את השירות עם כל תאריך (עד ±100 שנים) והחיישן יתמלא בזמנים של אותו יום ובתווית יום עברית."
         }
       },
       "yurtzeit": {
