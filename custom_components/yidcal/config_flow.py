@@ -28,6 +28,15 @@ DEFAULT_TIME_FORMAT = "12"
 CONF_ENABLE_MULTIDAY_CANDLES = "enable_multiday_candles"
 DEFAULT_ENABLE_MULTIDAY_CANDLES = False
 
+# ============ Zmanim Lookup (options-only) ============
+# Exposes sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim
+# service. Not shown on first-time setup — only in the options /
+# reconfigure flow — because the sensor's state is empty until the
+# service is called, which can confuse users unfamiliar with service
+# calls.
+CONF_ENABLE_ZMANIM_LOOKUP = "enable_zmanim_lookup"
+DEFAULT_ENABLE_ZMANIM_LOOKUP = False
+
 # ============ Haftorah Minhag (NEW) ============
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
 DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
@@ -382,6 +391,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             "unit_of_measurement": "days",
                         }
                     }),
+                    # Zmanim Lookup — options-only (advanced). Exposes
+                    # sensor.yidcal_zmanim_lookup + yidcal.check_zmanim
+                    # service. Kept out of the initial setup because
+                    # the sensor is empty until the service is called.
+                    vol.Optional(
+                        CONF_ENABLE_ZMANIM_LOOKUP,
+                        default=get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
+                    ): bool,
                 }
             )
             return self.async_show_form(step_id="general", data_schema=schema)
