@@ -5,10 +5,12 @@ Defines two YidCal sensors using pyluach for Hebrew date computation with contin
 - MoridGeshemSensor: switches to 'מוריד הגשם' at dawn (alos) on 22 Tishrei,
   stays until dawn on 15 Nisan, otherwise 'מוריד הטל'.
 - TalUMatarSensor:
-    • In Israel: switches to 'ותן טל ומטר לברכה' at Maariv of 7 Cheshvan,
+    • In Israel: switches to 'ותן טל ומטר' at Maariv of 7 Cheshvan,
       stays until the first night of Pesach (halachic roll at sunset + havdalah offset).
-    • In Diaspora: switches to 'ותן טל ומטר לברכה' at Maariv of Dec 4
-      (Dec 5 in Gregorian leap years), stays until the first night of Pesach.
+    • In Diaspora: switches to 'ותן טל ומטר' at Maariv of Dec 4
+      (Dec 5 in the year BEFORE a Gregorian leap year, i.e. when the
+      upcoming February has 29 days), stays until the first night of
+      Pesach, then remains 'ותן ברכה' until the next Dec 4/5.
 """
 from __future__ import annotations
 
@@ -173,17 +175,30 @@ class TalUMatarSensor(YidCalDisplayDevice, SensorEntity):
             self.async_write_ha_state()
             return
 
+        # Post-Pesach through Elul (Iyar=2 … Elul=6): Tal Umatar has ended
+        # and will not resume until the NEXT Dec 4/5 (Diaspora) or
+        # 7 Cheshvan (Israel). Without this, Diaspora wrongly flips back
+        # to "ותן טל ומטר" from Motzei Shevi'i Shel Pesach through April 30
+        # (because the Gregorian Dec 4/5 comparison still points at the
+        # previous winter's start date).
+        if 2 <= hd_hal.month <= 6:
+            self._state = "ותן ברכה"
+            self.async_write_ha_state()
+            return
+
         # Start boundary
         if diaspora:
-            # Diaspora: Dec 4 (Dec 5 in Gregorian leap years) at Maariv
+            # Diaspora: Ma'ariv of Dec 4, or Dec 5 in the year BEFORE
+            # a Gregorian leap year (i.e. when the upcoming February
+            # has 29 days). Examples of Dec 5 starts: 2019, 2023, 2027, 2031.
             dec_year = now_local.year - 1 if now_local.month <= 4 else now_local.year
-            start_day = 5 if calendar.isleap(dec_year) else 4
+            start_day = 5 if calendar.isleap(dec_year + 1) else 4
             start_gdate = date(dec_year, 12, start_day)
 
             raw_start_dt = sunset_on(start_gdate) + timedelta(minutes=self._havdalah_offset)
             start_dt = _round_ceil(raw_start_dt)
 
-            self._state = "ותן טל ומטר לברכה" if now_local >= start_dt else "ותן ברכה"
+            self._state = "ותן טל ומטר" if now_local >= start_dt else "ותן ברכה"
 
         else:
             # Israel: 7 Cheshvan Maariv through Pesach
@@ -192,7 +207,7 @@ class TalUMatarSensor(YidCalDisplayDevice, SensorEntity):
                 or (9 <= hd_hal.month <= 13)
                 or (hd_hal.month == 1 and hd_hal.day < 15)
             ):
-                self._state = "ותן טל ומטר לברכה"
+                self._state = "ותן טל ומטר"
             else:
                 self._state = "ותן ברכה"
 
