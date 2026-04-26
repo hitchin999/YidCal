@@ -206,6 +206,10 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "unit_of_measurement": "days",
                         }
                     }),
+                    vol.Optional(
+                        CONF_ENABLE_ZMANIM_LOOKUP,
+                        default=DEFAULT_ENABLE_ZMANIM_LOOKUP,
+                    ): bool,
                 }
             )
             return self.async_show_form(step_id="user", data_schema=schema)
