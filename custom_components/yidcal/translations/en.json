@@ -27,10 +27,12 @@
           "enable_daf_hayomi": "צולייגען דף היומי סענסאר",
           "slichos_label_rollover": "ווען זאל זיך די סליחות טאג טוישן",
           "upcoming_lookahead_days": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די",
-          "time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)"
+          "time_format": "צייט־פארמאט (נאר פאר Simple Zmanim)",
+          "enable_zmanim_lookup": "צולייגען די זמנים Lookup & service call sensors"
         },
         "data_description": {
-          "enable_multiday_candles": "ווען דאס איז אנגעצינדן, בלייבט דער זמן ערב סענסאר אויף די ערשטע נאכט, און טוישט זיך הערשט 12 ביינאכט מוצאי."
+          "enable_multiday_candles": "ווען דאס איז אנגעצינדן, בלייבט דער זמן ערב סענסאר אויף די ערשטע נאכט, און טוישט זיך הערשט 12 ביינאכט מוצאי.",
+          "enable_zmanim_lookup": "צולייגען א sensor.yidcal_zmanim_lookup מיט א סערוויס yidcal.check_zmanim וואס מען קען רופן מיט א דאטום און עס וועט ווייזן די זמנים פון דעם טאג."
         }
       },
       "yurtzeit": {
