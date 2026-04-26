@@ -234,14 +234,43 @@ def compute_day_label(
     *,
     diaspora: bool = True,
     metzora_display: str = "metzora",
+    include_year: bool = False,
 ) -> str:
     """Build the Hebrew label for an arbitrary Gregorian date.
 
     Returns a string like 'לפורים', 'לשבת פרשת פנחס',
     'ליום ד׳ פרשת אחרי-קדושים', etc. Returns an empty string only if
     all lookups fail (extremely unlikely).
+
+    If ``include_year`` is True, the Hebrew year (e.g. 'תשפ״ז') is
+    appended to the label. The year used is the Hebrew year that
+    contains ``greg_date`` — pyluach's standard convention, which rolls
+    on Tishrei 1.
     """
     ph = PHebrewDate.from_pydate(greg_date)
+
+    def _build() -> str:
+        return _build_day_label_core(greg_date, ph, diaspora, metzora_display)
+
+    label = _build()
+    if include_year and label:
+        try:
+            year_str = ph.hebrew_year()
+        except Exception:
+            year_str = ""
+        if year_str:
+            label = f"{label} {year_str}"
+    return label
+
+
+def _build_day_label_core(
+    greg_date: date_cls,
+    ph: PHebrewDate,
+    diaspora: bool,
+    metzora_display: str,
+) -> str:
+    """Inner implementation of compute_day_label without the year suffix.
+    Split out so the public function can append the year at one place."""
     m, d = ph.month, ph.day
     is_shabbos = (greg_date.weekday() == 5)
 
