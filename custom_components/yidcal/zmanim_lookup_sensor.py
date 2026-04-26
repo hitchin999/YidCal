@@ -225,6 +225,7 @@ class ZmanimLookupSensor(YidCalZmanDevice, SensorEntity):
             target,
             diaspora=self._diaspora,
             metzora_display=self._metzora_display,
+            include_year=True,
         )
 
         items = compute_zmanim_for_date(
