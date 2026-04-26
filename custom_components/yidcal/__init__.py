@@ -98,6 +98,116 @@ DEFAULT_DAY_LABEL_LANGUAGE = "yiddish"
 DEFAULT_YAHRTZEIT_DATABASE = "standard"
 DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
 
+# ─── Yurtzeit list-management services ───────────────────────────────
+# Used by the yidcal-yurtzeit-config-card to mute / unmute yurtzeits and
+# add custom ones. Both services rewrite the corresponding text file
+# under www/yidcal-data/ (legacy filenames preserved for back-compat)
+# and fire the ``yidcal_yurtzeit_data_changed`` event so live yurtzeit
+# sensors can reload immediately without a full integration reload.
+SERVICE_SET_YURTZEIT_MUTED = "set_yurtzeit_muted"
+SERVICE_SET_YURTZEIT_CUSTOM = "set_yurtzeit_custom"
+EVENT_YURTZEIT_DATA_CHANGED = "yidcal_yurtzeit_data_changed"
+
+_SET_YURTZEIT_MUTED_SCHEMA = vol.Schema({
+    vol.Required("names"): [cv.string],
+})
+
+_SET_YURTZEIT_CUSTOM_SCHEMA = vol.Schema({
+    vol.Required("entries"): [vol.Schema({
+        vol.Required("date"): cv.string,   # Hebrew date string e.g. "ט\"ו תמוז"
+        vol.Required("name"): cv.string,
+    })],
+})
+
+
+def _async_register_yurtzeit_services(hass: HomeAssistant) -> None:
+    """Register the yidcal.set_yurtzeit_muted / set_yurtzeit_custom services.
+
+    Both services persist their list to the corresponding text file in
+    ``www/yidcal-data/`` and fire ``yidcal_yurtzeit_data_changed`` so the
+    daily/weekly Yurtzeit sensors can refresh instantly.
+    """
+    if (
+        hass.services.has_service(DOMAIN, SERVICE_SET_YURTZEIT_MUTED)
+        and hass.services.has_service(DOMAIN, SERVICE_SET_YURTZEIT_CUSTOM)
+    ):
+        return
+
+    yidcal_dir = Path(hass.config.path("www/yidcal-data"))
+
+    def _ensure_dir() -> None:
+        if not yidcal_dir.exists():
+            yidcal_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
+
+    async def _handle_set_muted(call: ServiceCall) -> None:
+        names = call.data.get("names") or []
+        # Normalize: strip + drop blanks, preserve order, keep duplicates out.
+        seen: set[str] = set()
+        clean: list[str] = []
+        for raw in names:
+            line = str(raw).strip()
+            if not line or line in seen:
+                continue
+            seen.add(line)
+            clean.append(line)
+
+        header = (
+            "# YidCal Muted Yurtzeits\n"
+            "# Managed by the yidcal-yurtzeit-config-card.\n"
+            "# Lines starting with # are comments and ignored.\n\n"
+        )
+        body = header + "\n".join(clean) + ("\n" if clean else "")
+
+        def _write() -> None:
+            _ensure_dir()
+            (yidcal_dir / "muted_yahrtzeits.txt").write_text(body, encoding="utf-8")
+
+        await hass.async_add_executor_job(_write)
+        hass.bus.async_fire(EVENT_YURTZEIT_DATA_CHANGED, {"kind": "muted"})
+        _LOGGER.debug("YidCal: wrote %d muted yurtzeit entries", len(clean))
+
+    async def _handle_set_custom(call: ServiceCall) -> None:
+        entries = call.data.get("entries") or []
+        lines: list[str] = []
+        for e in entries:
+            d = str(e.get("date", "")).strip()
+            n = str(e.get("name", "")).strip()
+            if not d or not n:
+                continue
+            # Re-normalize separators (one ":" max)
+            n = n.replace("\n", " ").replace("\r", " ")
+            lines.append(f"{d}: {n}")
+
+        header = (
+            "# YidCal Custom Yurtzeits\n"
+            "# Managed by the yidcal-yurtzeit-config-card.\n"
+            "# Format: <Hebrew date>: <Name>\n\n"
+        )
+        body = header + "\n".join(lines) + ("\n" if lines else "")
+
+        def _write() -> None:
+            _ensure_dir()
+            (yidcal_dir / "custom_yahrtzeits.txt").write_text(body, encoding="utf-8")
+
+        await hass.async_add_executor_job(_write)
+        hass.bus.async_fire(EVENT_YURTZEIT_DATA_CHANGED, {"kind": "custom"})
+        _LOGGER.debug("YidCal: wrote %d custom yurtzeit entries", len(lines))
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_YURTZEIT_MUTED,
+        _handle_set_muted, schema=_SET_YURTZEIT_MUTED_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_YURTZEIT_CUSTOM,
+        _handle_set_custom, schema=_SET_YURTZEIT_CUSTOM_SCHEMA,
+    )
+    _LOGGER.debug(
+        "YidCal: registered services %s.%s and %s.%s",
+        DOMAIN, SERVICE_SET_YURTZEIT_MUTED,
+        DOMAIN, SERVICE_SET_YURTZEIT_CUSTOM,
+    )
+
+
 # ─── Zmanim Lookup service ────────────────────────────────────────────
 SERVICE_CHECK_ZMANIM = "check_zmanim"
 # ±100 years from the current year. Solar zmanim and pyluach both handle
@@ -614,6 +724,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
             hass.services.async_remove(DOMAIN, SERVICE_CHECK_ZMANIM)
 
+    # Yurtzeit list-management services are always available — they
+    # only touch www/yidcal-data/*.txt and don't depend on any optional
+    # toggle. Used by the yidcal-yurtzeit-config-card.
+    _async_register_yurtzeit_services(hass)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -840,4 +955,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # linger if the user removes the integration.
     if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
         hass.services.async_remove(DOMAIN, SERVICE_CHECK_ZMANIM)
+    # Drop yurtzeit list services on full unload too.
+    for svc in (SERVICE_SET_YURTZEIT_MUTED, SERVICE_SET_YURTZEIT_CUSTOM):
+        if hass.services.has_service(DOMAIN, svc):
+            hass.services.async_remove(DOMAIN, svc)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
