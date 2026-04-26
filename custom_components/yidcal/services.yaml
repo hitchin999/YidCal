@@ -52,3 +52,38 @@ check_zmanim:
       required: false
       selector:
         date:
+
+set_yurtzeit_muted:
+  name: Set Muted Yurtzeits
+  description: >
+    Overwrite the list of muted yurtzeits in
+    www/yidcal-data/muted_yahrtzeits.txt and refresh the live yurtzeit
+    sensors. Used by the yidcal-yurtzeit-config-card.
+  fields:
+    names:
+      name: Names
+      description: >
+        Full list of yurtzeit names to mute (one entry per name, exactly
+        as it appears in the cached database). Send the FULL list — any
+        names not in the list will be un-muted.
+      required: true
+      example: '["רבי פלוני בן רבי אלמוני זי\"ע [מחבר ספר דוגמא] תש\"א"]'
+      selector:
+        object:
+
+set_yurtzeit_custom:
+  name: Set Custom Yurtzeits
+  description: >
+    Overwrite the list of custom yurtzeits in
+    www/yidcal-data/custom_yahrtzeits.txt and refresh the live yurtzeit
+    sensors. Used by the yidcal-yurtzeit-config-card.
+  fields:
+    entries:
+      name: Entries
+      description: >
+        Full list of {date, name} objects. The date must be a Hebrew date
+        string (e.g. 'ט"ו תמוז'); the name is the display text.
+      required: true
+      example: '[{"date": "ט\"ו תמוז", "name": "רבי פלוני זי\"ע"}]'
+      selector:
+        object:
