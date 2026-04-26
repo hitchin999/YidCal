@@ -27,10 +27,12 @@
           "enable_daf_hayomi": "הוספת חיישן דף היומי",
           "slichos_label_rollover": "מתי מתחלף יום הסליחות",
           "upcoming_lookahead_days": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)",
-          "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)"
+          "time_format": "פורמט שעה (לזמני Simple Zmanim בלבד)",
+          "enable_zmanim_lookup": "הוספת חיישן Zmanim Lookup ושירות yidcal.check_zmanim"
         },
         "data_description": {
-          "enable_multiday_candles": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי"
+          "enable_multiday_candles": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי",
+          "enable_zmanim_lookup": "מוסיף את החיישן sensor.yidcal_zmanim_lookup ואת השירות yidcal.check_zmanim. ניתן להפעיל את השירות עם כל תאריך (עד ±100 שנים) והחיישן יתמלא בזמנים של אותו יום ובתווית יום עברית."
         }
       },
       "yurtzeit": {
