@@ -151,6 +151,21 @@ class YurtzeitSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         # Minute-by-minute updates for precise flip
         self._register_interval(self.hass, self._schedule_update, timedelta(minutes=1))
 
+        # Reload custom + muted lists immediately when the
+        # yidcal-yurtzeit-config-card writes them via service. Without
+        # this listener the changes would only appear after the next
+        # full integration reload (or up to 1 minute via the timer
+        # above, but only after a process restart re-reads the file).
+        async def _on_data_changed(_event) -> None:
+            await self._load_custom_and_muted()
+            await self._update_state()
+
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                "yidcal_yurtzeit_data_changed", _on_data_changed
+            )
+        )
+
         _LOGGER.debug("YurtzeitSensor[%s] init in %.2fs", self._database, time.time() - start_time)
 
     def _schedule_update(self, *_args) -> None:
@@ -432,6 +447,17 @@ class YurtzeitWeeklySensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
         self._register_sunset(self.hass, self._schedule_update, offset=self._havdalah_offset)
         self._register_interval(self.hass, self._schedule_update, timedelta(minutes=1))
+
+        # Live reload when the yurtzeit-config-card writes new files.
+        async def _on_data_changed(_event) -> None:
+            await self._load_custom_and_muted()
+            await self._update_state()
+
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                "yidcal_yurtzeit_data_changed", _on_data_changed
+            )
+        )
 
         _LOGGER.debug("YurtzeitWeeklySensor[%s] init in %.2fs", self._database, time.time() - start_time)
 
