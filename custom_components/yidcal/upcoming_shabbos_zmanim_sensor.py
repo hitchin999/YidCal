@@ -9,9 +9,10 @@ human-friendly state:
 
 Rollover: 12:00 AM Sunday (civil midnight after Motzei Shabbos).
 
-Attributes: all daily zmanim for the upcoming Saturday, in chronological
-order (Alos → ... → Chatzos HaLaila). Candle lighting and Motzi are
-deliberately omitted — dedicated sensors already cover those.
+Attributes: candle lighting (Friday before sunset), Motzi/Havdalah
+(after Saturday Tzeis — extending through any adjacent YT days), and
+all daily zmanim for the upcoming Saturday in chronological order
+(Alos → ... → Chatzos HaLaila).
 """
 from __future__ import annotations
 
@@ -33,11 +34,12 @@ from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
 from .device import YidCalZmanDevice
-from .zman_sensors import get_geo
-from .zman_compute import (
+from .zman_sensors import get_geo, _no_melacha_block
+from .yidcal_lib.zman_compute import (
     compute_zmanim_for_date,
     DEFAULT_TALLIS_TEFILIN_OFFSET,
 )
+from .yidcal_lib.zman_erev_motzi import compute_erev_motzi
 from .yidcal_lib import specials
 
 
@@ -57,6 +59,7 @@ class UpcomingShabbosZmanimSensor(YidCalZmanDevice, RestoreEntity, SensorEntity)
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
         self._havdalah = int(cfg.get("havdalah_offset", havdalah_offset))
+        self._candle = int(cfg.get("candlelighting_offset", 15))
         self._tallis = int(cfg.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET))
         self._diaspora = bool(cfg.get("diaspora", True))
         self._geo: GeoLocation | None = None
@@ -200,10 +203,37 @@ class UpcomingShabbosZmanimSensor(YidCalZmanDevice, RestoreEntity, SensorEntity)
             havdalah_offset=self._havdalah,
         )
 
+        # Erev (Friday's candle lighting) + Motzi (havdalah at block end —
+        # block typically = just Saturday, but extends when Shabbos is
+        # itself a YT day, e.g., Shavuos Day 2 on Shabbos).
+        #
+        # Walk back through any no-melucha block that includes Saturday
+        # to find the real Erev day. (When Friday is YT — Shavuos D1
+        # on Friday, etc. — block.start = Friday, so real Erev = Thursday.)
+        full_block = _no_melacha_block(shabbos_date, diaspora=self._diaspora)
+        erev_day = (full_block[0] if full_block else shabbos_date) - timedelta(days=1)
+        erev_motzi = compute_erev_motzi(
+            erev_day,
+            diaspora=self._diaspora,
+            geo=self._geo,
+            tz=self._tz,
+            candle_offset=self._candle,
+            havdalah_offset=self._havdalah,
+        )
+
         fmt = self._get_time_format()
-        attrs: dict[str, str] = {
-            "Shabbos_Date": f"{shabbos_date.strftime('%a')}, {shabbos_date.isoformat()}",
-        }
+        # Build attributes in strict explicit order:
+        #   1) Shabbos_Date (reference)
+        #   2) הדלקת נרות
+        #   3) מוצאי שבת / מוצאי יום טוב
+        #   4) Daily zmanim (chronological)
+        attrs: dict[str, str] = {}
+        attrs["Shabbos_Date"] = f"{shabbos_date.strftime('%a')}, {shabbos_date.isoformat()}"
+        if "הדלקת נרות" in erev_motzi:
+            attrs["הדלקת נרות"] = self._format_simple_time(erev_motzi["הדלקת נרות"], fmt)
+        for motzi_label in ("מוצאי יום טוב", "מוצאי שבת"):
+            if motzi_label in erev_motzi:
+                attrs[motzi_label] = self._format_simple_time(erev_motzi[motzi_label], fmt)
         for entry in items:
             attrs[entry.label] = self._format_simple_time(entry.dt_local, fmt)
 
