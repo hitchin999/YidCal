@@ -222,6 +222,7 @@ _CHECK_ZMANIM_SCHEMA = vol.Schema({
     vol.Optional("date_3"): cv.date,
     vol.Optional("date_4"): cv.date,
     vol.Optional("date_5"): cv.date,
+    vol.Optional("location"): cv.string,
 })
 
 
@@ -229,8 +230,9 @@ def _async_register_check_zmanim_service(hass: HomeAssistant) -> None:
     """Register the ``yidcal.check_zmanim`` service.
 
     Accepts 1–5 dates (``date`` required; ``date_2`` through ``date_5``
-    optional) and writes the combined result to
-    ``sensor.yidcal_zmanim_lookup``. Safe to call multiple times —
+    optional) plus an optional ``location`` (free-form string — ZIP,
+    city, landmark — geocoded via Nominatim). Writes the combined result
+    to ``sensor.yidcal_zmanim_lookup``. Safe to call multiple times —
     returns immediately if already registered.
     """
     if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
@@ -268,6 +270,15 @@ def _async_register_check_zmanim_service(hass: HomeAssistant) -> None:
                     f"range of ±{_ZMANIM_LOOKUP_MAX_YEARS} years from today."
                 )
 
+        # Optional override location — geocoded via Nominatim if provided.
+        # When omitted, the sensor uses its configured (HA-resolved)
+        # location with no API call.
+        resolved = None
+        loc_raw = call.data.get("location")
+        if loc_raw and str(loc_raw).strip():
+            from .yidcal_lib.zman_geocoder import resolve_location
+            resolved = await resolve_location(hass, str(loc_raw))
+
         # Late import to avoid circular-import risk at module load.
         from .zmanim_lookup_sensor import SENSOR_REF_KEY
         sensor = hass.data.get(DOMAIN, {}).get(SENSOR_REF_KEY)
@@ -276,7 +287,7 @@ def _async_register_check_zmanim_service(hass: HomeAssistant) -> None:
                 "sensor.yidcal_zmanim_lookup is not available. "
                 "Enable 'Zmanim Lookup' in the YidCal integration options."
             )
-        await sensor.async_lookup_dates(dates)
+        await sensor.async_lookup_dates(dates, resolved=resolved)
 
     hass.services.async_register(
         DOMAIN,
