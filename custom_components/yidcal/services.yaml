@@ -52,6 +52,19 @@ check_zmanim:
       required: false
       selector:
         date:
+    location:
+      name: Location (optional)
+      description: >
+        Override the integration's configured location with a free-form
+        string — ZIP/postal code, city, neighborhood, landmark, etc.
+        Examples: "Lakewood, NJ", "11211", "Jerusalem", "London SW1A 1AA".
+        When provided, all zmanim in this lookup are computed for the
+        resolved location and timezone. Leave blank to use the location
+        you configured in the integration settings.
+      required: false
+      example: "Lakewood, NJ"
+      selector:
+        text:
 
 set_yurtzeit_muted:
   name: Set Muted Yurtzeits
