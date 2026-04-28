@@ -316,34 +316,39 @@ def _build_day_label_core(
         if parsha:
             state = f"לשבת פרשת {parsha}"
         suffixes: list[str] = []
+        # Rosh Chodesh on Shabbos — append for parity with the weekday
+        # branch's RC-as-suffix behavior.
+        is_rc, rc_month = _is_rosh_chodesh_and_month(ph)
+        if is_rc:
+            suffixes.append(f"ראש חודש {rc_month}")
         if holiday_label and not major_yt:
             suffixes.append(holiday_label)
         special = _special_shabbos(greg_date, diaspora)
         if special:
             suffixes.append(special)
         if suffixes:
-            state = f"{state} - {' - '.join(suffixes)}"
+            state = f"{state} • {' • '.join(suffixes)}"
         return state
 
     # ── Weekday branch ──
-    if holiday_label:
+    # Major YT on a weekday (Pesach Day 1 on Tuesday, RH on Monday, etc.)
+    # → primary label, no parsha. Erev major YT also gets primary status.
+    major_yt = _is_major_yt(ph, diaspora)
+    if holiday_label and major_yt:
         return f"ל{holiday_label}"
 
     # Erev major-YT label — catches plain weekdays that are the day
-    # before Pesach/Shavuos/RH/YK/Sukkos, or the Chol HaMoed day before
-    # Shevii shel Pesach. Runs before the Rosh Chodesh check so that
-    # Erev Rosh Hashana (Elul 29) stays as Erev, and before the parsha
-    # fallback so the user sees "Erev <YT>" instead of the weekday name.
+    # before Pesach/Shavuos/RH/YK/Sukkos. Treated as primary (not
+    # appended to a weekday) since "Erev <YT>" is the meaningful name
+    # of the day.
     erev_lbl = _erev_yt_label(greg_date, diaspora)
     if erev_lbl:
         return erev_lbl
 
-    # Rosh Chodesh (only surfaced on a regular weekday — YT/holidays win above)
-    is_rc, rc_month = _is_rosh_chodesh_and_month(ph)
-    if is_rc:
-        return f"לראש חודש {rc_month}"
-
-    # Plain weekday — append the upcoming Shabbos's parsha if there is one
+    # Anything else — minor holidays (Pesach Sheni, Lag BaOmer,
+    # Tu B'Shvat, Tu B'Av, Chanukah, Purim, fasts), Rosh Chodesh, or
+    # nothing — gets the weekday + parsha base, with the minor day(s)
+    # appended after a • separator.
     weekday_heb = _WEEKDAY_HEB[greg_date.weekday()]
     offset = (5 - greg_date.weekday()) % 7
     if offset == 0:
@@ -351,6 +356,18 @@ def _build_day_label_core(
         offset = 7
     shabbos = greg_date + timedelta(days=offset)
     parsha = _parsha_name(shabbos, diaspora, metzora_display)
+
+    base = f"ל{weekday_heb}"
     if parsha:
-        return f"ל{weekday_heb} פרשת {parsha}"
-    return f"ל{weekday_heb}"
+        base = f"{base} פרשת {parsha}"
+
+    suffixes: list[str] = []
+    is_rc, rc_month = _is_rosh_chodesh_and_month(ph)
+    if is_rc:
+        suffixes.append(f"ראש חודש {rc_month}")
+    if holiday_label and not major_yt:
+        suffixes.append(holiday_label)
+
+    if suffixes:
+        return f"{base} • {' • '.join(suffixes)}"
+    return base
