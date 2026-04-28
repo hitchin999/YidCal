@@ -3,8 +3,8 @@ custom_components/yidcal/upcoming_shabbos_zmanim_sensor.py
 
 Sensor that exposes the zmanim for the UPCOMING Shabbos, plus a
 human-friendly state:
-  • On most weeks:        "לפרשת <name>"
-  • Special Shabbos:      "לפרשת <name> - שבת שובה" (etc.)
+  • On most weeks:        "לשב״ק פרשת <name>"
+  • Special Shabbos:      "לשב״ק פרשת <name> - שבת שובה" (etc.)
   • Shabbos Chol HaMoed:  "לשבת חול המועד פסח" / "לשבת חול המועד סוכות"
 
 Rollover: 12:00 AM Sunday (civil midnight after Motzei Shabbos).
@@ -129,7 +129,7 @@ class UpcomingShabbosZmanimSensor(YidCalZmanDevice, RestoreEntity, SensorEntity)
         return (False, "")
 
     def _compute_parsha_label(self, shabbos_date: date_cls) -> str:
-        """Return 'לפרשת <name>' for the given Shabbos, or '' if none
+        """Return 'לשב״ק פרשת <name>' for the given Shabbos, or '' if none
         (e.g. Shabbos is a Yom Tov day itself).
 
         Mirrors parsha_sensor.py's overrides: shorten 'אחרי מות' → 'אחרי',
@@ -150,7 +150,7 @@ class UpcomingShabbosZmanimSensor(YidCalZmanDevice, RestoreEntity, SensorEntity)
         if cfg.get("parsha_metzora_display") == "tahara":
             combined = combined.replace("מצורע", "טהרה")
 
-        return f"לפרשת {combined}"
+        return f"לשב״ק פרשת {combined}"
 
     def _compute_special_shabbos(self, shabbos_date: date_cls) -> str:
         """Return the special-shabbos string for the given Shabbos, or ''."""
