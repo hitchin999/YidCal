@@ -8,7 +8,7 @@
 check_zmanim:
   name: Check Zmanim
   description: >
-    Look up the zmanim for up to 5 Gregorian dates and publish them to
+    Look up the zmanim for up to 10 Gregorian dates and publish them to
     sensor.yidcal_zmanim_lookup. The sensor state becomes a Hebrew
     label for the primary date (e.g. 'לשבת פרשת פנחס', 'לפסח א׳',
     'לפורים'), and the attributes contain all daily zmanim for each
@@ -52,6 +52,36 @@ check_zmanim:
       required: false
       selector:
         date:
+    date_6:
+      name: Date 6 (optional)
+      description: A sixth date (suffix "_6").
+      required: false
+      selector:
+        date:
+    date_7:
+      name: Date 7 (optional)
+      description: A seventh date (suffix "_7").
+      required: false
+      selector:
+        date:
+    date_8:
+      name: Date 8 (optional)
+      description: An eighth date (suffix "_8").
+      required: false
+      selector:
+        date:
+    date_9:
+      name: Date 9 (optional)
+      description: A ninth date (suffix "_9").
+      required: false
+      selector:
+        date:
+    date_10:
+      name: Date 10 (optional)
+      description: A tenth date (suffix "_10").
+      required: false
+      selector:
+        date:
     location:
       name: Location (optional)
       description: >
@@ -80,23 +110,4 @@ set_yurtzeit_muted:
         as it appears in the cached database). Send the FULL list — any
         names not in the list will be un-muted.
       required: true
-      example: '["רבי פלוני בן רבי אלמוני זי\"ע [מחבר ספר דוגמא] תש\"א"]'
-      selector:
-        object:
-
-set_yurtzeit_custom:
-  name: Set Custom Yurtzeits
-  description: >
-    Overwrite the list of custom yurtzeits in
-    www/yidcal-data/custom_yahrtzeits.txt and refresh the live yurtzeit
-    sensors. Used by the yidcal-yurtzeit-config-card.
-  fields:
-    entries:
-      name: Entries
-      description: >
-        Full list of {date, name} objects. The date must be a Hebrew date
-        string (e.g. 'ט"ו תמוז'); the name is the display text.
-      required: true
-      example: '[{"date": "ט\"ו תמוז", "name": "רבי פלוני זי\"ע"}]'
-      selector:
-        object:
+      example: '
