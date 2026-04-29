@@ -48,10 +48,13 @@ def compute_erev_motzi(
     """Return ordered dict of Erev/Motzi datetimes for ``target``.
 
     Keys (omitted when not applicable):
-      • ``"הדלקת נרות"`` — when ``target`` is an Erev with a
-        before-sunset candle-lighting event. Covers Erev Shabbos, Erev
-        Yom Tov on a weekday, and a Yom Tov day when the next day is
-        Shabbos ("Shabbos as the 2nd/3rd day"). YT-to-YT and
+      • ``"הדלקת נרות"`` — the entry candle-lighting time for the
+        no-melucha block ``target`` belongs to (or is the Erev of).
+        Pulled from the day BEFORE the block starts, so this fires
+        whether the user looks up the Erev day, Day 1, or any later
+        day in the block. Covers Erev Shabbos, Erev Yom Tov on a
+        weekday, and a Yom Tov day when the next day is Shabbos
+        ("Shabbos as the 2nd/3rd day"). YT-to-YT and
         Motzei-Shabbos-into-YT lightings (at Tzeis) are intentionally
         skipped — those times are already on the daily zmanim list.
       • ``"מוצאי שבת"`` or ``"מוצאי יום טוב"`` — havdalah time of the
@@ -60,27 +63,20 @@ def compute_erev_motzi(
         havdalah. Label follows the block's last day: YT wins over
         Shabbos when both apply, matching the Zman-app convention.
 
+    Both keys are anchored to the same no-melucha block, so they're
+    either both present (target is in/Erev of a block) or both absent
+    (regular weekday with no YT/Shabbos coming up).
+
     Values are aware ``datetime`` objects in ``tz``. Caller formats them.
     """
     out: dict[str, datetime] = {}
 
-    # ── Candle lighting ──
-    event_dt, kind = lighting_event_for_day(
-        target,
-        diaspora=diaspora,
-        tz=tz,
-        geo=geo,
-        candle_offset=candle_offset,
-        havdalah_offset=havdalah_offset,
-    )
-    if event_dt is not None and kind == "erev_before_sunset":
-        out["הדלקת נרות"] = _half_up_minute(event_dt)
-
-    # ── Motzi (block end) ──
+    # Identify the no-melucha block ``target`` is associated with — either
+    # because target is *inside* the block (e.g. looking up Yom Kippur
+    # itself) or because target is the Erev of the block (e.g. looking
+    # up the Friday before Shabbos).
     block = _no_melacha_block(target, diaspora=diaspora)
     if block is None:
-        # `target` itself isn't in a block; check if tomorrow starts one,
-        # making `target` the Erev of that block.
         tomorrow = target + timedelta(days=1)
         if (
             tomorrow.weekday() == 5
@@ -88,6 +84,29 @@ def compute_erev_motzi(
         ):
             block = _no_melacha_block(tomorrow, diaspora=diaspora)
 
+    # ── Candle lighting ──
+    # Always pull from the day before the block starts (the actual Erev),
+    # not from ``target`` itself. Without this, looking up Yom Kippur day
+    # would miss the Erev YK candle lighting; looking up Pesach Day 1
+    # would miss the Erev Pesach candle lighting; etc.
+    #
+    # When target is outside any block (a regular weekday with no YT/
+    # Shabbos coming up), block is None — no candle lighting attribute
+    # is emitted.
+    erev_source = block[0] - timedelta(days=1) if block is not None else None
+    if erev_source is not None:
+        event_dt, kind = lighting_event_for_day(
+            erev_source,
+            diaspora=diaspora,
+            tz=tz,
+            geo=geo,
+            candle_offset=candle_offset,
+            havdalah_offset=havdalah_offset,
+        )
+        if event_dt is not None and kind == "erev_before_sunset":
+            out["הדלקת נרות"] = _half_up_minute(event_dt)
+
+    # ── Motzi (block end) ──
     if block is not None:
         _start, end = block
         sunset_end = (
