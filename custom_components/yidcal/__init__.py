@@ -214,14 +214,21 @@ SERVICE_CHECK_ZMANIM = "check_zmanim"
 # far greater spans, so 100 years is a conservative safety cap.
 _ZMANIM_LOOKUP_MAX_YEARS = 100
 # Max number of dates accepted per service call (one required + N optional).
-_ZMANIM_LOOKUP_MAX_DATES = 5
+# Bumped from 5 → 10 so the card can do "next Yom Tov" (1–2 days) and
+# "this week" (Sun→Sun, 8 days) in a single call.
+_ZMANIM_LOOKUP_MAX_DATES = 10
 
 _CHECK_ZMANIM_SCHEMA = vol.Schema({
     vol.Required("date"): cv.date,
-    vol.Optional("date_2"): cv.date,
-    vol.Optional("date_3"): cv.date,
-    vol.Optional("date_4"): cv.date,
-    vol.Optional("date_5"): cv.date,
+    vol.Optional("date_2"):  cv.date,
+    vol.Optional("date_3"):  cv.date,
+    vol.Optional("date_4"):  cv.date,
+    vol.Optional("date_5"):  cv.date,
+    vol.Optional("date_6"):  cv.date,
+    vol.Optional("date_7"):  cv.date,
+    vol.Optional("date_8"):  cv.date,
+    vol.Optional("date_9"):  cv.date,
+    vol.Optional("date_10"): cv.date,
     vol.Optional("location"): cv.string,
 })
 
@@ -229,7 +236,7 @@ _CHECK_ZMANIM_SCHEMA = vol.Schema({
 def _async_register_check_zmanim_service(hass: HomeAssistant) -> None:
     """Register the ``yidcal.check_zmanim`` service.
 
-    Accepts 1–5 dates (``date`` required; ``date_2`` through ``date_5``
+    Accepts 1–10 dates (``date`` required; ``date_2`` through ``date_10``
     optional) plus an optional ``location`` (free-form string — ZIP,
     city, landmark — geocoded via Nominatim). Writes the combined result
     to ``sensor.yidcal_zmanim_lookup``. Safe to call multiple times —
@@ -251,9 +258,10 @@ def _async_register_check_zmanim_service(hass: HomeAssistant) -> None:
             ) from exc
 
     async def _handle_check_zmanim(call: ServiceCall) -> None:
-        # Collect the dates in order (primary first, then _2 .. _5)
+        # Collect the dates in order (primary first, then _2 .. _10).
         dates: list[date_cls] = []
-        for key in ("date", "date_2", "date_3", "date_4", "date_5"):
+        date_keys = ["date"] + [f"date_{i}" for i in range(2, _ZMANIM_LOOKUP_MAX_DATES + 1)]
+        for key in date_keys:
             raw = call.data.get(key)
             if raw is None:
                 continue
