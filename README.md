@@ -270,6 +270,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 ## Zmanim
 
+> **Astronomical algorithm:** YidCal computes sunrise, sunset, and all derived zmanim using Rabbi Yissocher Dov Grossmann's algorithm from קונטרס קו לקו (the booklet documenting the computational basis of his "Zmanim Grossman" software). This matches the printed Kiryas Joel luach at minute precision across the full year for sunrise, sunset, candle lighting, and motzei. The algorithm is mathematically equivalent to the standard NOAA/Meeus algorithm but with two intentional simplifications that make it closely track the published Chassidic luachs in use across the United States, Europe, and Israel. Times for locations outside Kiryas Joel are computed from the same algorithm using the user's latitude, longitude, and timezone.
+
 ### Zman Erev (Candle Lighting)
 
 * **Zman Erev (Candle Lighting)** (`sensor.yidcal_zman_erev`) — **Next candle-lighting timestamp**
