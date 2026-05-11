@@ -369,9 +369,12 @@ async def create_sample_files(hass: HomeAssistant) -> None:
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
 
-    # Hard-code Monroe NY
+    # Hard-code Monroe NY → snap to Kiryas Joel coordinates used by the
+    # published KJ luach (per the luach publisher's tool: 41°20'28" N,
+    # 74°10'04" W = 41.341, -74.1679). Verified to reproduce every
+    # sunset and candle-lighting time in the printed 5786 luach.
     if 41.2 <= latitude <= 41.45 and -74.3 <= longitude <= -74.0:
-        return "Kiryas Joel", "NY", 41.34202, -74.1762, hass.config.time_zone
+        return "Kiryas Joel", "NY", 41.341, -74.1679, hass.config.time_zone
 
     # Hard-code Monsey NY
     if 41.05 <= latitude <= 41.17 and -74.15 <= longitude <= -73.99:
@@ -607,6 +610,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Check if we have cached location data AND if HA coordinates haven't changed
     cached = initial.get("resolved_location")
+    # Invalidate any cached snap that uses the legacy Kiryas Joel
+    # coordinates — those have been superseded by the publisher's
+    # actual luach coords (41.341, -74.1679). Without this check,
+    # existing installs would keep the old centroid forever even
+    # after updating YidCal.
+    if (
+        cached
+        and cached.get("city") == "Kiryas Joel"
+        and cached.get("lat") == 41.34202
+        and cached.get("lon") == -74.1762
+    ):
+        _LOGGER.info(
+            "YidCal: Migrating cached Kiryas Joel snap to luach-aligned coords"
+        )
+        cached = None
+
     if cached and cached.get("source_lat") == latitude and cached.get("source_lon") == longitude:
         # Use cached location
         city = cached["city"]
