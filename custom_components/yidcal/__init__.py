@@ -5,6 +5,16 @@ import os
 from datetime import date as date_cls, datetime, timedelta
 from pathlib import Path
 
+# Importing yidcal_lib applies a one-time monkey-patch to python-zmanim so
+# that every ZmanimCalendar(...) instantiated anywhere in YidCal uses
+# GrossmanCalculator (the algorithm published by R' Yissocher Dov Grossmann
+# in קונטרס קו לקו, used by the Kiryas Joel luach publisher) as the default
+# astronomical calculator instead of NOAACalculator. The import is placed
+# here, BEFORE any HA helpers or YidCal modules, so the patch is active
+# before any sensor platform is loaded. See yidcal_lib/__init__.py for
+# details. Do not remove or reorder this import.
+from . import yidcal_lib  # noqa: F401
+
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
@@ -607,7 +617,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Resolve and store geo+tz config (with caching to avoid repeated API calls)
     latitude = hass.config.latitude
     longitude = hass.config.longitude
-    
     # Check if we have cached location data AND if HA coordinates haven't changed
     cached = initial.get("resolved_location")
     # Invalidate any cached snap that uses the legacy Kiryas Joel
