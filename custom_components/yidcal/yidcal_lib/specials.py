@@ -65,9 +65,15 @@ def get_special_shabbos_name(today: date | dates.GregorianDate | dates.HebrewDat
     if "שבת החודש" not in events and 0 <= (rc_nisan2 - next_week_date).days <= 6:
         events.append("שבת פרה")
 
-    # Shabbos HaGadol: before Pesach (Nissan 15)
+    # Shabbos HaGadol: the Shabbos immediately preceding the first
+    # seder. Per the BeDU calendar rule, Pesach D1 (15 Nisan) falls
+    # only on Sun, Tue, Thu, or Sat, so the gap from Shabbos Hagadol
+    # to pyluach's 15 Nisan civil date is always 1, 3, 5, or 7 days —
+    # never 8. (When Pesach D1 = Sun, the seder is Sat night = same
+    # Shabbos as Hagadol; pyluach maps 15 Nisan to Sun daytime, hence
+    # the 1-day gap.)
     pesach = dates.HebrewDate(Y, 1, 15).to_pydate()
-    if 0 < (pesach - shabbat_date).days <= 8:
+    if 0 < (pesach - shabbat_date).days <= 7:
         events.append("שבת הגדול")
 
     # Shabbos Shuvah: between R"H and YK (Tishrei 3–9)
