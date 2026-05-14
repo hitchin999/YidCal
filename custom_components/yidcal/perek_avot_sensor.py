@@ -68,15 +68,15 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             day_lbl = int_to_hebrew(sh_hd.day)  # e.g., ו׳ / ז׳
             return f"הדלגה — שבועות ({day_lbl} סיון)"
 
-        # Shabbos Chazon (Shabbos on/just before 9 Av) → skip
-        if sh_hd.month == 5:  # Av
-            if sh_hd.day == 9:
-                return "הדלגה — שבת חזון"
-            if 3 <= sh_hd.day <= 8:
-                # Is 9 Av during the following week?
-                tisha_bav_py = pdates.HebrewDate(sh_hd.year, 5, 9).to_pydate()
-                if shabbat_date < tisha_bav_py <= shabbat_date + timedelta(days=6):
-                    return "הדלגה — שבת חזון"
+        # Shabbos Chazon → skip ONLY when it falls on ערב תשעה באב
+        # (i.e., Shabbos = 8 Av AND 9 Av is on Sunday).
+        # When 9 Av falls on Shabbos itself the fast is נדחה to Sunday and
+        # Perek Avos is still read. All other Shabbos Chazon cases (3–7 Av)
+        # are normal reading weeks.
+        if sh_hd.month == 5 and sh_hd.day == 8:
+            tisha_bav_py = pdates.HebrewDate(sh_hd.year, 5, 9).to_pydate()
+            if tisha_bav_py.weekday() == 6:  # Sunday (Mon=0 … Sun=6)
+                return "הדלגה — שבת חזון (ערב תשעה באב)"
 
         return None
 
