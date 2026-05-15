@@ -379,16 +379,15 @@ async def create_sample_files(hass: HomeAssistant) -> None:
 async def resolve_location_from_coordinates(hass, latitude, longitude):
     """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
 
-    # Hard-code Monroe NY → snap to Kiryas Joel coordinates used by the
-    # published KJ luach (per the luach publisher's tool: 41°20'28" N,
-    # 74°10'04" W = 41.341, -74.1679). Verified to reproduce every
-    # sunset and candle-lighting time in the printed 5786 luach.
-    if 41.2 <= latitude <= 41.45 and -74.3 <= longitude <= -74.0:
-        return "Kiryas Joel", "NY", 41.341, -74.1679, hass.config.time_zone
-
-    # Hard-code Monsey NY
-    if 41.05 <= latitude <= 41.17 and -74.15 <= longitude <= -73.99:
-        return "Monsey", "NY", 41.11121, -74.06848, hass.config.time_zone
+    # 1) Try the curated community-centroid list first. Entries here have
+    # coordinates verified against published luachs, so when matched the zmanim
+    # are guaranteed to align with the printed luach for that community.
+    # Falls through to Nominatim geocoding (below) if no entry matches.
+    from .yidcal_lib.places import find_place
+    snap = find_place(latitude, longitude)
+    if snap is not None:
+        name, state, snap_lat, snap_lon = snap
+        return name, state, snap_lat, snap_lon, hass.config.time_zone
 
     try:
         # 1) Reverse-lookup borough
@@ -632,6 +631,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ):
         _LOGGER.info(
             "YidCal: Migrating cached Kiryas Joel snap to luach-aligned coords"
+        )
+        cached = None
+
+    # Invalidate any cached snap that uses the legacy Monsey coordinates —
+    # the curated community-centroid database (places.py) now supplies the
+    # Monsey centroid as (41.12, -74.07), aligned with the published luach
+    # source. Old installs cached the previous hand-set values.
+    if (
+        cached
+        and cached.get("city") == "Monsey"
+        and cached.get("lat") == 41.11121
+        and cached.get("lon") == -74.06848
+    ):
+        _LOGGER.info(
+            "YidCal: Migrating cached Monsey snap to luach-aligned coords"
         )
         cached = None
 
