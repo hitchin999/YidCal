@@ -38,6 +38,19 @@ def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
 def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
     """Always bump up to the next minute."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+def _round_floor(dt: datetime.datetime) -> datetime.datetime:
+    """Truncate seconds (lechumra rounding for fast-start anchors).
+
+    Used for alos (start of minor fasts) and shkia (start of Tisha
+    B'Av). The fast must begin BEFORE the astronomical moment, never
+    after — so half-up rounding (which can push the displayed minute
+    one tick later than the true zman) is lechumra-violating in these
+    contexts. Other uses of alos/shkia (positive zmanim like sof zman
+    krias shma, sof zman mincha gedola) keep half-up / ceil
+    respectively.
+    """
+    return dt.replace(second=0, microsecond=0)
     
 def _compute_chatzos_hayom(geo: GeoLocation, base_date: datetime.date, tz: ZoneInfo) -> datetime.datetime:
     """Compute Chatzos Hayom (halachic midday) for a given date using MGA day."""
@@ -559,8 +572,14 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             detect_date = actual_date
 
         wd_py = wd if detect_date == actual_date else (wd + 1) % 7
-        # Sunset rolling for sunset-start events
-        sunset_cut = actual_sunset
+        # Sunset rolling for sunset-start events. Floored (truncate
+        # seconds) so the ערב תשעה באב → תשעה באב flag transition
+        # happens at the SAME displayed minute as fast activation
+        # (which uses actual_sunset_floor below). Without flooring
+        # here, there would be a sub-minute window where the fast is
+        # considered active but the hd_sunset-rolled flag still shows
+        # ערב.
+        sunset_cut = _round_floor(actual_sunset)
         sunset_detect_date = actual_date + timedelta(days=1) if now >= sunset_cut else actual_date
         hd_sunset = PHebrewDate.from_pydate(sunset_detect_date)
         wd_sunset = wd if sunset_detect_date == actual_date else (wd + 1) % 7
@@ -582,12 +601,25 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         next_sunset = next_sunset_raw
         tomorrow_sunset = tomorrow_sunset_raw
 
-        # Align dawn with the festival day for consistent daytime windows
+        # Floored copies for use as Tisha B'Av fast-start anchors. The
+        # fast must begin BEFORE astronomical shkia, never after — so
+        # the displayed and countdown-target minutes are floored
+        # (truncate seconds). Raw `actual_sunset` / `prev_sunset` are
+        # still used for non-fast-start purposes (havdalah windows,
+        # end-times, etc.) where seconds-precision is fine.
+        actual_sunset_floor = _round_floor(actual_sunset)
+        prev_sunset_floor = _round_floor(prev_sunset)
+
+        # Align dawn with the festival day for consistent daytime windows.
+        # Floor (truncate seconds) instead of half-up, because `dawn` is
+        # used as the START anchor for minor fasts (Tzom Gedaliah, 10
+        # Teves, Ta'anis Esther, 17 Tammuz) — see `start_time_fast =
+        # dawn` below. Fast start is a chumra zman: must begin BEFORE
+        # astronomical alos, never after. The general-purpose alos
+        # sensor (zman_alos.py) keeps half-up — that's correct for
+        # positive uses like sof zman krias shma, tefilas, etc.
         dawn = cal_fest.sunrise().astimezone(tz) - timedelta(minutes=72)
-        # Round dawn as per zman_alos.py
-        if dawn.second >= 30:
-            dawn += timedelta(minutes=1)
-        dawn = dawn.replace(second=0, microsecond=0)
+        dawn = _round_floor(dawn)
         #_LOGGER.debug(f"Dawn: {dawn}, now: {now}, festival_date: {festival_date}")
         
         # Hebrew dates
@@ -729,17 +761,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         elif hd_py.month == 7 and hd_py.day == 10:  # Yom Kippur
             start_time_fast = prev_sunset - timedelta(minutes=self._candle_offset)
             end_time = actual_sunset + timedelta(minutes=self._havdalah_offset) if detect_date == actual_date else tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
-        elif hd_fest.month == 5 and hd_fest.day == 8 and now < actual_sunset:  # Erev Tisha B'Av
-            start_time_fast = actual_sunset
+        elif hd_fest.month == 5 and hd_fest.day == 8 and now < actual_sunset_floor:  # Erev Tisha B'Av
+            start_time_fast = actual_sunset_floor
             end_time = tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
-        elif hd_fest.month == 5 and (hd_fest.day == 8 and now >= actual_sunset or hd_fest.day == 9):  # Tisha B'Av
-            start_time_fast = prev_sunset if hd_fest.day == 9 else actual_sunset
+        elif hd_fest.month == 5 and (hd_fest.day == 8 and now >= actual_sunset_floor or hd_fest.day == 9):  # Tisha B'Av
+            start_time_fast = prev_sunset_floor if hd_fest.day == 9 else actual_sunset_floor
             end_time = actual_sunset + timedelta(minutes=self._havdalah_offset) if hd_fest.day == 9 and festival_date == actual_date else tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
         elif hd_fest.month == 5 and hd_fest.day == 10 and wd_fest == 6:  # Deferred Tisha B'Av day
-            start_time_fast = prev_sunset
+            start_time_fast = prev_sunset_floor
             end_time = actual_sunset + timedelta(minutes=self._havdalah_offset) if festival_date == actual_date else tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
         elif hd_fest.month == 5 and hd_fest.day == 9 and wd_fest == 5:  # Erev for Deferred Tisha B'Av (Av 9 on Shabbat)
-            start_time_fast = actual_sunset
+            start_time_fast = actual_sunset_floor
             end_time = tomorrow_sunset + timedelta(minutes=self._havdalah_offset)
 
         #_LOGGER.debug(f"Fast times: start_time_fast={start_time_fast}, end_time={end_time}, now={now}")
@@ -1077,12 +1109,15 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             for m, d in minor_fast_dates
         )
         
-        # Compute tomorrow's dawn for minor fasts
+        # Compute tomorrow's dawn for minor fasts.
+        # Floored (truncate seconds) — same chumra reason as `dawn`
+        # above: this is the countdown TARGET for "fast starts in",
+        # and the countdown should reach 0 at the floor minute, not
+        # the half-up minute (which could land after astronomical
+        # alos when alos seconds ≥ 30).
         tomorrow_cal_for_dawn = ZmanimCalendar(geo_location=self._geo, date=festival_date)
         next_dawn = tomorrow_cal_for_dawn.sunrise().astimezone(tz) - timedelta(minutes=72)
-        if next_dawn.second >= 30:
-            next_dawn += timedelta(minutes=1)
-        next_dawn = next_dawn.replace(second=0, microsecond=0)
+        next_dawn = _round_floor(next_dawn)
         
         # ─── MINOR FASTS: Pre-fast countdown (tzeis evening before → alos) ───
         no_fast_active_now = not any(attrs.get(f) for f in self.FAST_FLAGS)
@@ -1119,11 +1154,15 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             else:
                 attrs["מען פאַסט אַן און"] = ""
         
-        # Erev Tisha B'Av: countdown from Chatzos until sunset
-        elif hd_fest.month == 5 and hd_fest.day == 8 and now < actual_sunset:
+        # Erev Tisha B'Av: countdown from Chatzos until sunset.
+        # Compare against the floored sunset (chumra) — same as fast
+        # activation above. The countdown reaches 0 at the floor
+        # minute, matching what the user expects after seeing the
+        # displayed start time.
+        elif hd_fest.month == 5 and hd_fest.day == 8 and now < actual_sunset_floor:
             chatzos_erev_9av = _compute_chatzos_hayom(self._geo, actual_date, tz)
-            if chatzos_erev_9av <= now < actual_sunset:
-                remaining_sec = max(0, (actual_sunset - now).total_seconds())
+            if chatzos_erev_9av <= now < actual_sunset_floor:
+                remaining_sec = max(0, (actual_sunset_floor - now).total_seconds())
                 minutes_remaining = math.ceil(remaining_sec / 60)
                 h = minutes_remaining // 60
                 m = minutes_remaining % 60
