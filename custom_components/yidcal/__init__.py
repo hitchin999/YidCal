@@ -790,6 +790,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # toggle. Used by the yidcal-yurtzeit-config-card.
     _async_register_yurtzeit_services(hass)
 
+    # ── Zmanim single-source-of-truth coordinator ──────────────────
+    # Computes the day's zmanim once per location; every zman sensor
+    # subscribes instead of each building its own ZmanimCalendar.
+    # Created and started BEFORE platform setup so entities can grab
+    # it (via get_zmanim_coordinator) during their own async_setup.
+    from .zmanim_coordinator import ZmanimCoordinator, COORDINATOR_KEY
+
+    _zmanim_coord = ZmanimCoordinator(hass)
+    hass.data[DOMAIN][COORDINATOR_KEY] = _zmanim_coord
+    await _zmanim_coord.async_start()
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -1020,4 +1031,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for svc in (SERVICE_SET_YURTZEIT_MUTED, SERVICE_SET_YURTZEIT_CUSTOM):
         if hass.services.has_service(DOMAIN, svc):
             hass.services.async_remove(DOMAIN, svc)
+
+    # Stop the zmanim coordinator's scheduled-refresh timer so it
+    # doesn't fire after unload/reload.
+    from .zmanim_coordinator import COORDINATOR_KEY
+    _zc = (hass.data.get(DOMAIN, {}) or {}).get(COORDINATOR_KEY)
+    if _zc is not None:
+        _zc.async_shutdown_timer()
+        hass.data[DOMAIN].pop(COORDINATOR_KEY, None)
+
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
