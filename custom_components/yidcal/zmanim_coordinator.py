@@ -14,17 +14,25 @@ the day's zmanim **once per location** (via the shared
 
 DESIGN NOTES (read before modifying)
 ====================================
-1. NOT an interval poller. Zmanim change once per civil day, and the
-   relevant rollover instant differs per sensor (some roll at civil
-   midnight, some at Alos HaShachar). We therefore use
-   ``DataUpdateCoordinator`` only for its listener/refresh plumbing
-   (``update_interval=None``) and drive refreshes from scheduled
-   point-in-time callbacks at BOTH anchors:
-       • next civil midnight
-       • next Alos HaShachar
-   computing/​rescheduling whichever comes first. Computation is
-   shared, so honoring both anchors costs nothing extra and keeps
-   every sensor's existing timing intact.
+1. NOT an interval poller, and NOT a one-shot point-in-time timer.
+   Zmanim change once per civil day; the relevant rollover instant
+   differs per sensor (some roll at civil midnight, some at Alos
+   HaShachar). We use ``DataUpdateCoordinator`` only for its
+   listener/refresh plumbing (``update_interval=None``) and drive
+   refreshes from a single WALL-CLOCK minute tick
+   (``async_track_time_change(second=0)``) — the same primitive the
+   original per-sensor code used. HA re-arms it against the wall
+   clock every tick, so it fires correctly when the system clock is
+   STEPPED (NTP correction, host suspend/resume, VM migration,
+   container pause, manual set). An earlier draft used
+   ``async_track_point_in_time``, which arms a single MONOTONIC
+   deadline and therefore never fires on a clock step — that froze
+   the migrated sensors and is why this primitive was abandoned.
+   There is no HA event for a raw OS clock change, so an event hook
+   cannot substitute for a wall-clock tick. Each tick is a cheap
+   crossing check; an actual recompute happens only on a civil-date
+   change, an Alos-boundary flip, or once hourly as an idempotent
+   safety net.
 
 2. The coordinator does NOT decide rollover. It caches a 4-day
    window (civil today-2 … today+1) of fully-computed zmanim. The
@@ -55,20 +63,7 @@ from datetime import date as date_cls, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant, callback
-try:
-    # HA's canonical constant for "hass.config (incl. time_zone /
-    # location) was updated". Import defensively: if a future/past HA
-    # renames or relocates it, fall back to the stable event-name
-    # string so module import never fails (an import failure here
-    # would be worse than the missed-timer bug we are hardening
-    # against). The string value has been stable for years.
-    from homeassistant.const import EVENT_CORE_CONFIG_UPDATE
-except Exception:  # pragma: no cover - defensive
-    EVENT_CORE_CONFIG_UPDATE = "core_config_updated"
-from homeassistant.helpers.event import (
-    async_track_point_in_time,
-    async_track_time_change,
-)
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import homeassistant.util.dt as dt_util
 
@@ -174,69 +169,79 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
             hass,
             _LOGGER,
             name="YidCal Zmanim",
-            update_interval=None,  # event-driven; see module docstring
+            update_interval=None,  # driven by a wall-clock minute tick
         )
-        self._unsub_timer = None
-        self._unsub_heartbeat = None
-        self._unsub_clockjump = None
+        self._unsub_tick = None
         self._tallis_offset = DEFAULT_TALLIS_TEFILIN_OFFSET
         self._havdalah_offset = 72
+        # Crossing-detection memory. The minute tick is cheap; it only
+        # triggers a real recompute when one of these changes vs the
+        # last successful window:
+        #   _last_anchor_date  — the civil date the cached window was
+        #                        computed for (catches civil-midnight
+        #                        rollover and any clock jump that lands
+        #                        on a different date).
+        #   _last_alos_state   — for the configured "today", whether we
+        #                        were before or after that day's Alos
+        #                        last tick (catches the Alos rollover
+        #                        instant that midnight-date alone
+        #                        wouldn't see).
+        self._last_anchor_date: date_cls | None = None
+        self._last_alos_state: bool | None = None
 
     # ── lifecycle ──────────────────────────────────────────────────
 
     async def async_start(self) -> None:
-        """Do the first computation and arm the refresh timer.
+        """Do the first computation and arm the wall-clock tick.
 
         Called once from async_setup_entry after config is in
         hass.data. Safe to call again on reload (re-arms cleanly).
+
+        SCHEDULING DESIGN (read before changing):
+        The old per-sensor code used HA's
+        ``async_track_time_change(...)`` — a WALL-CLOCK primitive that
+        HA re-arms every tick and that fires correctly when the system
+        clock is stepped (NTP correction, host suspend/resume, VM
+        migration, container pause, manual set). The first coordinator
+        draft used ``async_track_point_in_time`` instead, which arms a
+        single MONOTONIC-clock deadline: stepping the wall clock does
+        NOT advance monotonic time, so the anchor never fired on a
+        clock jump and the migrated sensors froze (validated: the
+        unmigrated ``yidcal_alos`` rolled correctly while the
+        coordinator-driven sensors did not). There is no HA event for
+        a raw OS clock change, so an event hook cannot fix this.
+
+        This design therefore mirrors the proven old-sensor pattern:
+        one ``async_track_time_change`` firing every minute at
+        ``second=0``. Each tick is a cheap "did we cross a rollover
+        boundary?" check; an actual ``compute_zmanim_for_date`` only
+        happens when the civil date changed, the Alos boundary was
+        crossed, or once hourly as an idempotent safety recompute.
+        1440 trivial datetime comparisons/day on a Pi is negligible
+        and is exactly what the old code already did per sensor.
         """
         cfg = (self.hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
         self._tallis_offset = int(
             cfg.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)
         )
         self._havdalah_offset = int(cfg.get("havdalah_offset", 72))
+
         await self.async_refresh()
-        self._schedule_next()
+        self._capture_crossing_state()
 
-        # ── Recovery layer 1: clock-jump re-arm ────────────────────
-        # The precise point-in-time anchor (above) is a one-shot. If
-        # the system clock jumps (NTP step, manual change, host
-        # suspend/resume, container clock skew) the orphaned target
-        # may never fire. HA emits EVENT_CORE_CONFIG_UPDATE on such
-        # changes; on it we immediately recompute and re-arm the
-        # anchor against the corrected now(). This directly fixes the
-        # missed-timer cause rather than masking it.
-        if self._unsub_clockjump is None:
-            self._unsub_clockjump = self.hass.bus.async_listen(
-                EVENT_CORE_CONFIG_UPDATE, self._handle_clock_jump
-            )
-
-        # ── Recovery layer 2: hourly heartbeat backstop ────────────
-        # Last-resort safety net: if BOTH the anchor and the
-        # clock-jump re-arm are somehow missed, recompute at the top
-        # of every hour so the coordinator self-heals within ≤1h. The
-        # shared computation is cheap (that is the whole point of the
-        # coordinator), so an idempotent hourly refresh is free
-        # insurance. Refreshing more often than strictly needed is
-        # harmless — every path recomputes the same window and
-        # sensors re-render identically; only UNDER-refreshing can
-        # show a stale value.
-        if self._unsub_heartbeat is None:
-            self._unsub_heartbeat = async_track_time_change(
-                self.hass, self._handle_heartbeat, minute=0, second=0
+        # Single wall-clock primitive: fire every minute at second 0.
+        # HA re-arms this against the wall clock each tick, so it
+        # survives clock steps the way the old per-sensor code did.
+        if self._unsub_tick is None:
+            self._unsub_tick = async_track_time_change(
+                self.hass, self._handle_tick, second=0
             )
 
     @callback
     def async_shutdown_timer(self) -> None:
-        if self._unsub_timer is not None:
-            self._unsub_timer()
-            self._unsub_timer = None
-        if self._unsub_heartbeat is not None:
-            self._unsub_heartbeat()
-            self._unsub_heartbeat = None
-        if self._unsub_clockjump is not None:
-            self._unsub_clockjump()
-            self._unsub_clockjump = None
+        if self._unsub_tick is not None:
+            self._unsub_tick()
+            self._unsub_tick = None
 
     # ── computation ────────────────────────────────────────────────
 
@@ -294,92 +299,81 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
             anchor_date=today, tz=tz, geo=geo, days=days,
         )
 
-    # ── refresh scheduling (midnight + Alos anchors) ───────────────
+    # ── wall-clock tick + rollover-crossing detection ──────────────
 
-    def _next_anchor(self) -> datetime:
-        """Return the next instant we must recompute at: the EARLIER of
-        the next civil midnight and the next Alos HaShachar.
+    def _crossing_key(self) -> tuple[date_cls, bool]:
+        """Return (civil_date, is_after_alos) for 'now' in the
+        configured tz, using the cached window's Alos when available.
 
-        Recomputing at both keeps the midnight-rollover sensors and the
-        Alos-rollover sensors each seeing fresh data exactly when their
-        own rollover fires. Computation is shared so honoring both is
-        free.
+        These two values together capture every rollover any sensor
+        cares about:
+          • civil_date changes  → civil-midnight rollover (and any
+            clock jump that lands on a different date).
+          • is_after_alos flips → the Alos rollover instant on the
+            same civil date (which the date alone would miss).
         """
         win = self.data
         if win is not None:
             tz = win.tz
         else:
-            # No window yet (first schedule before first compute) —
-            # resolve tz the safe way (name string, never off geo).
             _, _tzname = _resolve_geo_and_tz(self.hass)
             tz = ZoneInfo(_tzname)
         now_local = dt_util.now().astimezone(tz)
+        today = now_local.date()
 
-        # Next civil midnight (start of tomorrow, local).
-        next_midnight = datetime.combine(
-            now_local.date() + timedelta(days=1),
-            datetime.min.time(),
-            tzinfo=tz,
-        )
-
-        # Next Alos: today's if still ahead, else tomorrow's. Use the
-        # cached window when available; otherwise fall back to midnight
-        # only (first run before any data — rare, self-corrects on the
-        # immediately-following refresh).
-        next_alos = None
+        after_alos = True
         if win is not None:
-            today = now_local.date()
-            for cand in (today, today + timedelta(days=1)):
-                a = win.alos_for(cand)
-                if a is not None and a > now_local:
-                    next_alos = a
-                    break
-
-        if next_alos is None:
-            return next_midnight
-        return min(next_midnight, next_alos)
+            a = win.alos_for(today)
+            if a is not None:
+                after_alos = now_local >= a
+        return today, after_alos
 
     @callback
-    def _schedule_next(self) -> None:
-        if self._unsub_timer is not None:
-            self._unsub_timer()
-            self._unsub_timer = None
-        when = self._next_anchor()
-        self._unsub_timer = async_track_point_in_time(
-            self.hass, self._handle_anchor, when
+    def _capture_crossing_state(self) -> None:
+        """Record the current crossing key as the baseline the next
+        tick compares against. Called right after every successful
+        refresh.
+        """
+        d, after = self._crossing_key()
+        self._last_anchor_date = d
+        self._last_alos_state = after
+
+    async def _handle_tick(self, now: datetime) -> None:
+        """Fires every minute at second 0 (wall-clock; HA re-arms it
+        each tick, so it survives clock steps — unlike a one-shot
+        monotonic point-in-time timer).
+
+        Cheap path: compare the current crossing key to the last
+        captured one. Recompute only when:
+          • the civil date changed (midnight rollover or a clock jump
+            to another day), OR
+          • the Alos boundary flipped on the same date, OR
+          • a new hour started (idempotent hourly safety recompute, so
+            any unforeseen drift self-heals within ≤1 h even if the
+            crossing check somehow missed).
+        Otherwise do nothing — no recompute, no state write.
+        """
+        cur_date, cur_after_alos = self._crossing_key()
+
+        date_changed = cur_date != self._last_anchor_date
+        alos_flipped = (
+            self._last_alos_state is not None
+            and cur_after_alos != self._last_alos_state
         )
-        _LOGGER.debug("YidCal zmanim: next recompute scheduled at %s", when)
+        hourly_safety = now.minute == 0
 
-    async def _handle_anchor(self, _now: datetime) -> None:
+        if not (date_changed or alos_flipped or hourly_safety):
+            return
+
+        _LOGGER.debug(
+            "YidCal zmanim recompute: date_changed=%s alos_flipped=%s "
+            "hourly=%s (now=%s)",
+            date_changed, alos_flipped, hourly_safety, now,
+        )
         await self.async_refresh()
-        self._schedule_next()
-
-    async def _handle_heartbeat(self, _now: datetime) -> None:
-        """Hourly backstop. Recompute and re-arm the anchor. Idempotent
-        with _handle_anchor — if the anchor already fired this just
-        recomputes the same window (harmless); if the anchor was
-        missed this is what heals it within the hour.
-        """
-        await self.async_refresh()
-        self._schedule_next()
-
-    @callback
-    def _handle_clock_jump(self, _event) -> None:
-        """System clock changed (NTP step, manual set, suspend/resume,
-        container skew). The previously-armed one-shot anchor may now
-        be orphaned (target in the past) or wrong (target now too far
-        out). Recompute immediately and re-arm against the corrected
-        now(). This is the primary fix for the missed-timer failure
-        mode; the heartbeat is only the last-resort backstop.
-
-        Scheduled as a task because the event callback is sync but
-        async_refresh is a coroutine.
-        """
-        self.hass.async_create_task(self._refresh_and_reschedule())
-
-    async def _refresh_and_reschedule(self) -> None:
-        await self.async_refresh()
-        self._schedule_next()
+        # Re-baseline against the freshly computed window so the next
+        # tick measures crossings from here.
+        self._capture_crossing_state()
 
 
 @callback
