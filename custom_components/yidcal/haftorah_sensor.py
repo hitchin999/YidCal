@@ -969,6 +969,7 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         alos_today = sunrise_today - timedelta(minutes=72)
         chatzos_today = cal_today.chatzos().astimezone(self._tz)
         mincha_gedola_today = chatzos_today + timedelta(minutes=30)
+        mincha_ketana_today = cal_today.mincha_ketana().astimezone(self._tz)
         sunset_today = cal_today.sunset().astimezone(self._tz)
         tzeis_today = sunset_today + timedelta(minutes=havdalah_offset)
         
@@ -982,6 +983,23 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         
         # If in Shabbos window, always show Shabbos haftorah
         if in_shabbos_window:
+            # YK-on-Shabbos: split Shacharis (Yeshayahu) -> Mincha (Yonah)
+            # at mincha ketana of the YK day itself, mirroring weekday YK.
+            # mincha ketana is computed for shabbos_date (the YK day), so
+            # Kol Nidrei night / Shabbos morning correctly show Shacharis.
+            if _is_yom_kippur(_greg_from_pydate(shabbos_date).to_heb()):
+                cal_yk = ZmanimCalendar(geo_location=self._geo, date=shabbos_date)
+                mk_yk = cal_yk.mincha_ketana().astimezone(self._tz)
+                if now_local >= mk_yk:
+                    self._show_weekday_haftorah(
+                        WEEKDAY_HAFTAROT["yom_kippur_mincha"],
+                        "יום הכיפורים מנחה",
+                        "מנחה",
+                        minhag,
+                    )
+                    return
+                # else: fall through to the default Shabbos display, which
+                # resolves to the YK Shacharis haftorah (Yeshayahu).
             self._show_shabbos_haftorah(shabbos_date, is_in_israel, minhag)
             return
         
@@ -1022,8 +1040,17 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
                 # After tzeis - fall through to show Shabbos
         
         elif is_yom_kippur and wd_today != 5:
-            # Yom Kippur Mincha has Sefer Yonah
-            if now_local < tzeis_today:
+            if now_local < mincha_ketana_today:
+                # Before mincha ketana - YK Shacharis haftorah (Yeshayahu),
+                # routed through the resolver (id yom_kippur:morning).
+                self._show_shabbos_haftorah(
+                    civil_today, is_in_israel, minhag,
+                    type_label="yomtov", tefilah="שחרית",
+                )
+                return
+            elif now_local < tzeis_today:
+                # From mincha ketana until tzeis - YK Mincha (Sefer Yonah).
+                # Unchanged from the original behavior.
                 weekday_haftorah = WEEKDAY_HAFTAROT["yom_kippur_mincha"]
                 weekday_reason = "יום הכיפורים מנחה"
                 weekday_tefilah = "מנחה"
@@ -1031,6 +1058,17 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         # If we found a weekday haftorah for today, display it
         if weekday_haftorah:
             self._show_weekday_haftorah(weekday_haftorah, weekday_reason, weekday_tefilah, minhag)
+            return
+
+        # TODAY is a weekday Yom Tov (not a fast / not YK, handled above):
+        # show its own haftorah for the whole Yom Tov day, i.e. until tzeis
+        # ("a little after"), then fall through to preview the next one.
+        if now_local < tzeis_today and self._is_weekday_yomtov(
+            civil_today, is_in_israel, minhag
+        ):
+            self._show_shabbos_haftorah(
+                civil_today, is_in_israel, minhag, type_label="yomtov"
+            )
             return
         
         # Not on a fast day (or after tzeis on fast day) - check for UPCOMING weekday haftorah this week
@@ -1042,6 +1080,15 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             # Stop if we hit Shabbos - show Shabbos haftorah instead
             if future_wd == 5:
                 break
+
+            # UPCOMING weekday Yom Tov - preview it the same way fasts are
+            # previewed. First qualifying day (Yom Tov or fast) wins, since
+            # each path breaks/returns immediately.
+            if self._is_weekday_yomtov(future_date, is_in_israel, minhag):
+                self._show_shabbos_haftorah(
+                    future_date, is_in_israel, minhag, type_label="yomtov"
+                )
+                return
             
             gd_future = _greg_from_pydate(future_date)
             hd_future = gd_future.to_heb()
@@ -1062,10 +1109,13 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
                     weekday_tefilah = "מנחה"
                 break
             elif is_yk_future:
-                weekday_haftorah = WEEKDAY_HAFTAROT["yom_kippur_mincha"]
-                weekday_reason = "יום הכיפורים מנחה"
-                weekday_tefilah = "מנחה"
-                break
+                # Preview upcoming Yom Kippur with its Shacharis haftorah
+                # (the first one read that day).
+                self._show_shabbos_haftorah(
+                    future_date, is_in_israel, minhag,
+                    type_label="yomtov", tefilah="שחרית",
+                )
+                return
         
         # If we found an upcoming weekday haftorah, display it
         if weekday_haftorah:
@@ -1075,6 +1125,51 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         # No weekday haftorah - show Shabbos haftorah
         self._show_shabbos_haftorah(shabbos_date, is_in_israel, minhag)
     
+    # Festival reasons that DO have their own daytime haftorah and may be
+    # shown on a weekday Yom Tov.
+    _YOMTOV_REASON_PREFIXES = (
+        "festival:",
+        "rosh_hashana:",
+        "shavuot:",
+        "pesach:",
+        "sukkot:",
+        "shemini_atzeres:",
+        "simchat_torah",
+    )
+    # Festival reasons that exist in the resolver but are read ONLY on
+    # Shabbos Chol HaMoed - there is no weekday Chol HaMoed haftorah.
+    _YOMTOV_REASON_EXCLUDE = ("pesach:chol_hamoed", "sukkot:chol_hamoed")
+
+    def _is_weekday_yomtov(self, d: date, is_in_israel: bool, minhag: str) -> bool:
+        """Return True if civil date ``d`` is a Yom Tov day that has its own
+        haftorah read on that day.
+
+        The day/Israel gating is delegated entirely to the resolver's
+        festival logic (single source of truth), so e.g. 16 Nisan returns
+        True only in the diaspora. Chanuka / Purim are excluded by name
+        because they have no weekday haftorah and the resolver's Chanuka
+        branch assumes a Shabbos date; Yom Kippur is excluded because the
+        existing YK-Mincha logic already owns the whole YK day. Weekday
+        Chol HaMoed is excluded by reason. ``_resolve_festival`` is used
+        rather than ``resolve`` so the probe never triggers the
+        parsha-fallback warning on non-Shabbos dates.
+        """
+        gd = _greg_from_pydate(d)
+        fest = hebrewcal.festival(
+            gd, israel=is_in_israel, hebrew=False, include_working_days=True
+        )
+        if not fest or fest in ("Chanuka", "Purim", "Shushan Purim", "Yom Kippur"):
+            return False
+
+        hid, reason, _extra = _get_resolver()._resolve_festival(
+            d, israel=is_in_israel
+        )
+        if not hid or not reason:
+            return False
+        if reason in self._YOMTOV_REASON_EXCLUDE:
+            return False
+        return reason.startswith(self._YOMTOV_REASON_PREFIXES)
+
     def _show_weekday_haftorah(self, weekday_haftorah: dict, reason: str, tefilah: str, minhag: str) -> None:
         """Display a weekday haftorah."""
         minhag_key = "sephardi" if minhag.lower() in ("sephardi", "sefardi", "sephardic") else "ashkenazi"
@@ -1094,8 +1189,23 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             "Type": "weekday",
         }
     
-    def _show_shabbos_haftorah(self, shabbos_date: date, is_in_israel: bool, minhag: str) -> None:
-        """Display a Shabbos haftorah."""
+    def _show_shabbos_haftorah(
+        self,
+        shabbos_date: date,
+        is_in_israel: bool,
+        minhag: str,
+        *,
+        type_label: str = "shabbos",
+        tefilah: str | None = None,
+    ) -> None:
+        """Display a Shabbos haftorah.
+
+        ``type_label`` controls the ``Type`` attribute. It defaults to
+        ``"shabbos"`` so existing callers are unaffected; the weekday
+        Yom Tov path passes ``"yomtov"``. ``tefilah``, when given, adds a
+        ``Tefilah`` attribute (used for the YK Shacharis line so it matches
+        the YK Mincha line); ``None`` leaves it off for every other caller.
+        """
         resolved = _get_resolver().resolve(shabbos_date, israel=is_in_israel, minhag=minhag)
 
         if not resolved:
@@ -1153,6 +1263,7 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             "Notes": resolved.notes or "",
             "Source_Ref": resolved.source_ref,
             "Reason": resolved.reason,
-            "Type": "shabbos",
+            "Type": type_label,
+            **({"Tefilah": tefilah} if tefilah else {}),
             **extra,
         }
