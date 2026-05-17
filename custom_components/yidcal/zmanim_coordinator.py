@@ -55,7 +55,20 @@ from datetime import date as date_cls, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_point_in_time
+try:
+    # HA's canonical constant for "hass.config (incl. time_zone /
+    # location) was updated". Import defensively: if a future/past HA
+    # renames or relocates it, fall back to the stable event-name
+    # string so module import never fails (an import failure here
+    # would be worse than the missed-timer bug we are hardening
+    # against). The string value has been stable for years.
+    from homeassistant.const import EVENT_CORE_CONFIG_UPDATE
+except Exception:  # pragma: no cover - defensive
+    EVENT_CORE_CONFIG_UPDATE = "core_config_updated"
+from homeassistant.helpers.event import (
+    async_track_point_in_time,
+    async_track_time_change,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import homeassistant.util.dt as dt_util
 
@@ -164,6 +177,8 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
             update_interval=None,  # event-driven; see module docstring
         )
         self._unsub_timer = None
+        self._unsub_heartbeat = None
+        self._unsub_clockjump = None
         self._tallis_offset = DEFAULT_TALLIS_TEFILIN_OFFSET
         self._havdalah_offset = 72
 
@@ -183,11 +198,45 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
         await self.async_refresh()
         self._schedule_next()
 
+        # ── Recovery layer 1: clock-jump re-arm ────────────────────
+        # The precise point-in-time anchor (above) is a one-shot. If
+        # the system clock jumps (NTP step, manual change, host
+        # suspend/resume, container clock skew) the orphaned target
+        # may never fire. HA emits EVENT_CORE_CONFIG_UPDATE on such
+        # changes; on it we immediately recompute and re-arm the
+        # anchor against the corrected now(). This directly fixes the
+        # missed-timer cause rather than masking it.
+        if self._unsub_clockjump is None:
+            self._unsub_clockjump = self.hass.bus.async_listen(
+                EVENT_CORE_CONFIG_UPDATE, self._handle_clock_jump
+            )
+
+        # ── Recovery layer 2: hourly heartbeat backstop ────────────
+        # Last-resort safety net: if BOTH the anchor and the
+        # clock-jump re-arm are somehow missed, recompute at the top
+        # of every hour so the coordinator self-heals within ≤1h. The
+        # shared computation is cheap (that is the whole point of the
+        # coordinator), so an idempotent hourly refresh is free
+        # insurance. Refreshing more often than strictly needed is
+        # harmless — every path recomputes the same window and
+        # sensors re-render identically; only UNDER-refreshing can
+        # show a stale value.
+        if self._unsub_heartbeat is None:
+            self._unsub_heartbeat = async_track_time_change(
+                self.hass, self._handle_heartbeat, minute=0, second=0
+            )
+
     @callback
     def async_shutdown_timer(self) -> None:
         if self._unsub_timer is not None:
             self._unsub_timer()
             self._unsub_timer = None
+        if self._unsub_heartbeat is not None:
+            self._unsub_heartbeat()
+            self._unsub_heartbeat = None
+        if self._unsub_clockjump is not None:
+            self._unsub_clockjump()
+            self._unsub_clockjump = None
 
     # ── computation ────────────────────────────────────────────────
 
@@ -302,6 +351,33 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
         _LOGGER.debug("YidCal zmanim: next recompute scheduled at %s", when)
 
     async def _handle_anchor(self, _now: datetime) -> None:
+        await self.async_refresh()
+        self._schedule_next()
+
+    async def _handle_heartbeat(self, _now: datetime) -> None:
+        """Hourly backstop. Recompute and re-arm the anchor. Idempotent
+        with _handle_anchor — if the anchor already fired this just
+        recomputes the same window (harmless); if the anchor was
+        missed this is what heals it within the hour.
+        """
+        await self.async_refresh()
+        self._schedule_next()
+
+    @callback
+    def _handle_clock_jump(self, _event) -> None:
+        """System clock changed (NTP step, manual set, suspend/resume,
+        container skew). The previously-armed one-shot anchor may now
+        be orphaned (target in the past) or wrong (target now too far
+        out). Recompute immediately and re-arm against the corrected
+        now(). This is the primary fix for the missed-timer failure
+        mode; the heartbeat is only the last-resort backstop.
+
+        Scheduled as a task because the event callback is sync but
+        async_refresh is a coroutine.
+        """
+        self.hass.async_create_task(self._refresh_and_reschedule())
+
+    async def _refresh_and_reschedule(self) -> None:
         await self.async_refresh()
         self._schedule_next()
 
