@@ -85,6 +85,14 @@ def format_simple_time(dt_local: datetime, fmt: str = "12") -> str:
 class ZmanEntry:
     label: str             # Hebrew label (e.g. "עלות השחר")
     dt_local: datetime     # aware, local tz, rounded per that zman's rule
+    # Unrounded astronomical value (aware, local tz) — the exact argument
+    # the rounding function wraps, before display rounding. This is what
+    # the "with seconds" mode (sensor *_With_Seconds attributes and the
+    # luach `seconds` option) exposes. Halachically identical to
+    # dt_local; only the display stringency-direction rounding differs.
+    # Defaults to None so existing `ZmanEntry(label, dt)` construction
+    # stays valid; compute_zmanim_for_date always populates it.
+    dt_raw_local: datetime | None = None
 
 
 def compute_zmanim_for_date(
@@ -133,22 +141,22 @@ def compute_zmanim_for_date(
     # havdalah=50 → Tzies before). Sorting by dt makes the display stable
     # regardless of config.
     items: list[ZmanEntry] = [
-        ZmanEntry("עלות השחר",              _half_up(dawn)),
-        ZmanEntry("זמן טלית ותפילין",        _half_up(talis)),
-        ZmanEntry("הנץ החמה",               _half_up(sunrise)),
-        ZmanEntry("סוף זמן קריאת שמע מג״א",  _floor(dawn + mga_hour * 3)),
-        ZmanEntry("סוף זמן קריאת שמע גר״א",  _floor(sunrise + gra_hour * 3)),
-        ZmanEntry("סוף זמן תפילה מג״א",      _floor(dawn + mga_hour * 4)),
-        ZmanEntry("סוף זמן תפילה גר״א",      _floor(sunrise + gra_hour * 4)),
-        ZmanEntry("חצות היום",              _half_up(dawn + mga_hour * 6)),
-        ZmanEntry("מנחה גדולה",              _half_up(dawn + mga_hour * 6.5)),
-        ZmanEntry("מנחה קטנה",               _half_up(dawn + mga_hour * 9.5)),
-        ZmanEntry("פלג המנחה גר״א",          _half_up(sunrise + gra_hour * 10.75)),
-        ZmanEntry("פלג המנחה מג״א",          _half_up(dawn + mga_hour * 10.75)),
-        ZmanEntry("שקיעת החמה",              _ceil(sunset)),
-        ZmanEntry("צאת הכוכבים",             _ceil(sunset + timedelta(minutes=havdalah_offset))),
-        ZmanEntry("זמן מעריב 60",            _ceil(sunset + timedelta(minutes=60))),
-        ZmanEntry("חצות הלילה",              _half_up(chatzos_halaila)),
+        ZmanEntry("עלות השחר",              _half_up(dawn),                              dawn),
+        ZmanEntry("זמן טלית ותפילין",        _half_up(talis),                             talis),
+        ZmanEntry("הנץ החמה",               _half_up(sunrise),                           sunrise),
+        ZmanEntry("סוף זמן קריאת שמע מג״א",  _floor(dawn + mga_hour * 3),                 dawn + mga_hour * 3),
+        ZmanEntry("סוף זמן קריאת שמע גר״א",  _floor(sunrise + gra_hour * 3),              sunrise + gra_hour * 3),
+        ZmanEntry("סוף זמן תפילה מג״א",      _floor(dawn + mga_hour * 4),                 dawn + mga_hour * 4),
+        ZmanEntry("סוף זמן תפילה גר״א",      _floor(sunrise + gra_hour * 4),              sunrise + gra_hour * 4),
+        ZmanEntry("חצות היום",              _half_up(dawn + mga_hour * 6),               dawn + mga_hour * 6),
+        ZmanEntry("מנחה גדולה",              _half_up(dawn + mga_hour * 6.5),             dawn + mga_hour * 6.5),
+        ZmanEntry("מנחה קטנה",               _half_up(dawn + mga_hour * 9.5),             dawn + mga_hour * 9.5),
+        ZmanEntry("פלג המנחה גר״א",          _half_up(sunrise + gra_hour * 10.75),        sunrise + gra_hour * 10.75),
+        ZmanEntry("פלג המנחה מג״א",          _half_up(dawn + mga_hour * 10.75),           dawn + mga_hour * 10.75),
+        ZmanEntry("שקיעת החמה",              _ceil(sunset),                               sunset),
+        ZmanEntry("צאת הכוכבים",             _ceil(sunset + timedelta(minutes=havdalah_offset)),  sunset + timedelta(minutes=havdalah_offset)),
+        ZmanEntry("זמן מעריב 60",            _ceil(sunset + timedelta(minutes=60)),       sunset + timedelta(minutes=60)),
+        ZmanEntry("חצות הלילה",              _half_up(chatzos_halaila),                   chatzos_halaila),
     ]
     items.sort(key=lambda e: e.dt_local)
     return items
