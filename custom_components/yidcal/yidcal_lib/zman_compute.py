@@ -12,11 +12,28 @@ existing individual zman sensors:
   • Sof Zman Krias Shma (MGA/GRA), Sof Zman Tefilah (MGA/GRA) → floor
   • Shkia, Tzies, Zman Maariv 60 → ceil (chumra)
 
+FAST-START EXCEPTION (single source of truth)
+---------------------------------------------
+The general rounding above treats Alos and Shkia as *positive* zman
+boundaries (e.g. Shkia = end of the mincha-gedola window → ceil so the
+window stays open lechumra; Alos = start of the tefilin window →
+half-up). A fast START is the INVERTED chumra: the fast must begin
+BEFORE the astronomical moment, never after, so it FLOORS (truncate
+seconds) regardless of the general rule for that zman.
+
+`fast_start_for_date()` is the one place this floored value is
+computed. Every consumer that needs a fast-start time — the holiday
+sensor's fast timers, the luach generator's fast annotations, and any
+future fast sensor — MUST call it instead of re-deriving from raw
+sunrise/sunset, so the floor logic never drifts between callers again.
+
 This is a pure helper with no Home Assistant dependency so it can be
 reused by:
   • UpcomingShabbosZmanimSensor
   • UpcomingYomTovZmanimSensor
-  • A future "check zmanim for a specific day" service call.
+  • HolidaySensor fast-start / fast-countdown logic
+  • The luach generator's fast-day annotation rows
+  • A "check zmanim for a specific day" service call.
 """
 from __future__ import annotations
 
@@ -180,3 +197,239 @@ def compute_chametz_zmanim(
         else sriefes_raw
     ).replace(second=0, microsecond=0)
     return achilas, sriefes
+
+
+def chatzos_halayla_for_night(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+) -> datetime:
+    """Compute Chatzos HaLaila (halachic midnight) for the night that
+    BEGINS at the sunset of ``base_date``. Matches the YidCal
+    ``ChatzosHaLailaSensor`` (MGA midpoint of tzeis-R״T → alos).
+
+    Algebraic identity: with night_start = sunset + 72 min and
+    dawn_next = next_sunrise − 72 min, the 6-zmanit-hours midpoint
+    simplifies to ``(sunset + sunrise_next) / 2`` (the ±72 offsets
+    cancel). This is the same as the astronomical "true solar
+    midnight" — the moment the sun is on the opposite meridian.
+
+    Returned datetime is tz-aware and rounded half-up (<30s floor,
+    ≥30s ceil) to match the YidCal sensor's display rounding.
+    """
+    cal_today = ZmanimCalendar(geo_location=geo, date=base_date)
+    sunset = cal_today.sunset().astimezone(tz)
+    cal_next = ZmanimCalendar(
+        geo_location=geo, date=base_date + timedelta(days=1),
+    )
+    sunrise_next = cal_next.sunrise().astimezone(tz)
+    # MGA midpoint = (sunset + sunrise_next) / 2
+    midpoint = sunset + (sunrise_next - sunset) / 2
+    return _half_up(midpoint)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Kiddush Levana helpers — molad-derived deadlines
+# ────────────────────────────────────────────────────────────────────────
+#
+# References:
+#   • ZMAN user-guide page 10 (טבלא 3 description):
+#       — מולד: the mean molad, in Jerusalem clock time.
+#       — ז' שלמים: exactly 7 days after the molad (earliest, per the
+#         "seven complete days" opinion).
+#       — סוף זמן קידוש לבנה (per the Rama): midpoint between consecutive
+#         mean molados — i.e., half a mean synodic month after the molad.
+#       Both are adjusted to the local clock (with DST if applicable).
+#
+#   • Mean synodic month = 29 days, 12 hours, 793 chalakim, where
+#     1 chelek = 1/1080 hour = 10/3 seconds. Verified empirically against
+#     pyluach: consecutive ``molad_announcement()`` results differ by
+#     exactly 29d 12h 44m 3.333…s.
+#
+# These functions are pure helpers and do NOT currently feed into the
+# luach PDF (they're staged for future use — e.g. a sensor or an
+# optional yearly-sheet-luach KL row). The functions intentionally accept
+# Hebrew (year, month) rather than a precomputed Molad object so that
+# the DST round-trip is avoided: the announcement is computed cleanly
+# in "announcement-clock" units, the duration is added, then local DST
+# is applied to the result date — matching the convention in
+# ``YidCalHelper.get_actual_molad``.
+
+# Half mean synodic month: 14 days, 18 hours, 22 minutes, 1⅔ seconds.
+# Stored with microsecond precision (1.666 666 s) so that the
+# accumulated rounding error over many months stays sub-millisecond.
+_HALF_SYNODIC_MONTH = timedelta(
+    days=14, hours=18, minutes=22, seconds=1, microseconds=666_667,
+)
+
+
+def _molad_announcement_naive(year: int, month: int) -> datetime:
+    """Return the molad announcement of (year, month) as a naive
+    ``datetime`` — the raw announced clock time (e.g. "Wed 4:34 PM and
+    13 chalakim") with no DST applied. Chalakim are converted to
+    seconds (1 chelek = 10/3 seconds).
+
+    This is the input for both ``zayin_shleimim_local`` and
+    ``sof_zman_kiddush_levana_rama_local``.
+    """
+    # Imported lazily to keep top-level imports minimal.
+    from pyluach.hebrewcal import HebrewDate as _PHebrewDate, Month as _PMonth
+
+    ann = _PMonth(year, month).molad_announcement()
+    parts_seconds = ann["parts"] * (10 / 3)
+
+    # Find the Gregorian date of the molad. pyluach weekday is 1=Sun…7=Sat;
+    # convert to Python weekday (Mon=0…Sun=6) and walk forward from the
+    # 1st of the Hebrew month to the first matching weekday in range.
+    weekday_py = (ann["weekday"] + 5) % 7
+    first_of_month = _PHebrewDate(year, month, 1).to_pydate()
+    delta_days = (weekday_py - first_of_month.weekday()) % 7
+    molad_date = first_of_month + timedelta(days=delta_days)
+    if molad_date > first_of_month:
+        molad_date -= timedelta(days=7)
+
+    return datetime(
+        molad_date.year, molad_date.month, molad_date.day,
+        ann["hour"], ann["minutes"],
+        int(parts_seconds), int((parts_seconds % 1) * 1_000_000),
+    )
+
+
+def _apply_local_dst(naive_dt: datetime, tz: ZoneInfo) -> datetime:
+    """Apply the YidCal molad-announcement DST convention: interpret
+    the announced time as local clock time, and add the DST offset if
+    DST is in effect at that local time. Returns a naive datetime.
+
+    Mirrors ``YidCalHelper.get_actual_molad``'s DST handling so that
+    KL deadlines display consistently with the announced molad.
+    """
+    aware = naive_dt.replace(tzinfo=tz)
+    dst = aware.dst() or timedelta(0)
+    return naive_dt + dst
+
+
+def zayin_shleimim_local(
+    year: int, month: int, tz: ZoneInfo,
+) -> datetime:
+    """Compute ז׳ שלמים — exactly 7 days after the molad announcement.
+
+    Per the ZMAN manual: "Z'shleimim is essentially exactly the same
+    time as the molad, one week later, except adjusted to the local
+    clock at each place, with one hour added in summer where
+    customary, in hours-minutes-seconds." (page 10, טבלא 3.)
+
+    Returns a naive ``datetime`` in local clock time (DST applied for
+    the Z'shleimim date itself, not the molad date — important near
+    spring-forward / fall-back transitions).
+    """
+    naive = _molad_announcement_naive(year, month) + timedelta(days=7)
+    return _apply_local_dst(naive, tz)
+
+
+def sof_zman_kiddush_levana_rama_local(
+    year: int, month: int, tz: ZoneInfo,
+) -> datetime:
+    """Compute סוף זמן קידוש לבנה per the Rama: half a mean synodic
+    month after the molad announcement.
+
+    The Rama opinion (Orach Chayim 426:3): the latest time to recite
+    Kiddush Levana is the midpoint between consecutive molados, which
+    is the moment the moon is at opposition (astronomical full moon)
+    in the mean lunar cycle.
+
+    Per the ZMAN manual: "The sof zman kiddush levana per the Rama
+    [is] at the midpoint between molad and molad, also adjusted to
+    the local clock." (page 10, טבלא 3.)
+
+    Returns a naive ``datetime`` in local clock time (DST applied for
+    the SZKL date itself, not the molad date).
+
+    Note: this implementation does NOT consider the Equation of Time
+    (משוואת הזמן). The ZMAN program offers that as an option for
+    higher astronomical precision; if needed, a refined version can
+    apply EoT at the SZKL date — but the simpler mean-time version
+    matches the most common minhag.
+    """
+    naive = _molad_announcement_naive(year, month) + _HALF_SYNODIC_MONTH
+    return _apply_local_dst(naive, tz)
+
+# ────────────────────────────────────────────────────────────────────────
+# Fast-start times — the single source of truth for the floored alos /
+# shkia used at the START of a taanis. See the FAST-START EXCEPTION note
+# in the module docstring.
+# ────────────────────────────────────────────────────────────────────────
+
+# The two anchor kinds a fast can start on:
+#   • "alos"  → minor fasts (Tzom Gedaliah, Asara b'Teves,
+#                Ta'anis Esther, 17 Tammuz) begin at dawn.
+#   • "shkia" → Tisha b'Av (and T"B nidche) begins at sunset of the
+#                preceding civil day (Erev T"B).
+FAST_START_ALOS = "alos"
+FAST_START_SHKIA = "shkia"
+
+
+def fast_start_for_date(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    anchor: str,
+) -> datetime:
+    """Return the FLOORED fast-start datetime for ``base_date``.
+
+    ``anchor`` is one of:
+      • ``FAST_START_ALOS``  — alos hashachar (sunrise − 72 min, MGA
+        0°50′). Used for the minor fasts. ``base_date`` is the fast
+        day itself.
+      • ``FAST_START_SHKIA`` — sunset. Used for Tisha b'Av; the fast
+        begins at sunset of Erev T"B, so the caller passes the EREV
+        civil date as ``base_date``.
+
+    The result is floored to the minute (seconds truncated) — a fast
+    must begin BEFORE the astronomical moment, never after, so this
+    deliberately overrides the general half-up (alos) / ceil (shkia)
+    rounding used elsewhere in this module. Computed from raw
+    sunrise/sunset so no upstream rounding is inherited.
+
+    Returns an aware datetime in ``tz``. Use ``format_simple_time`` or
+    the ``H:MM`` pattern for display.
+    """
+    cal = ZmanimCalendar(geo_location=geo, date=base_date)
+    if anchor == FAST_START_ALOS:
+        sunrise = cal.sunrise().astimezone(tz)
+        raw = sunrise - timedelta(minutes=_ALOS_OFFSET_MIN)
+    elif anchor == FAST_START_SHKIA:
+        raw = cal.sunset().astimezone(tz)
+    else:
+        raise ValueError(
+            f"anchor must be {FAST_START_ALOS!r} or "
+            f"{FAST_START_SHKIA!r}, got {anchor!r}"
+        )
+    # Floor: truncate seconds (lechumra for a fast start).
+    return raw.replace(second=0, microsecond=0)
+
+
+def format_fast_start_clock(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    anchor: str,
+    fmt: str = "12short",
+) -> str:
+    """Convenience wrapper: ``fast_start_for_date`` formatted as a clock
+    string.
+
+    ``fmt``:
+      • ``"12short"`` → ``"8:26"`` (12-hour, no AM/PM — the printed-luach
+        style used in fast annotations / countdowns)
+      • ``"12"``      → ``"8:26 PM"``
+      • ``"24"``      → ``"20:26"``
+    """
+    dt = fast_start_for_date(
+        geo=geo, tz=tz, base_date=base_date, anchor=anchor,
+    )
+    if fmt == "12short":
+        return f"{dt.hour % 12 or 12}:{dt.minute:02d}"
+    return format_simple_time(dt, fmt)
