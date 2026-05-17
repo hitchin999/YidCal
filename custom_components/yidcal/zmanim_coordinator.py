@@ -26,8 +26,11 @@ DESIGN NOTES (read before modifying)
    shared, so honoring both anchors costs nothing extra and keeps
    every sensor's existing timing intact.
 
-2. The coordinator does NOT decide rollover. It caches a 3-day window
-   (yesterday / today / tomorrow) of fully-computed zmanim. Each
+2. The coordinator does NOT decide rollover. It caches a 4-day
+   window (civil today-2 … today+1) of fully-computed zmanim. The
+   extra trailing day exists so an Alos-rollover sensor, which shows
+   the previous civil day before Alos, still has a full
+   yesterday/today/tomorrow trio available for its attributes. Each
    subscribing entity applies ITS OWN existing rollover rule when
    reading (midnight-camp picks by civil date; Alos-camp picks by
    comparing now to that day's Alos). This is deliberate: it lets the
@@ -104,11 +107,10 @@ def _resolve_geo_and_tz(hass: HomeAssistant) -> tuple[GeoLocation, str]:
 
 
 class ZmanimWindow:
-    """Immutable-ish holder for one location's 3-day zmanim window.
+    """Immutable-ish holder for one location's 4-day zmanim window.
 
-    ``days`` maps a civil ``date`` → ``{label: ZmanEntry}``. Always
-    contains exactly yesterday, today, tomorrow relative to the civil
-    date the window was computed for.
+    ``days`` maps a civil ``date`` → ``{label: ZmanEntry}``. Always contains civil (today-2) through (today+1) relative to
+    the civil date the window was computed for.
     """
 
     __slots__ = ("anchor_date", "tz", "geo", "days")
@@ -131,7 +133,8 @@ class ZmanimWindow:
         Returns None if that date isn't in the cached window or the
         label is unknown — callers decide how to degrade (typically
         recompute on demand, but in practice the window always covers
-        yesterday/today/tomorrow which is all any sensor needs).
+        the full civil(today-2 … today+1) span, covering every
+        sensor's rollover need including Alos-rollback.).
         """
         day = self.days.get(civil_date)
         if day is None:
@@ -148,7 +151,7 @@ class ZmanimWindow:
 
 
 class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
-    """Computes a 3-day zmanim window once per location and notifies
+    """Computes a 4-day zmanim window once per location and notifies
     all subscribed entities. Refresh is event-driven (midnight + Alos
     anchors), not interval-based.
     """
@@ -189,7 +192,7 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
     # ── computation ────────────────────────────────────────────────
 
     async def _async_update_data(self) -> ZmanimWindow:
-        """Compute yesterday/today/tomorrow for the configured location.
+        """Compute the civil (today-2 … today+1) window for the location.
 
         Runs the blocking astronomy in the executor. On failure, if we
         already have good data, re-raise is suppressed by returning the
@@ -211,14 +214,23 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
             raise
 
     def _compute_window(self) -> ZmanimWindow:
-        """Blocking: build the 3-day window. Executor-only."""
+        """Blocking: build the 4-day window. Executor-only."""
         geo, tzname = _resolve_geo_and_tz(self.hass)
         tz = ZoneInfo(tzname)
         now_local = dt_util.now().astimezone(tz)
         today = now_local.date()
 
         days: dict[date_cls, dict[str, ZmanEntry]] = {}
-        for offset in (-1, 0, 1):
+        # Window span: civil (today-2) … (today+1) inclusive — FOUR
+        # days, not three. Reason: a sensor that rolls over at Alos
+        # shows the PREVIOUS civil day before Alos. That rolled-back
+        # "today" then itself needs a yesterday/today/tomorrow trio
+        # for its *_Simple attributes — i.e. it reaches back to
+        # civil(today-2). A 3-day window would leave that day uncached
+        # and the Yesterdays_Simple attribute would render empty in
+        # the post-midnight / pre-Alos window. Computation is cheap
+        # and shared, so the extra day costs effectively nothing.
+        for offset in (-2, -1, 0, 1):
             d = today + timedelta(days=offset)
             entries = compute_zmanim_for_date(
                 geo=geo,
