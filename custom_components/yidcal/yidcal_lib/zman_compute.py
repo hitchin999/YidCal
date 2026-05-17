@@ -10,7 +10,7 @@ existing individual zman sensors:
   • Alos, Talis & Tefilin, Netz, Chatzos Hayom, Mincha Gedola,
     Mincha Ketana, Plag GRA, Plag MGA, Chatzos HaLaila → round half-up
   • Sof Zman Krias Shma (MGA/GRA), Sof Zman Tefilah (MGA/GRA) → floor
-  • Shkia, Tzies, Zman Maariv 60 → ceil (chumra)
+  • Shkia, Tzies, Zman Maariv 60, Zman Maariv R"T → ceil (chumra)
 
 FAST-START EXCEPTION (single source of truth)
 ---------------------------------------------
@@ -156,6 +156,7 @@ def compute_zmanim_for_date(
         ZmanEntry("שקיעת החמה",              _ceil(sunset),                               sunset),
         ZmanEntry("צאת הכוכבים",             _ceil(sunset + timedelta(minutes=havdalah_offset)),  sunset + timedelta(minutes=havdalah_offset)),
         ZmanEntry("זמן מעריב 60",            _ceil(sunset + timedelta(minutes=60)),       sunset + timedelta(minutes=60)),
+        ZmanEntry("זמן מעריב ר״ת",           _ceil(sunset + timedelta(minutes=72)),       sunset + timedelta(minutes=72)),
         ZmanEntry("חצות הלילה",              _half_up(chatzos_halaila),                   chatzos_halaila),
     ]
     items.sort(key=lambda e: e.dt_local)
