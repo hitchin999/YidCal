@@ -59,6 +59,19 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
     a US user typing "12733" silently getting a Ukrainian postal code)
     without locking out international queries.
 
+    After Nominatim resolves the string to coordinates, those
+    coordinates are run through ``places.find_place`` — exactly the
+    same curated community-centroid snap the integration applies to
+    HA's configured location at setup (see
+    ``__init__.resolve_location_from_coordinates``). When the geocoded
+    point falls in (or near) a known community, the community's
+    luach-verified centroid + display name are used instead of the
+    raw Nominatim point. This keeps the lookup override consistent
+    with the sensors: the same community always resolves to the same
+    coordinates regardless of whether it came from HA config or a
+    typed override. Falls through to the raw Nominatim result when no
+    community matches.
+
     Raises ``ServiceValidationError`` on empty input, no geocoder result,
     timeout, or any other geopy failure — silent fallback to the
     configured location is intentionally NOT done here, since giving
@@ -132,21 +145,49 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
                 f"specific input (e.g. 'Lakewood, NJ' or a postal code)."
             )
 
+        # Snap to a curated community centroid when the geocoded point
+        # is in/near a known community — identical to what the
+        # integration does for HA's configured location at setup
+        # (__init__.resolve_location_from_coordinates → places.find_place).
+        # This guarantees a typed "Kiryas Joel" override and the
+        # configured KJ location produce the SAME luach-verified
+        # coordinates. No match → keep the raw Nominatim point.
+        result_lat = loc.latitude
+        result_lon = loc.longitude
+        result_name = (
+            str(loc.address) if getattr(loc, "address", None) else query
+        )
         try:
-            tzname = TimezoneFinder().timezone_at(lng=loc.longitude, lat=loc.latitude)
+            from .places import find_place
+
+            snap = find_place(loc.latitude, loc.longitude)
+        except Exception:  # pragma: no cover - defensive; never block lookup
+            snap = None
+        if snap is not None:
+            snap_name, snap_state, snap_lat, snap_lon = snap
+            result_lat = snap_lat
+            result_lon = snap_lon
+            result_name = (
+                f"{snap_name}, {snap_state}" if snap_state else snap_name
+            )
+
+        try:
+            tzname = TimezoneFinder().timezone_at(
+                lng=result_lon, lat=result_lat
+            )
         except Exception:
             tzname = None
         if not tzname:
             raise ServiceValidationError(
                 f"Could not determine timezone for {query!r} "
-                f"(lat={loc.latitude}, lon={loc.longitude})."
+                f"(lat={result_lat}, lon={result_lon})."
             )
 
         return ResolvedLocation(
-            latitude=loc.latitude,
-            longitude=loc.longitude,
+            latitude=result_lat,
+            longitude=result_lon,
             tzname=tzname,
-            display_name=str(loc.address) if getattr(loc, "address", None) else query,
+            display_name=result_name,
         )
 
     resolved = await hass.async_add_executor_job(_blocking_resolve)
