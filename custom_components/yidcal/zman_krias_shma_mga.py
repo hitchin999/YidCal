@@ -1,106 +1,109 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone, date as date_cls
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-from zmanim.util.geo_location import GeoLocation
-
 from .const import DOMAIN
 from .device import YidCalZmanDevice
-from .zman_sensors import get_geo
+from .zmanim_coordinator import get_zmanim_coordinator
+
+# Engine label this sensor reads from the coordinator window. Must match
+# zman_compute.compute_zmanim_for_date exactly.
+_LABEL = "סוף זמן קריאת שמע מג״א"
 
 
-class SofZmanKriasShmaMGASensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
-    """סוף-זמן קריאת שמע עפ"י המג״א (3 שעות זמניות)."""
+class SofZmanKriasShmaMGASensor(YidCalZmanDevice, SensorEntity):
+    """Sof Zman Krias Shma (MGA) — coordinator-migrated.
 
-    _attr_device_class  = SensorDeviceClass.TIMESTAMP
-    _attr_icon          = "mdi:book-open-variant"
-    _attr_name          = "Sof Zman Krias Shma (MGA)"
-    _attr_unique_id     = "yidcal_sof_zman_krias_shma_mga"
+    Single source of truth: reads 'סוף זמן קריאת שמע מג״א' from ZmanimCoordinator's
+    cached window instead of computing its own astronomy. Rollover
+    camp: MIDNT. Byte-identical output to the pre-coordinator sensor
+    (state, attributes, attribute order) — verified by harness.
+
+    No CoordinatorEntity inheritance (the shared YidCalDevice base's
+    bare super().__init__() collides with CoordinatorEntity's required
+    arg; see zman_shkia.py). The small contract is replicated manually.
+    RestoreEntity intentionally dropped: coordinator.data is populated
+    before platforms set up (async_start awaits first refresh).
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon         = "mdi:book-open-variant"
+    _attr_name         = "Sof Zman Krias Shma (MGA)"
+    _attr_unique_id    = "yidcal_sof_zman_krias_shma_mga"
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
-        slug = "sof_zman_krias_shma_mga"
-        self.entity_id = f"sensor.yidcal_{slug}"
-        self.hass      = hass
-
+        self.entity_id = "sensor.yidcal_sof_zman_krias_shma_mga"
+        self.hass = hass
+        self._coordinator = get_zmanim_coordinator(hass)
         cfg = hass.data[DOMAIN]["config"]
-        self._tz       = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
-        self._geo: GeoLocation | None = None
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+
+    @property
+    def available(self) -> bool:
+        return (
+            self._coordinator is not None
+            and self._coordinator.last_update_success
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # Load geo once
-        self._geo = await get_geo(self.hass)
-        # Initial calculation
-        await self.async_update()
-        # Recompute each midnight local time
-        async_track_time_change(
-            self.hass,
-            self._midnight_update,
-            hour=0, minute=0, second=0,
-        )
+        if self._coordinator is not None:
+            self.async_on_remove(
+                self._coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+        self._recompute_from_coordinator()
 
-    async def _midnight_update(self, now: datetime) -> None:
-        await self.async_update()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._recompute_from_coordinator()
+        self.async_write_ha_state()
 
-    def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
-        """MGA day (dawn→nightfall); SZKS = dawn + 3 sha'ot zmaniot.
-
-        Returns (rounded_local_dt, precise_iso_string_in_local_tz).
-        """
-        assert self._geo is not None
-        cal      = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        sunrise  = cal.sunrise().astimezone(self._tz)
-        sunset   = cal.sunset().astimezone(self._tz)
-
-        # MGA “day” from dawn to nightfall (±72 min)
-        dawn      = sunrise - timedelta(minutes=72)
-        nightfall = sunset  + timedelta(minutes=72)
-
-        hour_td = (nightfall - dawn) / 12
-        target  = dawn + hour_td * 3
-
-        # full precision (local tz) before flooring
-        full_iso_local = target.isoformat()
-
-        # floor to the minute (any seconds 0–59)
-        target = target.replace(second=0, microsecond=0)
-
-        return target, full_iso_local
-
-    async def async_update(self, now: datetime | None = None) -> None:
-        if not self._geo:
+    def _recompute_from_coordinator(self) -> None:
+        if self._coordinator is None:
+            return
+        win = self._coordinator.data
+        if win is None:
             return
 
-        # 1) current local time → date
-        now_local = (now or dt_util.now()).astimezone(self._tz)
-        today     = now_local.date()
+        now_local = dt_util.now().astimezone(self._tz)
+        today_civil = now_local.date()
 
-        # compute for today / yesterday / tomorrow
-        local_today_dt, full_iso_today = self._compute_for_date(today)
-        local_yest_dt, _               = self._compute_for_date(today - timedelta(days=1))
-        local_tom_dt, _                = self._compute_for_date(today + timedelta(days=1))
+        # Civil-midnight rollover: "today" is just the civil date.
+        today = today_civil
 
-        # state = today's time in UTC
-        self._attr_native_value = local_today_dt.astimezone(timezone.utc)
+        e_today = win.entry(_LABEL, today)
+        e_yest  = win.entry(_LABEL, today - timedelta(days=1))
+        e_tom   = win.entry(_LABEL, today + timedelta(days=1))
+        if e_today is None:
+            return
 
-        # human strings
-        human_today = self._format_simple_time(local_today_dt)
-        human_tom   = self._format_simple_time(local_tom_dt)
-        human_yest  = self._format_simple_time(local_yest_dt)
+        self._attr_native_value = e_today.dt_local.astimezone(timezone.utc)
 
-        # attributes (Tomorrow before Yesterday) + keep existing keys
+        full_iso_today = (
+            e_today.dt_raw_local.isoformat()
+            if e_today.dt_raw_local is not None
+            else e_today.dt_local.isoformat()
+        )
+        human_today = self._format_simple_time(e_today.dt_local)
+        human_tom = (
+            self._format_simple_time(e_tom.dt_local)
+            if e_tom is not None else ""
+        )
+        human_yest = (
+            self._format_simple_time(e_yest.dt_local)
+            if e_yest is not None else ""
+        )
+
         self._attr_extra_state_attributes = {
             "Krias_Shma_MGA_With_Seconds": full_iso_today,
             "Krias_Shma_MGA_Simple": human_today,
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
-
