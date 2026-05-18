@@ -1,125 +1,111 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone, date as date_cls
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_point_in_time
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-from zmanim.util.geo_location import GeoLocation
-
 from .const import DOMAIN
 from .device import YidCalZmanDevice
-from .zman_sensors import get_geo
+from .zmanim_coordinator import get_zmanim_coordinator
+
+# Engine label this sensor reads from the coordinator window. Must match
+# zman_compute.compute_zmanim_for_date exactly.
+_LABEL = "זמן מעריב 60"
 
 
-class ZmanMaariv60Sensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
-    """זמן ערבית (60 דקות אחרי שקיעה)."""
+class ZmanMaariv60Sensor(YidCalZmanDevice, SensorEntity):
+    """Zman Maariv 60 — coordinator-migrated.
 
-    _attr_device_class  = SensorDeviceClass.TIMESTAMP
-    _attr_icon          = "mdi:clock-alert"
-    _attr_name          = "Zman Maariv 60"
-    _attr_unique_id     = "yidcal_zman_maariv_60"
+    Single source of truth: reads 'זמן מעריב 60' from ZmanimCoordinator's
+    cached window instead of computing its own astronomy. Rollover
+    camp: ALOS. Byte-identical output to the pre-coordinator sensor
+    (state, attributes, attribute order) — verified by harness.
+
+    No CoordinatorEntity inheritance (the shared YidCalDevice base's
+    bare super().__init__() collides with CoordinatorEntity's required
+    arg; see zman_shkia.py). The small contract is replicated manually.
+    RestoreEntity intentionally dropped: coordinator.data is populated
+    before platforms set up (async_start awaits first refresh).
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon         = "mdi:clock-alert"
+    _attr_name         = "Zman Maariv 60"
+    _attr_unique_id    = "yidcal_zman_maariv_60"
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
-        slug = "zman_maariv_60"
-        self.entity_id = f"sensor.yidcal_{slug}"
-        self.hass      = hass
-
+        self.entity_id = "sensor.yidcal_zman_maariv_60"
+        self.hass = hass
+        self._coordinator = get_zmanim_coordinator(hass)
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
-        self._geo: GeoLocation | None = None
-        self._unsub_alos = None
+
+    @property
+    def available(self) -> bool:
+        return (
+            self._coordinator is not None
+            and self._coordinator.last_update_success
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._geo = await get_geo(self.hass)
-        await self.async_update()
-        # recompute each day at Alos HaShachar (instead of civil midnight)
-        self._schedule_next_alos()
+        if self._coordinator is not None:
+            self.async_on_remove(
+                self._coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+        self._recompute_from_coordinator()
 
-    async def async_will_remove_from_hass(self) -> None:
-        if self._unsub_alos is not None:
-            self._unsub_alos()
-            self._unsub_alos = None
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._recompute_from_coordinator()
+        self.async_write_ha_state()
 
-    def _compute_alos_local(self, base_date: date_cls) -> datetime:
-        """Alos HaShachar (MGA: sunrise - 72m) for base_date, in local tz."""
-        assert self._geo is not None
-        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        return (cal.sunrise() - timedelta(minutes=72)).astimezone(self._tz)
-
-    def _schedule_next_alos(self) -> None:
-        """Schedule the next async_update to fire at the next Alos HaShachar."""
-        if self._unsub_alos is not None:
-            self._unsub_alos()
-            self._unsub_alos = None
-        if not self._geo:
+    def _recompute_from_coordinator(self) -> None:
+        if self._coordinator is None:
             return
+        win = self._coordinator.data
+        if win is None:
+            return
+
         now_local = dt_util.now().astimezone(self._tz)
-        today = now_local.date()
-        next_alos = self._compute_alos_local(today)
-        if next_alos <= now_local:
-            next_alos = self._compute_alos_local(today + timedelta(days=1))
-        self._unsub_alos = async_track_point_in_time(
-            self.hass, self._alos_update, next_alos
-        )
-
-    async def _alos_update(self, now: datetime) -> None:
-        await self.async_update()
-        self._schedule_next_alos()
-
-    def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
-        """Maariv 60 for base_date = sunset(base_date) + 60m; ceil to minute."""
-        assert self._geo is not None
-        cal    = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        sunset = cal.sunset().astimezone(self._tz)
-
-        target = sunset + timedelta(minutes=60)
-
-        # precise local ISO before rounding
-        full_iso_local = target.isoformat()
-
-        # ceil to minute regardless of current seconds
-        target = (target + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
-        return target, full_iso_local
-
-    async def async_update(self, now: datetime | None = None) -> None:
-        if not self._geo:
-            return
-
-        # local date
-        now_local = (now or dt_util.now()).astimezone(self._tz)
         today_civil = now_local.date()
 
-        # Treat the day as not yet rolled over until Alos HaShachar.
-        # This keeps last night's value stable for nighttime automations
-        # that run after civil midnight (e.g. summer 6h-after-tzeis automations).
-        today_alos = self._compute_alos_local(today_civil)
-        if now_local < today_alos:
+        # Alos rollover: before today's Alos we still show the
+        # previous civil day's value.
+        alos_today = win.alos_for(today_civil)
+        if alos_today is not None and now_local < alos_today:
             today = today_civil - timedelta(days=1)
         else:
             today = today_civil
 
-        # compute today / yesterday / tomorrow
-        local_today_dt, full_iso_today = self._compute_for_date(today)
-        local_yest_dt, _               = self._compute_for_date(today - timedelta(days=1))
-        local_tom_dt, _                = self._compute_for_date(today + timedelta(days=1))
+        e_today = win.entry(_LABEL, today)
+        e_yest  = win.entry(_LABEL, today - timedelta(days=1))
+        e_tom   = win.entry(_LABEL, today + timedelta(days=1))
+        if e_today is None:
+            return
 
-        # state = today's value in UTC
-        self._attr_native_value = local_today_dt.astimezone(timezone.utc)
+        self._attr_native_value = e_today.dt_local.astimezone(timezone.utc)
 
-        # human strings
-        human_today = self._format_simple_time(local_today_dt)
-        human_tom   = self._format_simple_time(local_tom_dt)
-        human_yest  = self._format_simple_time(local_yest_dt)
+        full_iso_today = (
+            e_today.dt_raw_local.isoformat()
+            if e_today.dt_raw_local is not None
+            else e_today.dt_local.isoformat()
+        )
+        human_today = self._format_simple_time(e_today.dt_local)
+        human_tom = (
+            self._format_simple_time(e_tom.dt_local)
+            if e_tom is not None else ""
+        )
+        human_yest = (
+            self._format_simple_time(e_yest.dt_local)
+            if e_yest is not None else ""
+        )
 
-        # attributes (Tomorrow before Yesterday)
         self._attr_extra_state_attributes = {
             "Maariv_60_With_Seconds": full_iso_today,
             "Maariv_60_Simple": human_today,
