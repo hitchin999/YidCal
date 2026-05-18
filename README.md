@@ -270,7 +270,9 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 ## Zmanim
 
-> **Astronomical algorithm:** YidCal computes sunrise, sunset, and all derived zmanim using Rabbi Yissocher Dov Grossmann's algorithm from קונטרס קו לקו (the booklet documenting the computational basis of his "Zmanim Grossman" software). This matches the printed Kiryas Joel luach at minute precision across the full year for sunrise, sunset, candle lighting, and motzei. The algorithm is mathematically equivalent to the standard NOAA/Meeus algorithm but with two intentional simplifications that make it closely track the published Chassidic luachs in use across the United States, Europe, and Israel. Times for locations outside Kiryas Joel are computed from the same algorithm using the user's latitude, longitude, and timezone.
+> **Astronomical algorithm:** YidCal computes sunrise, sunset, and all derived zmanim using Rabbi Yissocher Dov Grossmann's algorithm from קונטרס קו לקו (the booklet documenting the computational basis of his "Zmanim Grossman" software). This matches the printed Kiryas Joel luach at minute precision across the full year for sunrise, sunset, candle lighting, and motzei. The algorithm is mathematically equivalent to the standard NOAA/Meeus algorithm but with two intentional simplifications that make it closely track the published Chassidic luachs in use across the United States, Europe, and Israel.
+>
+> **Community location snapping:** YidCal includes a curated database of known communities (Kiryas Joel, Monsey, Williamsburg, Boro Park, Flatbush, Lakewood, and many others) with coordinates aligned to the published luach for that community. If your configured Home Assistant location is within about 5 km of one of these communities, zmanim are computed from that community's luach-aligned centroid so they match the printed local luach. If you are **not** near a listed community, the same algorithm is applied directly to your own Home Assistant latitude, longitude, and timezone (with no snapping). Because neighboring communities each have their own centroid, two nearby communities (e.g. Williamsburg vs. Boro Park) can correctly show slightly different times from each other.
 
 ### Zman Erev (Candle Lighting)
 
@@ -369,7 +371,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
     * `Shabbos_Date` — the Saturday's date, as `"Sat, 2026-04-25"`.
     * `הדלקת נרות` — Friday candle lighting (sunset − the candle-lighting offset configured in the integration).
     * `מוצאי שבת` (or `מוצאי יום טוב` when the Shabbos is itself a Yom Tov day, e.g. שמיני עצרת on Shabbos) — havdalah at the end of the no-melucha block. For multi-day spans (e.g. Shavuos Day 2 on Shabbos = Fri YT + Sat YT/Shabbos), this is the **final** day's havdalah.
-    * Daily zmanim, chronologically: עלות השחר → זמן טלית ותפילין → הנץ החמה → סוף זמן קריאת שמע מג״א → סוף זמן קריאת שמע גר״א → סוף זמן תפילה מג״א → סוף זמן תפילה גר״א → חצות היום → מנחה גדולה → מנחה קטנה → פלג המנחה גר״א → פלג המנחה מג״א → שקיעת החמה → צאת הכוכבים → זמן מעריב 60 → חצות הלילה.
+    * Daily zmanim, chronologically: עלות השחר → זמן טלית ותפילין → הנץ החמה → סוף זמן קריאת שמע מג״א → סוף זמן קריאת שמע גר״א → סוף זמן תפילה מג״א → סוף זמן תפילה גר״א → חצות היום → מנחה גדולה → מנחה קטנה → פלג המנחה גר״א → פלג המנחה מג״א → שקיעת החמה → צאת הכוכבים → זמן מעריב 60 → זמן מעריב ר״ת → חצות הלילה.
 
 ### Upcoming Yom Tov Zmanim
 
