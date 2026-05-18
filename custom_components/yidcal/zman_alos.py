@@ -1,95 +1,106 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone, date as date_cls
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-from zmanim.util.geo_location import GeoLocation
-
 from .const import DOMAIN
 from .device import YidCalZmanDevice
-from .zman_sensors import get_geo
+from .zmanim_coordinator import get_zmanim_coordinator
+
+# Engine label this sensor reads from the coordinator window. Must match
+# zman_compute.compute_zmanim_for_date exactly.
+_LABEL = "עלות השחר"
 
 
-class AlosSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
-    """Alot Ha-Shachar עפ״י המג״א (0°50′, -72 m)."""
+class AlosSensor(YidCalZmanDevice, SensorEntity):
+    """Alos HaShachar — coordinator-migrated.
 
-    _attr_device_class  = SensorDeviceClass.TIMESTAMP
-    _attr_icon          = "mdi:weather-sunset-up"
-    _attr_name          = "Alos HaShachar"
-    _attr_unique_id     = "yidcal_alos"
+    Single source of truth: reads 'עלות השחר' from ZmanimCoordinator's
+    cached window instead of computing its own astronomy. Rollover
+    camp: MIDNT. Byte-identical output to the pre-coordinator sensor
+    (state, attributes, attribute order) — verified by harness.
+
+    No CoordinatorEntity inheritance (the shared YidCalDevice base's
+    bare super().__init__() collides with CoordinatorEntity's required
+    arg; see zman_shkia.py). The small contract is replicated manually.
+    RestoreEntity intentionally dropped: coordinator.data is populated
+    before platforms set up (async_start awaits first refresh).
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon         = "mdi:weather-sunset-up"
+    _attr_name         = "Alos HaShachar"
+    _attr_unique_id    = "yidcal_alos"
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
-        slug = "alos"
-        self.entity_id = f"sensor.yidcal_{slug}"
-        self.hass      = hass
-
+        self.entity_id = "sensor.yidcal_alos"
+        self.hass = hass
+        self._coordinator = get_zmanim_coordinator(hass)
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
-        self._geo: GeoLocation | None = None
+
+    @property
+    def available(self) -> bool:
+        return (
+            self._coordinator is not None
+            and self._coordinator.last_update_success
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._geo = await get_geo(self.hass)
-        await self.async_update()
-        # Recompute at local midnight so Yesterday/Tomorrow roll correctly.
-        async_track_time_change(
-            self.hass,
-            self._midnight_update,
-            hour=0, minute=0, second=0,
-        )
+        if self._coordinator is not None:
+            self.async_on_remove(
+                self._coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+        self._recompute_from_coordinator()
 
-    async def _midnight_update(self, now: datetime) -> None:
-        await self.async_update()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._recompute_from_coordinator()
+        self.async_write_ha_state()
 
-    def _compute_alos_for_date(self, base_date: date_cls) -> tuple[datetime, str]:
-        """Compute Alos (MGA) for base_date: sunrise(base_date) - 72 minutes.
-
-        Returns (rounded_local_dt, precise_iso_string_in_local_tz).
-        """
-        assert self._geo is not None
-        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        sunrise = cal.sunrise().astimezone(self._tz)
-
-        target = sunrise - timedelta(minutes=72)
-
-        # full precision (local tz) for debug
-        full_iso_local = target.isoformat()
-
-        # rounding: <30s floor, >=30s ceil; zero seconds/us
-        if target.second >= 30:
-            target += timedelta(minutes=1)
-        target = target.replace(second=0, microsecond=0)
-
-        return target, full_iso_local
-
-    async def async_update(self, now: datetime | None = None) -> None:
-        if not self._geo:
+    def _recompute_from_coordinator(self) -> None:
+        if self._coordinator is None:
+            return
+        win = self._coordinator.data
+        if win is None:
             return
 
-        now_local = (now or dt_util.now()).astimezone(self._tz)
-        today = now_local.date()
+        now_local = dt_util.now().astimezone(self._tz)
+        today_civil = now_local.date()
 
-        # Compute for today / yesterday / tomorrow using local date.
-        local_today_dt, full_iso_today = self._compute_alos_for_date(today)
-        local_yest_dt, _               = self._compute_alos_for_date(today - timedelta(days=1))
-        local_tom_dt, _                = self._compute_alos_for_date(today + timedelta(days=1))
+        # Civil-midnight rollover: "today" is just the civil date.
+        today = today_civil
 
-        # State = today's Alos (rounded) in UTC.
-        self._attr_native_value = local_today_dt.astimezone(timezone.utc)
+        e_today = win.entry(_LABEL, today)
+        e_yest  = win.entry(_LABEL, today - timedelta(days=1))
+        e_tom   = win.entry(_LABEL, today + timedelta(days=1))
+        if e_today is None:
+            return
 
-        # Human strings.
-        human_today = self._format_simple_time(local_today_dt)
-        human_tom   = self._format_simple_time(local_tom_dt)
-        human_yest  = self._format_simple_time(local_yest_dt)
+        self._attr_native_value = e_today.dt_local.astimezone(timezone.utc)
 
-        # Attributes (Tomorrow before Yesterday, per your preference).
+        full_iso_today = (
+            e_today.dt_raw_local.isoformat()
+            if e_today.dt_raw_local is not None
+            else e_today.dt_local.isoformat()
+        )
+        human_today = self._format_simple_time(e_today.dt_local)
+        human_tom = (
+            self._format_simple_time(e_tom.dt_local)
+            if e_tom is not None else ""
+        )
+        human_yest = (
+            self._format_simple_time(e_yest.dt_local)
+            if e_yest is not None else ""
+        )
+
         self._attr_extra_state_attributes = {
             "Alos_With_Seconds": full_iso_today,
             "Alos_Simple": human_today,
