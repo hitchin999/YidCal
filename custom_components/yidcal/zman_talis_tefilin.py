@@ -1,103 +1,128 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone, date as date_cls
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-from zmanim.util.geo_location import GeoLocation
-
 from .const import DOMAIN
 from .device import YidCalZmanDevice
-from .zman_sensors import get_geo
+from .zmanim_coordinator import get_zmanim_coordinator
 from . import DEFAULT_TALLIS_TEFILIN_OFFSET
 
-# default Alos “MGA” offset (0°50′ = 72 minutes)
-DEFAULT_ALOS_OFFSET = 72
+# Two engine labels: the Alos this is measured from, and the
+# Talis & Tefilin target (Alos + configured offset).
+_LABEL = "זמן טלית ותפילין"
+_ALOS_LABEL = "עלות השחר"
 
 
-class ZmanTalisTefilinSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
-    """זמן נטילת תפילין ותלית ראשונה עפ״י מג״א (Misheyakir)."""
+class ZmanTalisTefilinSensor(YidCalZmanDevice, SensorEntity):
+    """זמן נטילת תפילין ותלית ראשונה עפ״י מג״א (Misheyakir) —
+    coordinator-migrated.
+
+    SPECIAL (not a standard single-zman sensor):
+      • Exposes SIX attributes, including TWO *_With_Seconds values
+        (the unrounded Alos AND the unrounded Talis target) and an
+        Offset_Minutes attribute — preserved in this exact order:
+          Alos_With_Seconds, Tallis_With_Seconds, Tallis_Simple,
+          Offset_Minutes, Tomorrows_Simple, Yesterdays_Simple
+      • State = today's Talis target, half-up rounded, as UTC.
+      • Rollover at CIVIL MIDNIGHT (original behavior; no Alos test).
+
+    The coordinator computes זמן טלית ותפילין with the same configured
+    tallis_tefilin_offset this sensor reads, so the target matches;
+    עלות השחר supplies the Alos_With_Seconds raw value. Verified
+    byte-identical to the pre-coordinator sensor.
+
+    No CoordinatorEntity inheritance / no RestoreEntity — see
+    zman_shkia.py for the rationale.
+    """
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_icon = "mdi:watch"
-    _attr_name = "Zman Talis & Tefilin"
-    _attr_unique_id = "yidcal_zman_tallis_tefilin"
+    _attr_icon         = "mdi:watch"
+    _attr_name         = "Zman Talis & Tefilin"
+    _attr_unique_id    = "yidcal_zman_tallis_tefilin"
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
         self.entity_id = "sensor.yidcal_zman_tallis_tefilin"
         self.hass = hass
-
+        self._coordinator = get_zmanim_coordinator(hass)
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
-        self._geo: GeoLocation | None = None
-        # user-defined minutes after Alos
-        self._offset = cfg.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)
+        # Same key the old sensor used; surfaced as the Offset_Minutes
+        # attribute. The coordinator uses this same value to compute
+        # the זמן טלית ותפילין target, so they stay consistent.
+        self._offset = cfg.get(
+            "tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET
+        )
+
+    @property
+    def available(self) -> bool:
+        return (
+            self._coordinator is not None
+            and self._coordinator.last_update_success
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._geo = await get_geo(self.hass)
-        await self.async_update()
-        async_track_time_change(
-            self.hass, self._midnight_update, hour=0, minute=0, second=0
-        )
+        if self._coordinator is not None:
+            self.async_on_remove(
+                self._coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+        self._recompute_from_coordinator()
 
-    async def _midnight_update(self, now: datetime) -> None:
-        await self.async_update()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._recompute_from_coordinator()
+        self.async_write_ha_state()
 
-    def _compute_for_date(self, base_date: date_cls) -> tuple[datetime, str, str]:
-        """
-        For base_date:
-          Alos = sunrise(base_date) - DEFAULT_ALOS_OFFSET
-          Target = Alos + self._offset
-        Returns (rounded_local_target, precise_local_alos_iso, precise_local_target_iso).
-        """
-        assert self._geo is not None
-        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        sunrise = cal.sunrise().astimezone(self._tz)
-
-        alos_time = sunrise - timedelta(minutes=DEFAULT_ALOS_OFFSET)
-        target = alos_time + timedelta(minutes=self._offset)
-
-        alos_iso_local = alos_time.isoformat()
-        target_iso_local = target.isoformat()
-
-        # rounding: <30s floor, >=30s ceil
-        if target.second >= 30:
-            target += timedelta(minutes=1)
-        target = target.replace(second=0, microsecond=0)
-
-        return target, alos_iso_local, target_iso_local
-
-    async def async_update(self, now: datetime | None = None) -> None:
-        if not self._geo:
+    def _recompute_from_coordinator(self) -> None:
+        if self._coordinator is None:
+            return
+        win = self._coordinator.data
+        if win is None:
             return
 
-        # local now & date
-        now_local = (now or dt_util.now()).astimezone(self._tz)
-        today = now_local.date()
+        # Civil-midnight rollover.
+        today = dt_util.now().astimezone(self._tz).date()
 
-        # today / yesterday / tomorrow
-        local_today_dt, alos_iso_today, target_iso_today = self._compute_for_date(today)
-        local_yest_dt, _, _ = self._compute_for_date(today - timedelta(days=1))
-        local_tom_dt,  _, _ = self._compute_for_date(today + timedelta(days=1))
+        e_today = win.entry(_LABEL, today)
+        e_yest  = win.entry(_LABEL, today - timedelta(days=1))
+        e_tom   = win.entry(_LABEL, today + timedelta(days=1))
+        a_today = win.entry(_ALOS_LABEL, today)
+        if e_today is None:
+            return
 
-        # state = today's value in UTC
-        self._attr_native_value = local_today_dt.astimezone(timezone.utc)
+        self._attr_native_value = e_today.dt_local.astimezone(timezone.utc)
 
-        # human strings
-        human_today = self._format_simple_time(local_today_dt)
-        human_tom   = self._format_simple_time(local_tom_dt)
-        human_yest  = self._format_simple_time(local_yest_dt)
+        # Two raw values: unrounded Alos, unrounded Talis target.
+        alos_iso_today = (
+            a_today.dt_raw_local.isoformat()
+            if (a_today is not None and a_today.dt_raw_local is not None)
+            else (a_today.dt_local.isoformat() if a_today is not None else "")
+        )
+        target_iso_today = (
+            e_today.dt_raw_local.isoformat()
+            if e_today.dt_raw_local is not None
+            else e_today.dt_local.isoformat()
+        )
 
-        # attributes (Tomorrow before Yesterday) + keep your existing keys
+        human_today = self._format_simple_time(e_today.dt_local)
+        human_tom = (
+            self._format_simple_time(e_tom.dt_local)
+            if e_tom is not None else ""
+        )
+        human_yest = (
+            self._format_simple_time(e_yest.dt_local)
+            if e_yest is not None else ""
+        )
+
+        # Exact original attribute set and order.
         self._attr_extra_state_attributes = {
-            # "sunrise": sunrise.isoformat(),  # if needed later
             "Alos_With_Seconds": alos_iso_today,
             "Tallis_With_Seconds": target_iso_today,
             "Tallis_Simple": human_today,
@@ -105,4 +130,3 @@ class ZmanTalisTefilinSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
         }
-
