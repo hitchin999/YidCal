@@ -135,6 +135,67 @@ class GrossmanCalculator(NOAACalculator):
             target_date, geo_location, zenith, adjust_for_elevation, mode="sunset"
         )
 
+    def utc_noon(self, target_date, geo_location: GeoLocation) -> Optional[float]:
+        """True solar transit — chatzos — in UTC hours.
+
+        This is Grossmann's *chatzos* definition: the instant the sun
+        crosses the local meridian (= mean noon + equation of time).
+        In Grossmann's "Zmanim" software ALL day-zmanim are built off
+        this value (sunrise = noon − L, sunset = noon + L; see Kuntras
+        Kav Le-Kav ch. 4 and the program's "Difference 2 places" help
+        text: "שקיעה is difference חצות + difference half-day; נץ is
+        difference חצות − half-day").
+
+        It is NOT the midpoint of independently-refined sunrise and
+        sunset. That midpoint drifts ~15-30 s off true noon because the
+        sun's declination / equation-of-time change across the day
+        (sunrise and sunset are each refined to their own time), which
+        is enough to cross the minute-rounding boundary on a handful of
+        dates per year — e.g. the published Kiryas Joel luach holds a
+        steady 12:53 for the week of 5 Sivan 5786 while the midpoint
+        flips to 12:54 mid-week.
+
+        Same single-refinement and whole-second rounding (+0.5 s offset)
+        as utc_sunrise / utc_sunset, so any value derived from it
+        (chatzos hayom, chatzos halaila = noon + 12 h) matches the
+        printed luach's display rule. Does NOT depend on, and does not
+        modify, the validated _grossman_event sunrise/sunset path.
+        """
+        lon = geo_location.longitude
+        if isinstance(target_date, datetime):
+            base_dt = target_date.replace(hour=12, minute=0, second=0, microsecond=0)
+        else:
+            base_dt = datetime.combine(target_date, time(hour=12))
+        T0 = (base_dt - self.EPOCH_DATETIME).total_seconds() / 86400.0
+
+        h = self._grossman_noon(T0, lon)
+        h = self._grossman_noon(T0 + (h - 12.0) / 24.0, lon)
+        return ((h * 3600.0 + 0.5) / 3600.0) % 24
+
+    def _grossman_noon(self, T: float, lon: float) -> float:
+        """Solar transit (UTC hours) for fractional day ``T`` since the
+        J2000 epoch — steps 1-10 of Grossmann's algorithm (no half-day
+        arc). Mirrors ``_grossman_step`` exactly up to and including the
+        equation-of-time term, but stops at solar noon. Kept separate
+        from ``_grossman_step`` so the 100%-validated sunrise/sunset
+        code path is untouched.
+        """
+        B = (self.SUN_MEAN_LON_AT_EPOCH + self.SUN_MEAN_LON_DAILY * T) % 360
+        C = (self.SUN_APSIDAL_LON_AT_EPOCH + self.APSIDAL_DAILY * T) % 360
+        D = (B - C) % 360
+        Dr = math.radians(D)
+        A = 0.02 * math.sin(2 * Dr) - 1.915 * math.sin(Dr)
+        V = (B + A) % 360
+        Vr = math.radians(V)
+        eps_r = math.radians(self.OBLIQUITY)
+        N = math.degrees(math.asin(math.sin(eps_r) * math.sin(Vr)))
+        Nr = math.radians(N)
+        E_raw = math.degrees(math.acos(math.cos(Vr) / math.cos(Nr)))
+        V_acos = math.degrees(math.acos(math.cos(Vr)))
+        F = -(E_raw - V_acos) if V > 180 else (E_raw - V_acos)
+        O = (F + A) / 15.0
+        return 12.0 - lon / 15.0 + O
+
     # ---- Grossman algorithm internals ----
 
     def _grossman_event(
