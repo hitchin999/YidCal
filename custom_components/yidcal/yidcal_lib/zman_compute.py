@@ -38,11 +38,13 @@ reused by:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date as date_cls, datetime, timedelta
+from datetime import date as date_cls, datetime, time as time_cls, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
+
+from .grossman_calculator import GrossmanCalculator
 
 
 # Default Talis & Tefilin offset (minutes after Alos) — matches
@@ -68,6 +70,38 @@ def _floor(dt: datetime) -> datetime:
 def _ceil(dt: datetime) -> datetime:
     """Always ceil to the next minute — matches Shkia / Tzies / Maariv 60 style."""
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+
+def _grossman_transit(
+    cal: ZmanimCalendar,
+    geo: GeoLocation,
+    base_date: date_cls,
+    tz: ZoneInfo,
+) -> datetime:
+    """True solar transit (chatzos hayom) for ``base_date``, tz-aware.
+
+    Grossmann's "Zmanim" software defines chatzos as the actual solar
+    meridian crossing (mean noon + equation of time) and builds netz/
+    shkia off it — NOT as the midpoint of sunrise & sunset. The midpoint
+    runs ~15-30 s off true noon (sunrise and sunset are each refined to
+    their own moment), enough to cross the display minute boundary on
+    some dates (e.g. KJ luach week of 5 Sivan 5786: printed 12:53 all
+    week vs midpoint 12:53→12:54).
+
+    Uses the patched-in GrossmanCalculator's ``utc_noon``. Falls back to
+    the sunrise/sunset midpoint only if some non-Grossman calculator is
+    ever injected (keeps this helper total).
+    """
+    acalc = getattr(cal, "astronomical_calculator", None)
+    if isinstance(acalc, GrossmanCalculator):
+        h = acalc.utc_noon(base_date, geo)
+        return (
+            datetime.combine(base_date, time_cls(0), tzinfo=timezone.utc)
+            + timedelta(hours=h)
+        ).astimezone(tz)
+    sr = cal.sunrise().astimezone(tz)
+    ss = cal.sunset().astimezone(tz)
+    return sr + (ss - sr) / 2
 
 
 def format_simple_time(dt_local: datetime, fmt: str = "12") -> str:
@@ -126,13 +160,17 @@ def compute_zmanim_for_date(
     # Talis & Tefilin = Alos + user offset
     talis = dawn + timedelta(minutes=tallis_offset)
 
-    # Chatzos HaLaila: midpoint of (sunset+72) → next-day-dawn
-    cal_next = ZmanimCalendar(geo_location=geo, date=base_date + timedelta(days=1))
-    sunrise_next = cal_next.sunrise().astimezone(tz)
-    dawn_next = sunrise_next - timedelta(minutes=_ALOS_OFFSET_MIN)
-    night_start = sunset + timedelta(minutes=_ALOS_OFFSET_MIN)  # Tzeis R"T
-    night_hour = (dawn_next - night_start) / 12
-    chatzos_halaila = night_start + night_hour * 6
+    # Chatzos HaYom: Grossmann's true solar transit (mean noon + EoT),
+    # NOT the sunrise/sunset midpoint — matches the printed luach.
+    chatzos_hayom = _grossman_transit(cal, geo, base_date, tz)
+
+    # Chatzos HaLaila: the solar *lower* transit — exactly 12 h after
+    # chatzos hayom (same meridian-crossing anchor, opposite culmination;
+    # equation-of-time drift over 12 h is sub-second and already absorbed
+    # by the calculator's whole-second rounding). Replaces the former
+    # (sunset+72 → next-dawn) midpoint, which carried the same ~10 s
+    # asymmetry error the hayom midpoint did.
+    chatzos_halaila = chatzos_hayom + timedelta(hours=12)
 
     # Build the list, then sort strictly by clock time. The MGA/GRA pair
     # orderings are algebraically invariant (e.g. MGA Shma always 36 min
@@ -148,12 +186,12 @@ def compute_zmanim_for_date(
         ZmanEntry("סוף זמן קריאת שמע גר״א",  _floor(sunrise + gra_hour * 3),              sunrise + gra_hour * 3),
         ZmanEntry("סוף זמן תפילה מג״א",      _floor(dawn + mga_hour * 4),                 dawn + mga_hour * 4),
         ZmanEntry("סוף זמן תפילה גר״א",      _floor(sunrise + gra_hour * 4),              sunrise + gra_hour * 4),
-        ZmanEntry("חצות היום",              _half_up(dawn + mga_hour * 6),               dawn + mga_hour * 6),
-        ZmanEntry("מנחה גדולה",              _half_up(dawn + mga_hour * 6.5),             dawn + mga_hour * 6.5),
-        ZmanEntry("מנחה קטנה",               _half_up(dawn + mga_hour * 9.5),             dawn + mga_hour * 9.5),
+        ZmanEntry("חצות היום",              _half_up(chatzos_hayom),                     chatzos_hayom),
+        ZmanEntry("מנחה גדולה",              _ceil(dawn + mga_hour * 6.5),                dawn + mga_hour * 6.5),
+        ZmanEntry("מנחה קטנה",               _ceil(dawn + mga_hour * 9.5),                dawn + mga_hour * 9.5),
         ZmanEntry("פלג המנחה גר״א",          _half_up(sunrise + gra_hour * 10.75),        sunrise + gra_hour * 10.75),
-        ZmanEntry("פלג המנחה מג״א",          _half_up(dawn + mga_hour * 10.75),           dawn + mga_hour * 10.75),
-        ZmanEntry("שקיעת החמה",              _ceil(sunset),                               sunset),
+        ZmanEntry("פלג המנחה מג״א",          _ceil(dawn + mga_hour * 10.75),              dawn + mga_hour * 10.75),
+        ZmanEntry("שקיעת החמה",              _half_up(sunset),                            sunset),
         ZmanEntry("צאת הכוכבים",             _ceil(sunset + timedelta(minutes=havdalah_offset)),  sunset + timedelta(minutes=havdalah_offset)),
         ZmanEntry("זמן מעריב 60",            _ceil(sunset + timedelta(minutes=60)),       sunset + timedelta(minutes=60)),
         ZmanEntry("זמן מעריב ר״ת",           _ceil(sunset + timedelta(minutes=72)),       sunset + timedelta(minutes=72)),
@@ -215,27 +253,24 @@ def chatzos_halayla_for_night(
     base_date: date_cls,
 ) -> datetime:
     """Compute Chatzos HaLaila (halachic midnight) for the night that
-    BEGINS at the sunset of ``base_date``. Matches the YidCal
-    ``ChatzosHaLailaSensor`` (MGA midpoint of tzeis-R״T → alos).
+    BEGINS at the sunset of ``base_date``.
 
-    Algebraic identity: with night_start = sunset + 72 min and
-    dawn_next = next_sunrise − 72 min, the 6-zmanit-hours midpoint
-    simplifies to ``(sunset + sunrise_next) / 2`` (the ±72 offsets
-    cancel). This is the same as the astronomical "true solar
-    midnight" — the moment the sun is on the opposite meridian.
+    Defined as the solar *lower* transit — exactly 12 h after that
+    day's chatzos hayom (Grossmann's true solar meridian crossing).
+    This is the night analogue of the chatzos-hayom fix: the former
+    ``(sunset + next_sunrise) / 2`` midpoint carried the same few-second
+    asymmetry error vs true solar midnight (sunset and the next
+    sunrise are each refined to their own moment, so their midpoint is
+    not the exact anti-transit). Anchoring to the true transit keeps
+    chatzos hayom / halaila perfectly consistent and matches the
+    Grossmann engine the printed luachs are validated against.
 
     Returned datetime is tz-aware and rounded half-up (<30s floor,
     ≥30s ceil) to match the YidCal sensor's display rounding.
     """
     cal_today = ZmanimCalendar(geo_location=geo, date=base_date)
-    sunset = cal_today.sunset().astimezone(tz)
-    cal_next = ZmanimCalendar(
-        geo_location=geo, date=base_date + timedelta(days=1),
-    )
-    sunrise_next = cal_next.sunrise().astimezone(tz)
-    # MGA midpoint = (sunset + sunrise_next) / 2
-    midpoint = sunset + (sunrise_next - sunset) / 2
-    return _half_up(midpoint)
+    chatzos_hayom = _grossman_transit(cal_today, geo, base_date, tz)
+    return _half_up(chatzos_hayom + timedelta(hours=12))
 
 
 # ────────────────────────────────────────────────────────────────────────
