@@ -137,8 +137,9 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
            motzei_end   = (holiday_date + 1 day) at Rounded Alos
         3) If Shabbos follows the holiday (holiday ends Friday),
            DEFER motzei to Motzaei Shabbos (Sat havdalah → Sun Alos).
-        4) If the holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Shabbos),
-           use the normal motzei window (Sat havdalah → Sun Alos) — correct as-is.
+        4) If the holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Shabbos,
+           or 8th day of Chanukah on Shabbos), use the normal motzei window
+           (Sat havdalah → Sun Alos) — that already equals מוצאי שבת.
         """
         # Lazily cache geo so ad-hoc instances (e.g. from HolidaySensor) work
         if not self._geo:
@@ -204,9 +205,12 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
             sun_cal = ZmanimCalendar(geo_location=self._geo, date=sun)
             deferred_end = alos_mga_72(sun_cal, tz)
             self._state = (deferred_start <= now < deferred_end)
-        elif shabbos_blocks_motzi and self._DEFER_FOR_SHABBOS and holiday_date.weekday() == 5:
-            # Holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Sat).
-            # Normal window is already Sat havdalah → Sun Alos — correct as-is.
+        elif shabbos_blocks_motzi and holiday_date.weekday() == 5:
+            # Holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Sat, or
+            # the 8th day of Chanukah on Sat). The "normal" window
+            # (sunset(holiday) + havdalah → next-day Alos) already IS
+            # Sat tzeis → Sun Alos, which equals מוצאי שבת — correct.
+            # Applies to every holiday, not only those with _DEFER_FOR_SHABBOS.
             self._state = (motzei_start <= now < motzei_end)
         elif shabbos_blocks_motzi:
             # Non-YT holiday blocked by Shabbos, or YT without deferral
@@ -316,15 +320,19 @@ class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
         )
 
 class MotzeiChanukahSensor(MotzeiHolidaySensor):
-    """מוצאי חנוכה (last day of Chanukah)"""
+    """מוצאי חנוכה (last day of Chanukah).
+
+    When the 8th day falls on Shabbos, מוצאי חנוכה fires at tzeis Shabbos
+    (i.e. the same moment as מוצאי שבת) — handled by the
+    holiday_date.weekday()==5 branch in the base class.
+    """
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         def _matcher(d: date, _dias: bool) -> bool:
             hd = PHebrewDate.from_pydate(d)
             # Chanukah starts 25 Kislev of this Hebrew year
             first_day = PHebrewDate(hd.year, 9, 25).to_pydate()
             last_day  = first_day + timedelta(days=7)  # 8th day
-            # Motzei only if the last day itself is NOT Shabbos
-            return d == last_day and d.weekday() != 5
+            return d == last_day
 
         super().__init__(
             hass,
