@@ -208,7 +208,9 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             hd = PHebrewDate.from_pydate(d)
             first_day = PHebrewDate(hd.year, 9, 25).to_pydate()
             last_day = first_day + timedelta(days=7)
-            return d == last_day and d.weekday() != 5  # no distinct motzaei if day 8 is Shabbos
+            # When day 8 falls on Shabbos, מוצאי חנוכה fires at tzeis Shabbos
+            # (= מוצאי שבת). The Shabbos-blocking branch below special-cases this.
+            return d == last_day
 
         def match_shushan(d: dt.date) -> bool:
             hd = PHebrewDate.from_pydate(d)
@@ -263,6 +265,12 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         shabbos_end = _round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset))
 
         shabbos_blocks = shabbos_start <= motzei_start <= shabbos_end
+        # If the holiday's last day IS Shabbos, motzei_start lands exactly at
+        # Shabbos end (sat_sunset + havdalah) — that's correct, not a block.
+        # Applies to every motzei whose matcher returns True for a Saturday
+        # (e.g. Shavuos ב׳ on Shabbos, 8th day of Chanukah on Shabbos).
+        if holiday_date.weekday() == 5:
+            shabbos_blocks = False
 
         return (motzei_start <= now < motzei_end) and not shabbos_blocks
 
