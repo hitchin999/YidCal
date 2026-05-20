@@ -68,11 +68,13 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             day_lbl = int_to_hebrew(sh_hd.day)  # e.g., ו׳ / ז׳
             return f"הדלגה — שבועות ({day_lbl} סיון)"
 
-        # Shabbos Chazon → skip ONLY when it falls on ערב תשעה באב
-        # (i.e., Shabbos = 8 Av AND 9 Av is on Sunday).
-        # When 9 Av falls on Shabbos itself the fast is נדחה to Sunday and
-        # Perek Avos is still read. All other Shabbos Chazon cases (3–7 Av)
-        # are normal reading weeks.
+        # Tisha B'Av-related skips:
+        #   • 9 Av falls on Shabbos itself (נדחה — fast pushed to Sunday) →
+        #     Perek Avos is omitted as a Tisha B'Av stringency.
+        #   • Shabbos = 8 Av AND 9 Av falls on Sunday (ערב תשעה באב) → skip.
+        # All other Shabbos Chazon cases (3–7 Av) are normal reading weeks.
+        if sh_hd.month == 5 and sh_hd.day == 9:
+            return "הדלגה — תשעה באב נדחה"
         if sh_hd.month == 5 and sh_hd.day == 8:
             tisha_bav_py = pdates.HebrewDate(sh_hd.year, 5, 9).to_pydate()
             if tisha_bav_py.weekday() == 6:  # Sunday (Mon=0 … Sun=6)
@@ -156,10 +158,28 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
                 valid_remaining += 1
             d += timedelta(days=7)
 
-        # Final three valid Shabbosim → pairs 1-2, 3-4, 5-6
-        if 0 < valid_remaining <= 3:
+        # Total valid reading weeks for the season
+        total = 0
+        d = first_shabbos
+        while d <= last_shabbos:
+            if not self._skip_reason(d):
+                total += 1
+            d += timedelta(days=7)
+
+        # Universal halachic rule: always start at פרק א and end at פרק ו.
+        # Total perakim covered = total + doubles_needed must be a multiple of 6,
+        # so doubles_needed = (6 − total mod 6) mod 6:
+        #   N=24 → 0 doubles
+        #   N=23 → 1: (5-6)
+        #   N=22 → 2: (3-4)(5-6)
+        #   N=21 → 3: (1-2)(3-4)(5-6)
+        # The doubling phase always lands at the END of the season,
+        # walking the cycle's pairs backward from (5-6).
+        doubles_needed = (6 - total % 6) % 6
+
+        if 0 < valid_remaining <= doubles_needed:
             pairs = [(1, 2), (3, 4), (5, 6)]
-            n1, n2 = pairs[3 - valid_remaining]
+            n1, n2 = pairs[(3 - valid_remaining) % 3]
             chapter: ChapterType = (n1, n2)
             chapter_label = f"פרק {int_to_hebrew(n1)}-{int_to_hebrew(n2)}"
         else:
@@ -168,14 +188,6 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             chapter_label = f"פרק {int_to_hebrew(n)}"
 
         attrs["reading_index"] = valid_week_count
-
-        # Total valid reading weeks for the season (for reference)
-        total = 0
-        d = first_shabbos
-        while d <= last_shabbos:
-            if not self._skip_reason(d):
-                total += 1
-            d += timedelta(days=7)
         attrs["reading_total"] = total
         attrs["chapter_label"] = chapter_label
         attrs["chapter_number"] = list(chapter) if isinstance(chapter, tuple) else chapter
