@@ -224,10 +224,18 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
 
         # Anchor dates
         erev_rh_greg = tishrei1_greg - timedelta(days=1)
+        # Tzom Gedaliah is on 3 Tishrei, pushed to 4 Tishrei when 3 Tishrei
+        # falls on Shabbos (which happens when Rosh Hashana day 1 is Thursday).
+        # Previously this checked tishrei1_greg.weekday()==5, which
+        # mis-classified RH=Thursday years (real fast pushed to 4 Tishrei but
+        # the check missed it) and RH=Saturday years (3 Tishrei is Monday so
+        # no push needed, but the check wrongly forced one). Matches the rule
+        # used in holiday_sensor.py lines 731-734.
+        three_tishrei_greg = tishrei1_greg + timedelta(days=2)
         tzom_gedaliah_greg = (
-            tishrei1_greg + timedelta(days=2)
-            if tishrei1_greg.weekday() != 5  # 3 Tishrei not Shabbos
-            else tishrei1_greg + timedelta(days=3)  # postponed fast
+            three_tishrei_greg
+            if three_tishrei_greg.weekday() != 5  # 3 Tishrei not Shabbos
+            else three_tishrei_greg + timedelta(days=1)  # postponed to 4 Tishrei
         )
 
         # ---- 13 Middos overrides everything else
@@ -245,10 +253,20 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
         # ---- Aseres-Yemei-Teshuvah numbering (after the fast, before Erev YK)
         elif hd_today.month == 7 and tzom_gedaliah_greg < today < erev_yk_greg:
             # Day-1 = Tzom Gedaliah itself (3 Tishrei)
+            # Skip incrementing on:
+            #   - Shabbos Shuvah (no slichos that day)
+            #   - The 13-middos override day, since the override has already
+            #     claimed the "חמישי" label. In a swap year (RH=Sat) the
+            #     override fires on day 4 (Thu 6T) rather than day 5; skipping
+            #     it here makes Fri 7T fall back to "רביעי" instead of
+            #     duplicating "חמישי". In normal years (RH=Mon/Tue/Thu) the
+            #     override is on day 5 = the last AYT day, so this skip is a
+            #     no-op there.
             cnt = 1
             d = tzom_gedaliah_greg + timedelta(days=1)     # start with 4 Tishrei
             while d <= today:
-                if d.weekday() != 5:                       # skip Shabbos Shuvah
+                hd_d = PHebrewDate.from_pydate(d)
+                if d.weekday() != 5 and not _is_xiiimiddos(hd_d, d.weekday()):
                     cnt += 1
                 d += timedelta(days=1)
 
