@@ -751,7 +751,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if (hd_py_fast.month == 7 and hd_py_fast.day == gedaliah_day) or \
            (hd_py_fast.month == 10 and hd_py_fast.day == 10) or \
            (hd_py_fast.month == 4 and hd_py_fast.day == tammuz_17_day) or \
-           (hd_py.month in (12, 13) and hd_py.day == 13):
+           (hd_py.month == adar_month and hd_py.day == 13):
             start_time_fast = dawn
             end_time = actual_sunset + timedelta(minutes=self._havdalah_offset)
         # Override for 25-hour fasts and their Erev
@@ -894,7 +894,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["חמשה עשר בשבט"] = True
 
         # Purim — Taanit Esther (pushed to 11 Adar when 13 Adar is Shabbat)
-        if hd_fest.month in (12, 13):
+        # In a leap year, Purim/Taanis Esther/Shushan Purim are observed in
+        # Adar II (month 13) only, NOT in Adar I (month 12).
+        if hd_fest.month == adar_month:
             thirteen_adar_py = PHebrewDate(hd_fest.year, adar_month, 13).to_pydate()
             taanit_pushed = thirteen_adar_py.weekday() == 5  # 13 Adar is Shabbat
 
