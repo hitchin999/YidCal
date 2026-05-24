@@ -96,6 +96,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ב׳ דחול המועד סוכות":     "chol_hamoed_sukkos_2",
     "ג׳ דחול המועד סוכות":      "chol_hamoed_sukkos_3",
     "ד׳ דחול המועד סוכות":      "chol_hamoed_sukkos_4",
+    "ה׳ דחול המועד סוכות":      "chol_hamoed_sukkos_5",
     "חול המועד סוכות":       "chol_hamoed_sukkos",
     "שבת חול המועד סוכות":      "shabbos_chol_hamoed_sukkos",
     "הושענא רבה":            "hoshanah_rabbah",
