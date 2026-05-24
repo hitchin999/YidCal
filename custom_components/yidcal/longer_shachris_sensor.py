@@ -98,8 +98,16 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         # Rosh Chodesh (excluding 1 Tishrei)
         is_rc = (day in (1, 30)) and not (m == 7 and day == 1)
 
-        # Chanukah: 25–30 Kislev + 1–2 Tevet
-        is_chanukah = (m == 9 and 25 <= day <= 30) or (m == 10 and day in (1, 2))
+        # Chanukah — count days from 25 Kislev so the span is always exactly
+        # 8 days regardless of Kislev length. In Kislev=29 years (e.g. 5790,
+        # 5793, 5797, 5812), Chanukah day 8 is 3 Tevet, which the old
+        # month/day-range check (m==10 and day in (1,2)) missed.
+        try:
+            chanukah_start = PHebrewDate(y, 9, 25).to_pydate()
+            days_into_chanukah = (d - chanukah_start).days
+            is_chanukah = 0 <= days_into_chanukah <= 7
+        except Exception:
+            is_chanukah = False
 
         # Chol Hamoed (diaspora/EY differ, and we include הושענא רבה)
         if self._diaspora:
