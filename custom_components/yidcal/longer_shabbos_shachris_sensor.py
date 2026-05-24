@@ -173,10 +173,19 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
             if shabbat_date == mevorchim_date:
                 reasons.append("שבת מברכים")
 
-        # ── שבת חנוכה (Chanukah: 25–30 Kislev + 1–2 Teves) ──
-        is_chanukah = (hd.month == 9 and 25 <= hd.day <= 30) or (
-            hd.month == 10 and hd.day in (1, 2)
-        )
+        # ── שבת חנוכה (Chanukah) ──
+        # Count days from 25 Kislev so the span is always exactly 8 days
+        # regardless of Kislev length. In Kislev=29 years day 8 = 3 Tevet,
+        # which the old month/day-range check missed. (3 Tevet doesn't
+        # actually fall on Shabbos in any Kislev=29 keviut combo, so this
+        # branch is unreachable on Shabbos — fixed here for consistency
+        # with longer_shachris_sensor.py.)
+        try:
+            chanukah_start = PHebrewDate(hd.year, 9, 25).to_pydate()
+            days_into_chanukah = (shabbat_date - chanukah_start).days
+            is_chanukah = 0 <= days_into_chanukah <= 7
+        except Exception:
+            is_chanukah = False
         if is_chanukah:
             # Check if also Rosh Chodesh
             is_rc = hd.day == 1 or (hd.day == 30 and _month_length_safe(hd.year, hd.month) == 30)
