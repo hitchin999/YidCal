@@ -169,9 +169,17 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
         if (hd.month, hd.day) in [(1, 23), (3, 8), (7, 24)]:
             return False
 
-        # Chanukah (25–30 Kislev + 1–2 Teves)
-        if (hd.month == 9 and 25 <= hd.day <= 30) or (hd.month == 10 and hd.day in (1, 2)):
-            return False
+        # Chanukah — count days from 25 Kislev so the span is always exactly
+        # 8 days regardless of Kislev length. In Kislev=29 years day 8 = 3 Tevet,
+        # which the old month/day-range check missed; the cycle would then
+        # wrongly advance on day 8. (Same fix as longer_shachris_sensor.py.)
+        try:
+            chanukah_start = PHebrewDate(hd.year, 9, 25).to_pydate()
+            days_into_chanukah = (d - chanukah_start).days
+            if 0 <= days_into_chanukah <= 7:
+                return False
+        except Exception:
+            pass
 
         # Purim / Shushan Purim (Adar / Adar II)
         if hd.month in (12, 13) and hd.day in (14, 15):
@@ -203,16 +211,22 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
             return True
 
         # Chol HaMoed Sukkos/Pesach
-        if (hd.month == 7 and 17 <= hd.day <= 20) or (hd.month == 1 and 17 <= hd.day == 20):
+        if (hd.month == 7 and 17 <= hd.day <= 20) or (hd.month == 1 and 17 <= hd.day <= 20):
             return True
 
         # Isru Chag
         if (hd.month, hd.day) in [(1, 23), (3, 8), (7, 24)]:
             return True
 
-        # Chanukah
-        if (hd.month == 9 and 25 <= hd.day <= 30) or (hd.month == 10 and hd.day in (1, 2)):
-            return True
+        # Chanukah — same days-from-25-Kislev arithmetic as above so day 8
+        # (3 Tevet in Kislev=29 years) is correctly skipped on display.
+        try:
+            chanukah_start = PHebrewDate(hd.year, 9, 25).to_pydate()
+            days_into_chanukah = (d - chanukah_start).days
+            if 0 <= days_into_chanukah <= 7:
+                return True
+        except Exception:
+            pass
 
         # Purim / Shushan Purim
         if hd.month in (12, 13) and hd.day in (14, 15):
