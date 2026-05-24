@@ -58,24 +58,30 @@ def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
 def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-def _is_yomtov(pydate: datetime.date) -> bool:
+def _is_yomtov(pydate: datetime.date, diaspora: bool = True) -> bool:
     """Festival detection: try pyluach, exclude FAST_DAYS and Chol Hamoed."""
     try:
         name = PHebrewDate.from_pydate(pydate).festival(
-            hebrew=True, include_working_days=False
+            hebrew=True, include_working_days=False, israel=not diaspora
         )
         return bool(name)
     except Exception:
         return False
 
-def _is_chol_hamoed(pydate: datetime.date) -> bool:
-    """Check if the given date is Chol Hamoed."""
+def _is_chol_hamoed(pydate: datetime.date, diaspora: bool = True) -> bool:
+    """Check if the given date is Chol Hamoed.
+
+    In Israel, Sukkos day 2 (16 Tishrei) and Pesach day 2 (16 Nisan) are
+    Chol HaMoed rather than Yom Tov, so the diaspora flag must be threaded
+    through to pyluach's ``festival(israel=...)`` call. Otherwise those two
+    days per year are misclassified as "Any Other Day" in Israel mode.
+    """
     try:
         name_with = PHebrewDate.from_pydate(pydate).festival(
-            hebrew=True, include_working_days=True
+            hebrew=True, include_working_days=True, israel=not diaspora
         )
         name_no = PHebrewDate.from_pydate(pydate).festival(
-            hebrew=True, include_working_days=False
+            hebrew=True, include_working_days=False, israel=not diaspora
         )
         return bool(name_with and not name_no and name_with in ["פסח", "סוכות"])
     except Exception:
@@ -289,7 +295,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
             if fest_start <= now_local < fest_end:
                 if shabbos_start <= now_local < shabbos_end:
-                    if _is_chol_hamoed(shabbos_day):
+                    if _is_chol_hamoed(shabbos_day, diaspora):
                         state = "Shabbos & Chol Hamoed"
                     elif is_yomtov(shabbos_day):
                         state = "Shabbos & Yom Tov"
@@ -305,7 +311,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 end_date + timedelta(days=1), time(2, 0), tz
             )
             if motzi_start <= now_local < motzi_end:
-                if _is_chol_hamoed(effective_pydate):
+                if _is_chol_hamoed(effective_pydate, diaspora):
                     state = "Chol Hamoed"
                     if shabbos_start <= now_local < shabbos_end:
                         state = "Shabbos & Chol Hamoed"
@@ -325,7 +331,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         motzi_end = datetime.datetime.combine(today, time(2, 0), tz)
 
         if raw_motzi and motzi_start <= now_local < motzi_end:
-            if _is_chol_hamoed(effective_pydate):
+            if _is_chol_hamoed(effective_pydate, diaspora):
                 state = "Chol Hamoed"
                 if shabbos_start <= now_local < shabbos_end:
                     state = "Shabbos & Chol Hamoed"
@@ -367,7 +373,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # --- Shabbos on Friday evening or Saturday day (with EARLY start) ---
         if shabbos_start <= now_local < shabbos_end:
-            if _is_chol_hamoed(shabbos_day):
+            if _is_chol_hamoed(shabbos_day, diaspora):
                 state = "Shabbos & Chol Hamoed"
             elif is_yomtov(shabbos_day):
                 state = "Shabbos & Yom Tov"
@@ -377,7 +383,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
             return
 
         # --- Chol Hamoed ---
-        if _is_chol_hamoed(effective_pydate):
+        if _is_chol_hamoed(effective_pydate, diaspora):
             self._set_state("Chol Hamoed")
             return
 
@@ -400,7 +406,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
             if start_time <= now_local < end_time:
                 if shabbos_start <= now_local < shabbos_end:
-                    if _is_chol_hamoed(shabbos_day):
+                    if _is_chol_hamoed(shabbos_day, diaspora):
                         state = "Shabbos & Chol Hamoed"
                     elif is_yomtov(shabbos_day):
                         state = "Shabbos & Yom Tov"
