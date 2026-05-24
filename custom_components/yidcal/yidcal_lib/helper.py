@@ -11,7 +11,7 @@ import logging
 import datetime
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
-from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth
+from pyluach.hebrewcal import HebrewDate as PHebrewDate, Month as PMonth, Year as PYear
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -278,11 +278,19 @@ class YidCalHelper:
             pass
         else:
             # Molad for the *next* Hebrew month
+            is_leap = PYear(hy).leap
             # Elul (6) -> Tishrei (7) bumps the *year*
             if hm == 6:
                 hy += 1
                 hm = 7
-            # Adar (12, in non-leap) or Adar II (13, in leap) -> Nissan (1), *same year*
+            # Adar I (12, in a leap year) -> Adar II (13), *same year*.
+            # Without this branch the old code collapsed Adar I and Adar II
+            # together via `elif hm in (12, 13)`, causing the molad sensor to
+            # report Nisan's molad on days 3..30 of Adar I (and skip the
+            # Adar II announcement entirely on Shabbos Mevorchim Adar II).
+            elif hm == 12 and is_leap:
+                hm = 13
+            # Adar (12, non-leap) or Adar II (13, leap) -> Nissan (1), *same year*
             elif hm in (12, 13):
                 hm = 1
             else:
