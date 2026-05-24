@@ -116,6 +116,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ב׳ דחול המועד סוכות",
         "ג׳ דחול המועד סוכות",
         "ד׳ דחול המועד סוכות",
+        "ה׳ דחול המועד סוכות",
         "חול המועד סוכות",
         "שבת חול המועד סוכות",
         "הושענא רבה",
@@ -218,6 +219,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ב׳ דחול המועד סוכות",
         "ג׳ דחול המועד סוכות",
         "ד׳ דחול המועד סוכות",
+        "ה׳ דחול המועד סוכות",
         "הושענא רבה",
         "שמיני עצרת",
         "שמחת תורה",
@@ -286,6 +288,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ב׳ דחול המועד סוכות":               "havdalah_havdalah",
         "ג׳ דחול המועד סוכות":               "havdalah_havdalah",
         "ד׳ דחול המועד סוכות":               "havdalah_havdalah",
+        "ה׳ דחול המועד סוכות":               "havdalah_havdalah",
         "חול המועד סוכות":                  "havdalah_havdalah",
         "הושענא רבה":                     "havdalah_candle",
         "שמיני עצרת":                      "candle_havdalah",
@@ -348,6 +351,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     # Attributes that should only exist in one mode to avoid confusion
     EY_ONLY_ATTRS = {
         "ה׳ דחול המועד פסח",
+        "ה׳ דחול המועד סוכות",
     }
     DIASPORA_ONLY_ATTRS = {
         "סוכות ב׳",
@@ -817,17 +821,27 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if self._diaspora and ((hd_fest.month == 7 and hd_fest.day == 16) or (hd_havdalah.month == 7 and hd_havdalah.day == 16)):
                 attrs["סוכות ב׳"] = True
                 attrs["סוכות א׳ וב׳"] = True
-            if hd_fest.day == 17:
+            # Chol HaMoed Sukkos — day labels differ diaspora vs Israel:
+            # Diaspora: Tishrei 17=א׳, 18=ב׳, 19=ג׳, 20=ד׳ (4 days)
+            # Israel:   Tishrei 16=א׳, 17=ב׳, 18=ג׳, 19=ד׳, 20=ה׳ (5 days)
+            # Israel-aware early-set ensures kol_chag aggregation (run later
+            # in this method) sees the correct flag — particularly on 16 Tishrei
+            # in Israel mode, which under the old diaspora-only early-set
+            # produced kol_chag=False until the post-filter relabeled it.
+            if not self._diaspora and hd_fest.day == 16:
                 attrs["א׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
+            if hd_fest.day == 17:
+                attrs["ב׳ דחול המועד סוכות" if not self._diaspora else "א׳ דחול המועד סוכות"] = True
+                attrs["חול המועד סוכות"] = True
             if hd_fest.day == 18:
-                attrs["ב׳ דחול המועד סוכות"] = True
+                attrs["ג׳ דחול המועד סוכות" if not self._diaspora else "ב׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
             if hd_fest.day == 19:
-                attrs["ג׳ דחול המועד סוכות"] = True
+                attrs["ד׳ דחול המועד סוכות" if not self._diaspora else "ג׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
             if hd_fest.day == 20:
-                attrs["ד׳ דחול המועד סוכות"] = True
+                attrs["ה׳ דחול המועד סוכות" if not self._diaspora else "ד׳ דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
             if hd_fest.day == 21:
                 attrs["הושענא רבה"] = True
@@ -1293,6 +1307,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             "ב׳ דחול המועד סוכות",
             "ג׳ דחול המועד סוכות",
             "ד׳ דחול המועד סוכות",
+            "ה׳ דחול המועד סוכות",
             "הושענא רבה",
         ])
 
@@ -1499,11 +1514,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["שבועות א׳ וב׳"] = False
 
             # CH"M Israel labels
-            if hd_fest.month == 7 and 16 <= hd_fest.day <= 19:
-                for name in ("א׳ דחול המועד סוכות","ב׳ דחול המועד סוכות","ג׳ דחול המועד סוכות","ד׳ דחול המועד סוכות"):
+            if hd_fest.month == 7 and 16 <= hd_fest.day <= 20:
+                for name in ("א׳ דחול המועד סוכות","ב׳ דחול המועד סוכות","ג׳ דחול המועד סוכות","ד׳ דחול המועד סוכות","ה׳ דחול המועד סוכות"):
                     attrs[name] = False
-                idx = hd_fest.day - 15  # 1..4
-                mapping = {1:"א׳",2:"ב׳",3:"ג׳",4:"ד׳"}
+                idx = hd_fest.day - 15  # 1..5
+                mapping = {1:"א׳",2:"ב׳",3:"ג׳",4:"ד׳",5:"ה׳"}
                 attrs[f"{mapping[idx]} דחול המועד סוכות"] = True
                 attrs["חול המועד סוכות"] = True
 
