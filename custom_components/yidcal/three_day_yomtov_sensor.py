@@ -108,10 +108,22 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
 
     def _block_has_both(self, start: date, end: date) -> bool:
         """
-        True when the block contains:
-          • at least one PURE Shabbos (Shabbos that is NOT also YT)
-          • at least one Yom Tov day
+        True when the block:
+          • spans at least 3 calendar days, AND
+          • contains at least one PURE Shabbos (Shabbos that is NOT also YT), AND
+          • contains at least one Yom Tov day.
+
+        The length check is essential for Israel mode, where YT is 1 day.
+        Without it, 2-day blocks (e.g. Fri-YT + Sat-Shabbos for Pesach D1,
+        Pesach D7, or Shavuot in Israel) would incorrectly trigger this
+        sensor. In Israel, only RH (the sole 2-day YT) can produce a true
+        3-day block by stacking with Shabbos. Diaspora behavior is
+        unaffected since diaspora YT is 2 days, so any block containing
+        both a pure Shabbos and a YT is already ≥3 days.
         """
+        if (end - start).days + 1 < 3:
+            return False
+
         has_pure_shabbos = False
         has_yt = False
         d = start
