@@ -287,6 +287,10 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._geo: GeoLocation | None = None
         self._attr_extra_state_attributes: dict[str, str | bool] = {}
         self._havdalah = cfg.get("havdalah_offset", 72)
+        # Cache of the most recent *actual* erev window (start, end, candle ref)
+        # so non-erev days can publish the previous window with the effective
+        # (possibly early) end that was really used.
+        self._last_window: dict[str, datetime] | None = None
 
     def _schedule_update(self, *_args) -> None:
         self.hass.loop.call_soon_threadsafe(
@@ -298,6 +302,23 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
+            # Seed the last-window cache from the previously published attrs
+            # (they already hold the correct effective window). async_update
+            # only uses the cache if its date is the most recent erev day.
+            attrs = last.attributes or {}
+            w_start = self._parse_early_dt(attrs.get("Erev_Window_Start"))
+            w_end = self._parse_early_dt(attrs.get("Erev_Window_End"))
+            w_candle = self._parse_early_dt(attrs.get("Candle_End_Cut"))
+            if (
+                w_start and w_end and w_candle
+                and w_start < w_end
+                and w_start.date() == w_end.date() == w_candle.date()
+            ):
+                self._last_window = {
+                    "start": w_start,
+                    "end": w_end,
+                    "candle": w_candle,
+                }
 
         self._geo = await get_geo(self.hass)
         await self.async_update()
@@ -392,6 +413,50 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 cuts.append(round_half_up(early_dt))
 
         return min(cuts)
+
+    def _most_recent_erev_date(self, today) -> "date | None":
+        """Most recent day before today that was a valid erev-window day
+        (same predicate as the next-window finder)."""
+        for i in range(1, 33):
+            d = today - timedelta(days=i)
+            hd_d = HDateInfo(d, diaspora=self._diaspora)
+            if hd_d.is_yom_tov:
+                continue
+            if d.weekday() == 5:
+                continue
+            if d.weekday() == 4:
+                return d
+            if HDateInfo(d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                return d
+        return None
+
+    def _compute_window_for(
+        self,
+        d,
+        eff_shabbos_map: dict,
+        eff_yomtov_map: dict,
+    ) -> dict:
+        """Window (start, effective end, regular candle ref) for erev day d,
+        mirroring the next-window finder's computation."""
+        cal_d = ZmanimCalendar(geo_location=self._geo, date=d)
+        sunrise_d = cal_d.sunrise().astimezone(self._tz)
+        sunset_d = cal_d.sunset().astimezone(self._tz)
+
+        start_cut = round_half_up(sunrise_d - timedelta(minutes=72))
+        candle_end_cut = round_half_up(sunset_d - timedelta(minutes=self._candle))
+
+        is_fri = (d.weekday() == 4)
+        is_yt1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov
+
+        eff_end = self._effective_erev_end(
+            erev_date=d,
+            candle_end_cut=candle_end_cut,
+            is_friday=is_fri,
+            is_erev_holiday=is_yt1,
+            eff_shabbos_map=eff_shabbos_map,
+            eff_yomtov_map=eff_yomtov_map,
+        )
+        return {"start": start_cut, "end": eff_end, "candle": candle_end_cut}
 
     # ---------------- Main update ----------------
 
@@ -509,6 +574,43 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 if includes_friday:
                     eruv_tavshilin = (alos <= now < erev_end_cut)
 
+        # --- Anchor for the published window attrs ---
+        # On a valid erev-window day: today's window (and cache it).
+        # Otherwise: the most recent erev window (cached effective values if
+        # available, else recomputed — early times for past dates may no
+        # longer be in the maps).
+        today_qualifies = (
+            (is_friday_civil and not is_yomtov_today)
+            or (raw_erev_holiday and not is_shabbos_civil)
+        )
+
+        if today_qualifies:
+            win_start, win_end, win_candle = alos, erev_end_cut, candle_cut
+            self._last_window = {
+                "start": win_start,
+                "end": win_end,
+                "candle": win_candle,
+            }
+        else:
+            prev_d = self._most_recent_erev_date(today)
+            if prev_d is None:
+                win_start, win_end, win_candle = alos, erev_end_cut, candle_cut
+            elif (
+                self._last_window
+                and self._last_window["start"].date() == prev_d
+            ):
+                win_start = self._last_window["start"]
+                win_end = self._last_window["end"]
+                win_candle = self._last_window["candle"]
+            else:
+                prev_win = self._compute_window_for(
+                    prev_d, eff_shabbos_map, eff_yomtov_map
+                )
+                self._last_window = prev_win
+                win_start = prev_win["start"]
+                win_end = prev_win["end"]
+                win_candle = prev_win["candle"]
+
         attrs: dict[str, str | bool] = {
             "Now": now.isoformat(),
             "Is_Erev_Shabbos":  is_erev_shabbos,
@@ -518,9 +620,9 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Is_Yom_Tov_Today":     is_yomtov_today,
             "Is_Shabbos_Today":     is_shabbos_today,
             "Eruv_Tavshilin":       eruv_tavshilin,
-            "Erev_Window_Start":    alos.isoformat(),
-            "Erev_Window_End":      erev_end_cut.isoformat(),
-            "Candle_End_Cut":        candle_cut.isoformat(),
+            "Erev_Window_Start":    win_start.isoformat(),
+            "Erev_Window_End":      win_end.isoformat(),
+            "Candle_End_Cut":        win_candle.isoformat(),
         }
         if next_start and next_end:
             attrs.update({
