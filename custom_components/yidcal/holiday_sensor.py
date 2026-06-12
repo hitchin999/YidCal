@@ -728,7 +728,18 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # --- Purim-on-Friday detection (used for window overrides) ---
         adar_month = 13 if is_leap else 12
-        purim_friday = PHebrewDate(hd_fest.year, adar_month, 14).to_pydate().weekday() == 4  # Fri
+
+        # hd_fest can sit in the PREVIOUS Hebrew year for the ~90 minutes
+        # between candle-roll and havdalah-roll on Erev Rosh Hashanah. When
+        # those two years differ in leap status (e.g. 5786 non-leap → 5787
+        # leap), an Adar lookup that mixes hd_fest.year with the hd_py-derived
+        # adar_month raises ValueError ("not a leap year") and kills this
+        # update right as RH enters. Every hd_fest-context Adar lookup must
+        # use the leap status of hd_fest's OWN year. Outside that boundary
+        # window the two are equal, so behavior is unchanged.
+        fest_is_leap = ((hd_fest.year * 7 + 1) % 19) < 7
+        fest_adar_month = 13 if fest_is_leap else 12
+        purim_friday = PHebrewDate(hd_fest.year, fest_adar_month, 14).to_pydate().weekday() == 4  # Fri
 
         #Tzom Gedalye Deferred
         h_year = year if hd_py.month >= 7 else year + 1
@@ -910,8 +921,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Purim — Taanit Esther (pushed to 11 Adar when 13 Adar is Shabbat)
         # In a leap year, Purim/Taanis Esther/Shushan Purim are observed in
         # Adar II (month 13) only, NOT in Adar I (month 12).
-        if hd_fest.month == adar_month:
-            thirteen_adar_py = PHebrewDate(hd_fest.year, adar_month, 13).to_pydate()
+        if hd_fest.month == fest_adar_month:
+            thirteen_adar_py = PHebrewDate(hd_fest.year, fest_adar_month, 13).to_pydate()
             taanit_pushed = thirteen_adar_py.weekday() == 5  # 13 Adar is Shabbat
 
             if taanit_pushed:
@@ -927,7 +938,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["שושן פורים"] = True
         # --- Purim-on-Friday: defer Shushan Purim to Motzaei Shabbos → Motzaei Sunday ---
         if purim_friday:
-            fifteen_py = PHebrewDate(hd_fest.year, adar_month, 15).to_pydate()
+            fifteen_py = PHebrewDate(hd_fest.year, fest_adar_month, 15).to_pydate()
             if fifteen_py.weekday() == 5:  # 15 Adar is Shabbos
                 sat_sunset = ZmanimCalendar(geo_location=self._geo, date=fifteen_py).sunset().astimezone(tz)
                 sun_sunset = ZmanimCalendar(geo_location=self._geo, date=fifteen_py + timedelta(days=1)).sunset().astimezone(tz)
@@ -1268,7 +1279,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 # last CH"M day is 20 Nisan → cut at candle that evening
                 return "havdalah_candle" if (hd_fest.month == 1 and hd_fest.day == 20) else "havdalah_havdalah"
             # --- Purim on Friday: Motzaei Thu → Candle Fri ---
-            if name == "פורים" and purim_friday and (hd_fest.month == adar_month) and (hd_fest.day == 14):
+            if name == "פורים" and purim_friday and (hd_fest.month == fest_adar_month) and (hd_fest.day == 14):
                 return "havdalah_candle"
                 
             return default_w
