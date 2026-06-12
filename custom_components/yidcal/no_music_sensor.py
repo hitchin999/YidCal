@@ -79,8 +79,13 @@ class NoMusicSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
             return hd.day - 15
         if hd.month == 2:                   # Iyar
             return 15 + hd.day
-        if hd.month == 3 and hd.day <= 4:   # Sivan 1-4
-            return 45 + hd.day
+        # Sivan 1-5: 1→45, 2→46, 3→47, 4→48, 5→49.
+        # Was previously `45 + hd.day` with `day <= 4`, which mapped Sivan 1→46,
+        # Sivan 2→47 (treated as allowed הגבלה day, ending the sefirah window
+        # a full day early), and missed Sivan 5 entirely. Fixed to 44+day with
+        # day <= 5, matching yidcal_lib/sfirah_helper._get_raw_omer_day.
+        if hd.month == 3 and hd.day <= 5:
+            return 44 + hd.day
         return 0
 
     def _is_omer_prohibited(self, day: int) -> bool:
