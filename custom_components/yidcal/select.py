@@ -33,9 +33,22 @@ OVERRIDE_OPTIONS: Final[list[str]] = [
     OVERRIDE_FORCE_REGULAR,
 ]
 
+# Early "method" override: pick WHICH early time to compute at runtime
+# (independent of the Auto / Force-early / Force-regular "whether" override above).
+METHOD_AUTO: Final = "auto"            # defer to the configured mode (plag/fixed/disabled)
+METHOD_FORCE_PLAG: Final = "force_plag"
+METHOD_FORCE_FIXED: Final = "force_fixed"
+
+METHOD_OPTIONS: Final[list[str]] = [
+    METHOD_AUTO,
+    METHOD_FORCE_PLAG,
+    METHOD_FORCE_FIXED,
+]
+
 # hass.data runtime keys
 RUNTIME_DOMAIN_KEY = "runtime"
 RUNTIME_OVERRIDES_KEY = "early_overrides"
+RUNTIME_METHOD_KEY = "early_method"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -63,6 +76,25 @@ DESCRIPTIONS: Final[list[EarlyOverrideSelectDescription]] = [
     ),
 ]
 
+METHOD_DESCRIPTIONS: Final[list[EarlyOverrideSelectDescription]] = [
+    EarlyOverrideSelectDescription(
+        key="early_shabbos_method",
+        translation_key="early_shabbos_method",
+        name="Early Shabbos Method",
+        icon="mdi:clock-time-four-outline",
+        options=METHOD_OPTIONS,
+        runtime_key="early_shabbos",
+    ),
+    EarlyOverrideSelectDescription(
+        key="early_yomtov_method",
+        translation_key="early_yomtov_method",
+        name="Early Yom Tov Method",
+        icon="mdi:clock-time-four",
+        options=METHOD_OPTIONS,
+        runtime_key="early_yomtov",
+    ),
+]
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -72,6 +104,7 @@ async def async_setup_entry(
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(RUNTIME_DOMAIN_KEY, {})
     hass.data[DOMAIN][RUNTIME_DOMAIN_KEY].setdefault(RUNTIME_OVERRIDES_KEY, {})
+    hass.data[DOMAIN][RUNTIME_DOMAIN_KEY].setdefault(RUNTIME_METHOD_KEY, {})
 
     opts = entry.options or {}
     enable_es = opts.get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS)
@@ -87,6 +120,20 @@ async def async_setup_entry(
     entities: list[SelectEntity] = [
         EarlyOverrideSelect(hass, entry, desc) for desc in enabled_descs
     ]
+
+    # Runtime "method" selects (Auto / Force Plag / Force Fixed), gated by the
+    # same enable flags as the override selects above.
+    enabled_method_descs: list[EarlyOverrideSelectDescription] = []
+    for desc in METHOD_DESCRIPTIONS:
+        if desc.runtime_key == "early_shabbos" and enable_es:
+            enabled_method_descs.append(desc)
+        if desc.runtime_key == "early_yomtov" and enable_ey:
+            enabled_method_descs.append(desc)
+
+    entities += [
+        EarlyMethodSelect(hass, entry, desc) for desc in enabled_method_descs
+    ]
+
     async_add_entities(entities)
 
 
@@ -180,3 +227,86 @@ class EarlyOverrideSelect(YidCalEarlyDevice, RestoreEntity, SelectEntity):
     # Convenience helper for other code
     def get_override(self) -> str:
         return self._attr_current_option or OVERRIDE_AUTO
+
+
+class EarlyMethodSelect(YidCalEarlyDevice, RestoreEntity, SelectEntity):
+    """Select that picks WHICH early time to compute at runtime.
+
+    auto         -> use the mode configured in Options (plag / fixed / disabled)
+    force_plag   -> compute the Plag-HaMincha time, ignoring the configured mode
+    force_fixed  -> use the runtime "fixed time" picker, ignoring the configured mode
+
+    Independent of EarlyOverrideSelect (which decides *whether* early applies);
+    the two compose.
+    """
+
+    entity_description: EarlyOverrideSelectDescription
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        description: EarlyOverrideSelectDescription,
+    ) -> None:
+        super().__init__()
+        self.hass = hass
+        self._entry = entry
+        self.entity_description = description
+
+        slug = description.key
+        self._attr_unique_id = f"yidcal_{slug}"
+        self.entity_id = f"select.yidcal_{slug}"
+
+        self._attr_current_option = METHOD_AUTO
+
+    @property
+    def options(self) -> list[str]:
+        return list(self.entity_description.options)
+
+    @property
+    def current_option(self) -> str | None:
+        return self._attr_current_option
+
+    @property
+    def available(self) -> bool:
+        """Hide/disable when the matching early feature is disabled in options."""
+        opts = getattr(self._entry, "options", {}) or {}
+        cfg = (self.hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
+
+        def _get_bool(key: str, default: bool) -> bool:
+            if key in opts:
+                return bool(opts.get(key, default))
+            return bool(cfg.get(key, default))
+
+        if self.entity_description.runtime_key == "early_shabbos":
+            return _get_bool(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS)
+        if self.entity_description.runtime_key == "early_yomtov":
+            return _get_bool(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV)
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last and last.state in METHOD_OPTIONS:
+            self._attr_current_option = last.state
+        else:
+            self._attr_current_option = METHOD_AUTO
+
+        self._write_runtime_method()
+        self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in METHOD_OPTIONS:
+            _LOGGER.warning("Invalid early-method option: %s", option)
+            return
+        self._attr_current_option = option
+        self._write_runtime_method()
+        self.async_write_ha_state()
+
+    def _write_runtime_method(self) -> None:
+        store = (
+            self.hass.data[DOMAIN]
+            .setdefault(RUNTIME_DOMAIN_KEY, {})
+            .setdefault(RUNTIME_METHOD_KEY, {})
+        )
+        store[self.entity_description.runtime_key] = self._attr_current_option
