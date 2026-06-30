@@ -139,6 +139,30 @@
           "force_early": "Force early",
           "force_regular": "Force regular"
         }
+      },
+      "early_shabbos_method": {
+        "name": "Early Shabbos Method",
+        "state": {
+          "auto": "Auto",
+          "force_plag": "Force Plag",
+          "force_fixed": "Force Fixed"
+        }
+      },
+      "early_yomtov_method": {
+        "name": "Early Yom Tov Method",
+        "state": {
+          "auto": "Auto",
+          "force_plag": "Force Plag",
+          "force_fixed": "Force Fixed"
+        }
+      }
+    },
+    "time": {
+      "early_shabbos_fixed_time": {
+        "name": "Early Shabbos Fixed Time"
+      },
+      "early_yomtov_fixed_time": {
+        "name": "Early Yom Tov Fixed Time"
       }
     }
   }
