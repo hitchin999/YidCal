@@ -73,10 +73,15 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
     _attr_icon = "mdi:calendar-clock"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
-    # override strings
+    # override strings (whether early applies)
     OVERRIDE_AUTO = "auto"
     OVERRIDE_FORCE_EARLY = "force_early"
     OVERRIDE_FORCE_REGULAR = "force_regular"
+
+    # method strings (which early time to compute)
+    METHOD_AUTO = "auto"
+    METHOD_FORCE_PLAG = "force_plag"
+    METHOD_FORCE_FIXED = "force_fixed"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__()
@@ -116,6 +121,10 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
                 [
                     "select.yidcal_early_shabbos_override",
                     "select.yidcal_early_yomtov_override",
+                    "select.yidcal_early_shabbos_method",
+                    "select.yidcal_early_yomtov_method",
+                    "time.yidcal_early_shabbos_fixed_time",
+                    "time.yidcal_early_yomtov_fixed_time",
                 ],
                 _on_override_change,
             )
@@ -161,6 +170,36 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         if v in (self.OVERRIDE_AUTO, self.OVERRIDE_FORCE_EARLY, self.OVERRIDE_FORCE_REGULAR):
             return v
         return self.OVERRIDE_AUTO
+
+    def _get_method(self, key: str) -> str:
+        """Runtime 'method' override from the Method select (auto/force_plag/force_fixed)."""
+        store = (
+            self.hass.data.get(DOMAIN, {})
+            .get("runtime", {})
+            .get("early_method", {})
+        )
+        v = store.get(key, self.METHOD_AUTO)
+        if v in (self.METHOD_AUTO, self.METHOD_FORCE_PLAG, self.METHOD_FORCE_FIXED):
+            return v
+        return self.METHOD_AUTO
+
+    def _get_runtime_fixed_time(self, key: str) -> str | None:
+        """Runtime 'fixed time' from the Fixed Time picker, as 'HH:MM:SS' (or None)."""
+        store = (
+            self.hass.data.get(DOMAIN, {})
+            .get("runtime", {})
+            .get("early_fixed_time", {})
+        )
+        v = store.get(key)
+        return v if isinstance(v, str) and v else None
+
+    def _effective_mode(self, method: str, configured_mode: str) -> str:
+        """Resolve the configured mode against the runtime Method override."""
+        if method == self.METHOD_FORCE_PLAG:
+            return "plag"
+        if method == self.METHOD_FORCE_FIXED:
+            return "fixed"
+        return configured_mode
 
     def _plag_from_calendar(self, cal: ZmanimCalendar, method: str):
         # Try multiple method names to stay compatible with different zmanim libs
@@ -217,6 +256,9 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         es_apply = cfg.get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE)
         es_sunset_after = cfg.get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER)
         es_override = self._get_override("early_shabbos")
+        es_method = self._get_method("early_shabbos")
+        es_eff_mode = self._effective_mode(es_method, es_mode)
+        es_eff_fixed = self._get_runtime_fixed_time("early_shabbos") or es_fixed
 
         effective_shabbos_by_date: dict[str, str] = {}
         raw_shabbos_by_date: dict[str, str] = {}
@@ -236,7 +278,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             auto_applicable = False
 
             if enable_es:
-                early_dt = self._compute_early_dt(fri, es_mode, es_plag_method, es_fixed)
+                early_dt = self._compute_early_dt(fri, es_eff_mode, es_plag_method, es_eff_fixed)
 
                 if es_apply == "every_friday":
                     auto_applicable = True
@@ -262,7 +304,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
                 elif es_override == self.OVERRIDE_FORCE_EARLY:
                     effective_dt = early_dt
                 else:  # auto
-                    if es_mode != "disabled" and auto_applicable and early_dt < regular_start:
+                    if es_eff_mode != "disabled" and auto_applicable and early_dt < regular_start:
                         effective_dt = early_dt
 
             if effective_dt:
@@ -275,6 +317,9 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         ey_fixed = cfg.get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME)
         ey_include = cfg.get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE) or []
         ey_override = self._get_override("early_yomtov")
+        ey_method = self._get_method("early_yomtov")
+        ey_eff_mode = self._effective_mode(ey_method, ey_mode)
+        ey_eff_fixed = self._get_runtime_fixed_time("early_yomtov") or ey_fixed
 
         effective_yomtov_by_date: dict[str, str] = {}
         raw_yomtov_by_date: dict[str, str] = {}
@@ -300,7 +345,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             regular_yt_start = _round_half_up(erev_sunset - timedelta(minutes=candle_offset))
             regular_yomtov_by_date[erev.isoformat()] = regular_yt_start.isoformat()
 
-            early_yt_dt = self._compute_early_dt(erev, ey_mode, ey_plag_method, ey_fixed)
+            early_yt_dt = self._compute_early_dt(erev, ey_eff_mode, ey_plag_method, ey_eff_fixed)
             if early_yt_dt:
                 raw_yomtov_by_date[erev.isoformat()] = early_yt_dt.isoformat()
 
@@ -311,7 +356,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
                 elif ey_override == self.OVERRIDE_FORCE_EARLY:
                     effective_yt_dt = early_yt_dt
                 else:  # auto
-                    if ey_mode != "disabled" and early_yt_dt < regular_yt_start:
+                    if ey_eff_mode != "disabled" and early_yt_dt < regular_yt_start:
                         effective_yt_dt = early_yt_dt
 
             if effective_yt_dt:
@@ -378,8 +423,12 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             # Config + override info:
             "early_shabbos_override": es_override,
             "early_shabbos_mode": es_mode,
+            "early_shabbos_method": es_method,
+            "early_shabbos_fixed_time": es_eff_fixed,
             "early_yomtov_override": ey_override,
             "early_yomtov_mode": ey_mode,
+            "early_yomtov_method": ey_method,
+            "early_yomtov_fixed_time": ey_eff_fixed,
             "early_yomtov_include": ey_include,
             "next_yomtov_name": next_yt_name,
 
