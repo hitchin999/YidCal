@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
@@ -40,12 +40,28 @@ from .const import DOMAIN
 _SUMMER_MONTHS = {1, 2, 3, 4, 5, 6}   # Nisan–Elul
 _WINTER_MONTHS = {7, 8, 9, 10, 11, 12, 13}  # Tishrei–Adar
 
+# The two possible states. Declared as the sensor's enum ``options`` so
+# Home Assistant offers them in the automation/script State condition
+# dropdown (instead of only Unknown/Unavailable). The state assignment
+# below references these so the value can never drift from the options.
+SEASON_PESACH_TO_SUKKOS = "בין פסח לסוכות"
+SEASON_SUKKOS_TO_PESACH = "בין סוכות לפסח"
+POSSIBLE_STATES = [SEASON_PESACH_TO_SUKKOS, SEASON_SUKKOS_TO_PESACH]
+
 
 class SeasonSensor(YidCalSpecialDevice, SensorEntity):
     """Tracks the broad Jewish-calendar season and sub-periods."""
 
     _attr_name = "Season"
     _attr_icon = "mdi:weather-partly-snowy-rainy"
+    # Enum sensor → HA shows the discrete states in automation/script
+    # State conditions and triggers (the value is always one of options).
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = POSSIBLE_STATES
+
+    @property
+    def options(self) -> list[str]:
+        return POSSIBLE_STATES
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
@@ -114,7 +130,10 @@ class SeasonSensor(YidCalSpecialDevice, SensorEntity):
         pesach_to_sukkos = self._in_range(hd, 1, 15, 7, 14)
         sukkos_to_pesach = not pesach_to_sukkos
 
-        self._state = "בין פסח לסוכות" if pesach_to_sukkos else "בין סוכות לפסח"
+        self._state = (
+            SEASON_PESACH_TO_SUKKOS if pesach_to_sukkos
+            else SEASON_SUKKOS_TO_PESACH
+        )
 
         # ── Sub-periods ──
         # Pesach till Shvuos: 15 Nisan through 5 Sivan
