@@ -615,17 +615,37 @@ When enabled, YidCal adds:
 
 * **Select: Early Shabbos Override** (`select.yidcal_early_shabbos_override`)
 * **Select: Early Yom Tov Override** (`select.yidcal_early_yomtov_override`)
+* **Select: Early Shabbos Method** (`select.yidcal_early_shabbos_method`)
+* **Select: Early Yom Tov Method** (`select.yidcal_early_yomtov_method`)
+* **Time: Early Shabbos Fixed Time** (`time.yidcal_early_shabbos_fixed_time`)
+* **Time: Early Yom Tov Fixed Time** (`time.yidcal_early_yomtov_fixed_time`)
 * **Sensor: Early Shabbos/Yom Tov Start Time** (`sensor.yidcal_early_shabbos_yt_start_time`)
 
 The sensor state is a timestamp representing the **next effective start time**, and includes rich attributes explaining *why* that time was chosen.
 
-### Override selects (runtime controls)
+### Runtime controls (no reconfigure needed)
 
-Each select supports:
+These live controls let you change early-entry behavior right from your dashboard, without reopening **Options**. They only appear when the matching feature (Early Shabbos / Early Yom Tov) is enabled.
 
-* `Auto`
-* `Force early`
-* `Force regular`
+**Override selects** — control *whether* early entry applies:
+
+* **Early Shabbos Override** / **Early Yom Tov Override**:
+  * `Auto` — apply early entry automatically when it's applicable (per your configured rule) and earlier than regular candle-lighting
+  * `Force early` — always use the early time
+  * `Force regular` — never use the early time
+
+**Method selects** — control *which* early time to use:
+
+* **Early Shabbos Method** / **Early Yom Tov Method**:
+  * `Auto` — use the mode set in **Options** (Plag / Fixed / Disabled)
+  * `Force Plag` — use Plag HaMincha, regardless of the configured mode
+  * `Force Fixed` — use the fixed clock time, regardless of the configured mode
+
+**Fixed-time pickers** — the clock time used whenever the effective method is *Fixed*:
+
+* **Early Shabbos Fixed Time** / **Early Yom Tov Fixed Time** — a time picker, seeded from your configured fixed time and remembered across restarts.
+
+> The two axes combine. For example, **Force early** + **Force Fixed** with the picker set to 6:30 PM gives early Shabbos at 6:30 PM every week. Left at their defaults (**Auto** on both selects, picker seeded from **Options**), they behave exactly like your configured settings.
 
 ### Sensor attributes (high-level)
 
@@ -633,6 +653,8 @@ Each select supports:
 
 * `effective_shabbos_start_by_date` / `effective_yomtov_start_by_date`
 * `early_shabbos_override`, `early_yomtov_override`
+* `early_shabbos_method`, `early_yomtov_method`
+* `early_shabbos_fixed_time`, `early_yomtov_fixed_time`
 * `next_effective_start_kind`
 * `next_effective_start_description` and `summary`
 
