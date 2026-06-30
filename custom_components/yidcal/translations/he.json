@@ -139,6 +139,30 @@
           "force_early": "כפה מוקדם",
           "force_regular": "כפה רגיל"
         }
+      },
+      "early_shabbos_method": {
+        "name": "שיטת שבת מוקדמת",
+        "state": {
+          "auto": "אוטומטי",
+          "force_plag": "כפה פלג",
+          "force_fixed": "כפה זמן קבוע"
+        }
+      },
+      "early_yomtov_method": {
+        "name": "שיטת יום טוב מוקדם",
+        "state": {
+          "auto": "אוטומטי",
+          "force_plag": "כפה פלג",
+          "force_fixed": "כפה זמן קבוע"
+        }
+      }
+    },
+    "time": {
+      "early_shabbos_fixed_time": {
+        "name": "זמן קבוע — שבת מוקדמת"
+      },
+      "early_yomtov_fixed_time": {
+        "name": "זמן קבוע — יום טוב מוקדם"
       }
     }
   }
