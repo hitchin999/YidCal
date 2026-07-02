@@ -21,19 +21,13 @@ from zoneinfo import ZoneInfo
 
 from hdate import HDateInfo
 from zmanim.util.geo_location import GeoLocation
-from zmanim.zmanim_calendar import ZmanimCalendar
+from .zman_compute import (
+    round_half_up as _half_up_minute,
+    round_ceil as _ceil_minute,
+    sunset_for_date,
+)
 
 from ..zman_sensors import lighting_event_for_day, _no_melacha_block
-
-
-def _half_up_minute(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt = dt + timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _ceil_minute(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 def compute_erev_motzi(
@@ -109,11 +103,7 @@ def compute_erev_motzi(
     # ── Motzi (block end) ──
     if block is not None:
         _start, end = block
-        sunset_end = (
-            ZmanimCalendar(geo_location=geo, date=end)
-            .sunset()
-            .astimezone(tz)
-        )
+        sunset_end = sunset_for_date(geo=geo, tz=tz, base_date=end)
         motzi_dt = _ceil_minute(sunset_end + timedelta(minutes=havdalah_offset))
 
         last_is_yt = HDateInfo(end, diaspora=diaspora).is_yom_tov
