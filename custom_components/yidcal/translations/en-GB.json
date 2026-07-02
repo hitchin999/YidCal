@@ -28,11 +28,13 @@
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
           "time_format": "Time format (For Simple Zmanim only)",
-          "enable_zmanim_lookup": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service"
+          "enable_zmanim_lookup": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service",
+          "enable_luach_pdf": "Create the Generate Luach (PDF) service"
         },
         "data_description": {
           "enable_multiday_candles": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night",
-          "enable_zmanim_lookup": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label."
+          "enable_zmanim_lookup": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label.",
+          "enable_luach_pdf": "Adds the yidcal.generate_luach service, which creates a printable luach (PDF) for a given date range and writes it under /config/www/yidcal-data/."
         }
       },
       "yurtzeit": {
@@ -77,11 +79,13 @@
           "slichos_label_rollover": "When should the Selichos label roll over",
           "upcoming_lookahead_days": "Days to look ahead in the Upcoming Holiday sensor",
           "time_format": "Time format (For Simple Zmanim only)",
-          "enable_zmanim_lookup": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service"
+          "enable_zmanim_lookup": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service",
+          "enable_luach_pdf": "Create the Generate Luach (PDF) service"
         },
         "data_description": {
           "enable_multiday_candles": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night",
-          "enable_zmanim_lookup": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label."
+          "enable_zmanim_lookup": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label.",
+          "enable_luach_pdf": "Adds the yidcal.generate_luach service, which creates a printable luach (PDF) for a given date range and writes it under /config/www/yidcal-data/."
         }
       },
       "yurtzeit": {
