@@ -39,6 +39,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date as date_cls, datetime, time as time_cls, timedelta, timezone
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 from zmanim.zmanim_calendar import ZmanimCalendar
@@ -68,8 +69,37 @@ def _floor(dt: datetime) -> datetime:
 
 
 def _ceil(dt: datetime) -> datetime:
-    """Always ceil to the next minute — matches Shkia / Tzies / Maariv 60 style."""
+    """Ceil to the next minute — matches Shkia / Tzies / Maariv 60 style.
+
+    True ceiling: a value already on an exact minute is returned
+    unchanged (the printed luachs do the same — SF 5786 prints 6:16
+    for a motzei that computes to exactly 6:16:00, not 6:17).
+    """
+    if dt.second == 0 and dt.microsecond == 0:
+        return dt
     return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+
+# ── Public rounding aliases ─────────────────────────────────────────────
+# THE single source of truth for minute-rounding across ALL YidCal
+# sensors. Before these existed, ~24 sensor modules each carried their
+# own copy-pasted `_round_half_up` / `_round_ceil` / `_round_floor`,
+# and the copies had drifted (e.g. one file's ceil skipped already-exact
+# minutes while another always bumped). Sensor modules must import these
+# instead of defining their own:
+#
+#     from .yidcal_lib.zman_compute import round_half_up, round_ceil
+#
+# Semantics (identical to the private fns used by compute_zmanim_for_date):
+#   - round_half_up : <30 s floors, >=30 s bumps to the next minute.
+#   - round_floor   : truncate seconds (machmir for deadlines).
+#   - round_ceil    : ALWAYS advance to the next whole minute (chumra for
+#     end-of-window times like tzeis/havdalah). Note: for the raw
+#     astronomical datetimes these are applied to, an exact :00.000000
+#     input never occurs in practice, so this is equivalent to the
+#     "bump only if seconds present" variant some sensors carried.
+round_half_up = _half_up
+round_floor = _floor
+round_ceil = _ceil
 
 
 def _grossman_transit(
@@ -145,9 +175,9 @@ def compute_zmanim_for_date(
     Chatzos HaLaila uses the tzeis-R"T night window (sunset+72 → next
     day's dawn), per existing zman_chatzos_haleila.py.
     """
-    cal = ZmanimCalendar(geo_location=geo, date=base_date)
-    sunrise = cal.sunrise().astimezone(tz)
-    sunset = cal.sunset().astimezone(tz)
+    # Shared cached sun events (one astro computation per location+date
+    # across the coordinator, lookup sensors and upcoming-zmanim sensors).
+    sunrise, sunset = sun_events_for_date(geo=geo, tz=tz, base_date=base_date)
 
     # MGA "day": dawn (sunrise-72) → nightfall (sunset+72)
     dawn = sunrise - timedelta(minutes=_ALOS_OFFSET_MIN)
@@ -161,8 +191,8 @@ def compute_zmanim_for_date(
     talis = dawn + timedelta(minutes=tallis_offset)
 
     # Chatzos HaYom: Grossmann's true solar transit (mean noon + EoT),
-    # NOT the sunrise/sunset midpoint — matches the printed luach.
-    chatzos_hayom = _grossman_transit(cal, geo, base_date, tz)
+    # NOT the sunrise/sunset midpoint — matches the printed luach. (Cached.)
+    chatzos_hayom = chatzos_hayom_for_date(geo=geo, tz=tz, base_date=base_date)
 
     # Chatzos HaLaila: the solar *lower* transit — exactly 12 h after
     # chatzos hayom (same meridian-crossing anchor, opposite culmination;
@@ -207,6 +237,7 @@ def compute_chametz_zmanim(
     tz: ZoneInfo,
     base_date: date_cls,
     havdalah_offset: int = 72,
+    sriefes_round: str = "half_up",
 ) -> tuple[datetime, datetime]:
     """Return (sof_zman_achilas_chametz, sof_zman_sriefes_chametz) for
     `base_date`, computed MGA-style.
@@ -216,7 +247,20 @@ def compute_chametz_zmanim(
       • nightfall  = sunset  + havdalah_offset
       • sha'a      = (nightfall − dawn) / 12
       • Achilas    = dawn + 4·sha'a  (floored to the minute — machmir)
-      • Sriefes    = dawn + 5·sha'a  (half-up rounded)
+      • Sriefes    = dawn + 5·sha'a  (rounding selectable, see below)
+
+    ``sriefes_round`` controls the sriefes minute-rounding:
+      • ``"half_up"`` (default) — ≥30s rounds up, <30s floors.
+        Matches the existing chametz sensor in zman_chumetz.py so the
+        sensor's value is preserved exactly. This is the sensor-side
+        convention; callers needing the sensor's behaviour pass
+        nothing.
+      • ``"floor"`` — always floor to the minute. This is the chumrah
+        for the chametz-burning/owning deadline (be DONE earlier than
+        the nominal halachic minute) and matches the printed
+        KY/Brooklyn weekly luach. Used by the luach generator so the
+        printed-luach text agrees with the printed reference to the
+        minute.
 
     Note: Uses `havdalah_offset` for MGA dawn to match the existing
     chametz sensor's output exactly. (The dedicated Alos / Shma MGA /
@@ -225,9 +269,7 @@ def compute_chametz_zmanim(
     dawn-based zmanim here and those sensors. That mismatch exists in
     the integration today; we preserve it for consistency.)
     """
-    cal = ZmanimCalendar(geo_location=geo, date=base_date)
-    sunrise = cal.sunrise().astimezone(tz)
-    sunset = cal.sunset().astimezone(tz)
+    sunrise, sunset = sun_events_for_date(geo=geo, tz=tz, base_date=base_date)
     dawn = sunrise - timedelta(minutes=havdalah_offset)
     nightfall = sunset + timedelta(minutes=havdalah_offset)
     sha_a = (nightfall - dawn) / 12
@@ -237,12 +279,18 @@ def compute_chametz_zmanim(
 
     # Achilas: floor (machmir for a deadline-to-stop)
     achilas = achilas_raw.replace(second=0, microsecond=0)
-    # Sriefes: half-up (matches existing sensor)
-    sriefes = (
-        (sriefes_raw + timedelta(minutes=1))
-        if sriefes_raw.second >= 30
-        else sriefes_raw
-    ).replace(second=0, microsecond=0)
+    # Sriefes: rounding per ``sriefes_round``
+    if sriefes_round == "floor":
+        # Chumrah — finish burning/owning chametz BEFORE the nominal
+        # minute. Matches the printed KY/Brooklyn weekly luach.
+        sriefes = sriefes_raw.replace(second=0, microsecond=0)
+    else:
+        # half-up — matches the existing zman_chumetz sensor.
+        sriefes = (
+            (sriefes_raw + timedelta(minutes=1))
+            if sriefes_raw.second >= 30
+            else sriefes_raw
+        ).replace(second=0, microsecond=0)
     return achilas, sriefes
 
 
@@ -268,8 +316,7 @@ def chatzos_halayla_for_night(
     Returned datetime is tz-aware and rounded half-up (<30s floor,
     ≥30s ceil) to match the YidCal sensor's display rounding.
     """
-    cal_today = ZmanimCalendar(geo_location=geo, date=base_date)
-    chatzos_hayom = _grossman_transit(cal_today, geo, base_date, tz)
+    chatzos_hayom = chatzos_hayom_for_date(geo=geo, tz=tz, base_date=base_date)
     return _half_up(chatzos_hayom + timedelta(hours=12))
 
 
@@ -340,63 +387,87 @@ def _molad_announcement_naive(year: int, month: int) -> datetime:
     )
 
 
-def _apply_local_dst(naive_dt: datetime, tz: ZoneInfo) -> datetime:
-    """Apply the YidCal molad-announcement DST convention: interpret
-    the announced time as local clock time, and add the DST offset if
-    DST is in effect at that local time. Returns a naive datetime.
+# ZMAN (Grossman לכל-זמן) convention, verified empirically against the
+# printed Williamsburg 5786 Table-3 to sub-minute accuracy on 7 months
+# (3 ז׳ שלמים + 4 ס״ז ק״ל, across DST and winter):
+#   • The molad announcement is reckoned in JERUSALEM TRUE (mean-solar)
+#     time, which ZMAN fixes at GMT+2h21 (per the program's own footer:
+#     "מולד ותקופות: ע״פ שעת ירושלים האמתי (GMT+2h21)").
+#   • ז׳ שלמים / ס״ז קידוש לבנה are then expressed in the observer's
+#     LOCAL CIVIL clock (zone + DST), WITHOUT Equation of Time
+#     ("ע״פ שעה מקומי, בלי התחשבות עם משוואת הזמן").
+_MOLAD_JERUSALEM_TZ = timezone(timedelta(hours=2, minutes=21))
 
-    Mirrors ``YidCalHelper.get_actual_molad``'s DST handling so that
-    KL deadlines display consistently with the announced molad.
+
+def _molad_clock_to_local(naive_dt: datetime, tz: ZoneInfo) -> datetime:
+    """Convert a molad-announcement-derived naive datetime (whose
+    clock digits are Jerusalem GMT+2h21 time) to the observer's local
+    civil clock (``tz``, DST-aware), and return it as a naive local
+    datetime. No Equation of Time. (This matches the numeric ZMAN
+    *Table-3* column — NOT the printed weekly לכל-זמן booklet.)
     """
-    aware = naive_dt.replace(tzinfo=tz)
-    dst = aware.dst() or timedelta(0)
+    aware_jer = naive_dt.replace(tzinfo=_MOLAD_JERUSALEM_TZ)
+    return aware_jer.astimezone(tz).replace(tzinfo=None)
+
+
+def _molad_clock_local_dst(naive_dt: datetime, tz: ZoneInfo) -> datetime:
+    """The printed לכל-זמן weekly-BOOKLET convention ("method C"),
+    reverse-engineered from the booklet and verified EXACT on 5/5
+    ז׳-שלמים samples across the year (Tishrei/Kislev/Nisan/Sivan/Adar,
+    both DST and winter):
+
+      • the molad ANNOUNCEMENT digits are read directly as the
+        observer's local CLOCK time (no Jerusalem conversion), then
+      • the daylight-saving hour in effect ON THE RESULT DATE is
+        added (so summer values land one hour later).
+
+    Returns a naive local datetime.
+    """
+    dst = naive_dt.replace(tzinfo=tz).dst() or timedelta(0)
     return naive_dt + dst
 
 
 def zayin_shleimim_local(
     year: int, month: int, tz: ZoneInfo,
 ) -> datetime:
-    """Compute ז׳ שלמים — exactly 7 days after the molad announcement.
+    """Compute ז׳ שלמים — exactly 7 days after the molad announcement,
+    expressed per the printed לכל-זמן weekly-booklet convention
+    (``_molad_clock_local_dst`` — molad digits as local clock + DST
+    on the ז׳-שלמים date). Verified EXACT against the printed KY
+    booklet on 5/5 sampled months (Tishrei/Kislev/Nisan/Sivan/Adar).
 
-    Per the ZMAN manual: "Z'shleimim is essentially exactly the same
-    time as the molad, one week later, except adjusted to the local
-    clock at each place, with one hour added in summer where
-    customary, in hours-minutes-seconds." (page 10, טבלא 3.)
-
-    Returns a naive ``datetime`` in local clock time (DST applied for
-    the Z'shleimim date itself, not the molad date — important near
-    spring-forward / fall-back transitions).
+    Returns a naive ``datetime`` in local clock time.
     """
     naive = _molad_announcement_naive(year, month) + timedelta(days=7)
-    return _apply_local_dst(naive, tz)
+    return _molad_clock_local_dst(naive, tz)
 
 
 def sof_zman_kiddush_levana_rama_local(
     year: int, month: int, tz: ZoneInfo,
 ) -> datetime:
     """Compute סוף זמן קידוש לבנה per the Rama: half a mean synodic
-    month after the molad announcement.
+    month after the molad (Orach Chayim 426:3 — the midpoint between
+    consecutive molados).
 
-    The Rama opinion (Orach Chayim 426:3): the latest time to recite
-    Kiddush Levana is the midpoint between consecutive molados, which
-    is the moment the moon is at opposition (astronomical full moon)
-    in the mean lunar cycle.
+    DESIGN DECISION (settled): this uses the well-sourced MEAN method —
+    molad reckoned at Jerusalem GMT+2h21, + half the mean synodic
+    month — which reproduces the authoritative ZMAN לכל-זמן *Table-3*
+    EXACTLY for all 12 months of 5786 (night/day classification and
+    times verified). The printed weekly KY booklet additionally adds
+    the customary שעון-קיץ (summer) hour and shows two months
+    (Kislev/Elul) that disagree with the program's OWN Table-3 —
+    treated as booklet errata. We deliberately track the mean Table-3
+    (Yoel's decision), not the hand-transcribed booklet, for this
+    halachic deadline. (ז׳ שלמים is separate: it has no astronomical
+    "true" form, so it uses the booklet's method-C base — see
+    ``zayin_shleimim_local`` — and matches the booklet 5/5.)
 
-    Per the ZMAN manual: "The sof zman kiddush levana per the Rama
-    [is] at the midpoint between molad and molad, also adjusted to
-    the local clock." (page 10, טבלא 3.)
-
-    Returns a naive ``datetime`` in local clock time (DST applied for
-    the SZKL date itself, not the molad date).
-
-    Note: this implementation does NOT consider the Equation of Time
-    (משוואת הזמן). The ZMAN program offers that as an option for
-    higher astronomical precision; if needed, a refined version can
-    apply EoT at the SZKL date — but the simpler mean-time version
-    matches the most common minhag.
+    Returns a naive ``datetime`` in local clock time. The luach layer
+    additionally applies the day/night "show at night / כל הלילה"
+    display rule.
     """
     naive = _molad_announcement_naive(year, month) + _HALF_SYNODIC_MONTH
-    return _apply_local_dst(naive, tz)
+    return _molad_clock_to_local(naive, tz)
 
 # ────────────────────────────────────────────────────────────────────────
 # Fast-start times — the single source of truth for the floored alos /
@@ -439,12 +510,10 @@ def fast_start_for_date(
     Returns an aware datetime in ``tz``. Use ``format_simple_time`` or
     the ``H:MM`` pattern for display.
     """
-    cal = ZmanimCalendar(geo_location=geo, date=base_date)
     if anchor == FAST_START_ALOS:
-        sunrise = cal.sunrise().astimezone(tz)
-        raw = sunrise - timedelta(minutes=_ALOS_OFFSET_MIN)
+        raw = dawn_for_date(geo=geo, tz=tz, base_date=base_date)
     elif anchor == FAST_START_SHKIA:
-        raw = cal.sunset().astimezone(tz)
+        raw = sunset_for_date(geo=geo, tz=tz, base_date=base_date)
     else:
         raise ValueError(
             f"anchor must be {FAST_START_ALOS!r} or "
@@ -477,3 +546,242 @@ def format_fast_start_clock(
     if fmt == "12short":
         return f"{dt.hour % 12 or 12}:{dt.minute:02d}"
     return format_simple_time(dt, fmt)
+
+
+# ------------------------------------------------------------------------
+# Shared, CACHED sun-event primitives -- the single source of truth for
+# raw sunrise / sunset / dawn / nightfall / chatzos on ANY civil date.
+# ------------------------------------------------------------------------
+#
+# WHY: outside the coordinator-driven zman_* sensors, ~30 sensor modules
+# each rebuilt ``ZmanimCalendar(geo_location=..., date=d)`` inline and
+# re-derived sunset/sunrise -- the same astronomical computation repeated
+# once per sensor per date per update. These helpers compute each
+# (location, date) pair ONCE and memoize it, so thirty sensors asking
+# for this Friday's sunset cost one Grossman computation total.
+#
+# CONTRACT (read before changing):
+#   * Values returned are RAW (unrounded, microsecond-precision), aware
+#     in the caller's tz. Each sensor keeps applying its own rounding
+#     rule via round_half_up / round_ceil / round_floor, so migrating a
+#     sensor onto these helpers can never change what it displays.
+#   * The cache key is (lat, lon, elevation, tzname, civil date) -- the
+#     full set of inputs that determine the result. GeoLocation is
+#     reconstructed from the key inside the cached fn (GeoLocation
+#     itself is unhashable: the zmanim lib converts its tz to a
+#     dateutil tzfile). Every YidCal geo is built by
+#     zman_sensors._create_geo / zmanim_coordinator._resolve_geo_and_tz
+#     with name="YidCal", elevation=0, so reconstruction is exact.
+#   * Conversion to the caller's tz happens OUTSIDE the cache (values
+#     are cached as UTC instants), so any tzinfo object works -- the
+#     cache key only uses the tz NAME for GeoLocation construction,
+#     where it does not affect the UTC instant.
+#   * Like the rest of this module, these assume the package-level
+#     GrossmanCalculator monkey-patch is active (it is applied by
+#     importing yidcal_lib, which happens before anything here runs).
+
+# ~5.5 years of distinct (single-location) dates; entries are tiny.
+_SUN_CACHE_SIZE = 2048
+
+
+def _geo_cache_key(geo: GeoLocation) -> tuple[float, float, float]:
+    return (
+        float(geo.latitude),
+        float(geo.longitude),
+        float(getattr(geo, "elevation", 0.0) or 0.0),
+    )
+
+
+@lru_cache(maxsize=_SUN_CACHE_SIZE)
+def _sun_events_utc(
+    lat: float, lon: float, elev: float, tzname: str, ordinal: int,
+) -> tuple[datetime, datetime]:
+    """(sunrise, sunset) for the civil date ``ordinal`` as UTC instants.
+
+    Raises (uncached) on polar no-rise/no-set dates -- identical to the
+    pre-refactor inline ``cal.sunrise().astimezone(tz)`` behavior.
+    """
+    geo = GeoLocation(
+        name="YidCal", latitude=lat, longitude=lon,
+        time_zone=tzname, elevation=elev,
+    )
+    cal = ZmanimCalendar(geo_location=geo, date=date_cls.fromordinal(ordinal))
+    return (
+        cal.sunrise().astimezone(timezone.utc),
+        cal.sunset().astimezone(timezone.utc),
+    )
+
+
+@lru_cache(maxsize=_SUN_CACHE_SIZE)
+def _transit_utc(
+    lat: float, lon: float, elev: float, tzname: str, ordinal: int,
+) -> datetime:
+    """Grossman true solar transit (chatzos hayom) as a UTC instant."""
+    geo = GeoLocation(
+        name="YidCal", latitude=lat, longitude=lon,
+        time_zone=tzname, elevation=elev,
+    )
+    d = date_cls.fromordinal(ordinal)
+    cal = ZmanimCalendar(geo_location=geo, date=d)
+    return _grossman_transit(cal, geo, d, ZoneInfo(tzname)).astimezone(
+        timezone.utc
+    )
+
+
+def sun_events_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> tuple[datetime, datetime]:
+    """RAW (sunrise, sunset) for ``base_date``, aware in ``tz``. Cached."""
+    lat, lon, elev = _geo_cache_key(geo)
+    tzname = getattr(tz, "key", None) or str(tz)
+    sr_utc, ss_utc = _sun_events_utc(
+        lat, lon, elev, tzname, base_date.toordinal()
+    )
+    return sr_utc.astimezone(tz), ss_utc.astimezone(tz)
+
+
+def sunrise_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> datetime:
+    """RAW sunrise for ``base_date``, aware in ``tz``. Cached."""
+    return sun_events_for_date(geo=geo, tz=tz, base_date=base_date)[0]
+
+
+def sunset_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> datetime:
+    """RAW sunset for ``base_date``, aware in ``tz``. Cached."""
+    return sun_events_for_date(geo=geo, tz=tz, base_date=base_date)[1]
+
+
+def dawn_for_date(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    offset_min: int = _ALOS_OFFSET_MIN,
+) -> datetime:
+    """RAW Alos HaShachar (sunrise - ``offset_min``) for ``base_date``."""
+    return sunrise_for_date(
+        geo=geo, tz=tz, base_date=base_date
+    ) - timedelta(minutes=offset_min)
+
+
+def nightfall_for_date(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    offset_min: int = _ALOS_OFFSET_MIN,
+) -> datetime:
+    """RAW nightfall (sunset + ``offset_min``) for ``base_date``."""
+    return sunset_for_date(
+        geo=geo, tz=tz, base_date=base_date
+    ) + timedelta(minutes=offset_min)
+
+
+def chatzos_hayom_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> datetime:
+    """RAW chatzos hayom (Grossman true solar transit), aware in ``tz``.
+
+    Same value compute_zmanim_for_date uses for the chatzos-hayom row
+    before its half-up display rounding. Cached.
+    """
+    lat, lon, elev = _geo_cache_key(geo)
+    tzname = getattr(tz, "key", None) or str(tz)
+    return _transit_utc(
+        lat, lon, elev, tzname, base_date.toordinal()
+    ).astimezone(tz)
+
+
+def mincha_ketana_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> datetime:
+    """RAW MGA mincha ketana (dawn + 9.5 MGA sha'os) for ``base_date``.
+
+    Same value compute_zmanim_for_date uses for "מנחה קטנה" before its
+    ceil display rounding — i.e. what sensor.yidcal_mincha_ketana shows
+    (after round_ceil). NOT the GRA (sunrise→sunset) variant that
+    python-zmanim's ``ZmanimCalendar.mincha_ketana()`` returns, which
+    runs ~40 min earlier. Cached via the shared sun events.
+    """
+    dawn = dawn_for_date(geo=geo, tz=tz, base_date=base_date)
+    nightfall = nightfall_for_date(geo=geo, tz=tz, base_date=base_date)
+    return dawn + (nightfall - dawn) / 12 * 9.5
+
+
+def plag_hamincha_gra_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> datetime:
+    """RAW plag hamincha GRA (sunrise + 10.75 GRA sha'os) for ``base_date``.
+
+    Same value compute_zmanim_for_date uses for "פלג המנחה גר״א" before
+    its half-up display rounding; numerically identical to python-zmanim's
+    ``ZmanimCalendar.plag_hamincha()`` (verified to the microsecond).
+    Cached via the shared sun events.
+    """
+    sunrise, sunset = sun_events_for_date(geo=geo, tz=tz, base_date=base_date)
+    return sunrise + (sunset - sunrise) / 12 * 10.75
+
+
+def plag_hamincha_mga_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> datetime:
+    """RAW plag hamincha MGA (dawn + 10.75 MGA sha'os) for ``base_date``.
+
+    Same value compute_zmanim_for_date uses for "פלג המנחה מג״א" before
+    its ceil display rounding. python-zmanim's plain ZmanimCalendar has
+    NO MGA plag method at all — this helper is the only source. Cached.
+    """
+    dawn = dawn_for_date(geo=geo, tz=tz, base_date=base_date)
+    nightfall = nightfall_for_date(geo=geo, tz=tz, base_date=base_date)
+    return dawn + (nightfall - dawn) / 12 * 10.75
+
+
+def compute_holiday_windows(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    festival_date: date_cls,
+    actual_date: date_cls,
+    candle_offset: int,
+    havdalah_offset: int,
+) -> dict[str, tuple[datetime, datetime]]:
+    """The nine named holiday windows for ``festival_date`` — THE single
+    source for "when does a holiday flag turn on/off". Extracted verbatim
+    from holiday_sensor's window block so the sensor and any range/JSON
+    consumer (paired with halacha_events.HOLIDAY_WINDOW_TYPE) share one
+    implementation.
+
+    ``festival_date`` is the havdalah-rolled Hebrew day being labeled;
+    ``actual_date`` is the civil today (only candle_candle's END uses it:
+    next-civil-day candles). Roundings match the sensor exactly:
+    candles half-up, havdalah/motzei ceil, alos FLOORED (the v0.7.8
+    fast-start chumra — alos here anchors minor-fast windows).
+    """
+    prev_sunset = sunset_for_date(geo=geo, tz=tz, base_date=festival_date - timedelta(days=1))
+    fest_sunset = sunset_for_date(geo=geo, tz=tz, base_date=festival_date)
+    next_sunset = sunset_for_date(geo=geo, tz=tz, base_date=festival_date + timedelta(days=1))
+    tomorrow_sunset = sunset_for_date(geo=geo, tz=tz, base_date=actual_date + timedelta(days=1))
+    dawn = _floor(dawn_for_date(geo=geo, tz=tz, base_date=festival_date))
+
+    candles_erev = _half_up(prev_sunset - timedelta(minutes=candle_offset))
+    havdalah_day = _ceil(fest_sunset + timedelta(minutes=havdalah_offset))
+    motzei_prev = _ceil(prev_sunset + timedelta(minutes=havdalah_offset))
+
+    # havdalah_havdalah start: when the festival day itself is Shabbos the
+    # window opens at Friday candles, not motzei of the previous day.
+    hh_start = candles_erev if festival_date.weekday() == 5 else motzei_prev
+
+    return {
+        "candle_havdalah":   (candles_erev, havdalah_day),
+        "candle_both":       (candles_erev, _ceil(next_sunset + timedelta(minutes=havdalah_offset))),
+        "alos_havdalah":     (dawn, havdalah_day),
+        "alos_candle":       (dawn, _half_up(fest_sunset - timedelta(minutes=candle_offset))),
+        "candle_alos":       (candles_erev, dawn),
+        "havdalah_alos":     (motzei_prev, dawn),
+        "havdalah_havdalah": (hh_start, havdalah_day),
+        "havdalah_candle":   (motzei_prev, _half_up(fest_sunset - timedelta(minutes=candle_offset))),
+        "candle_candle":     (candles_erev, _half_up(tomorrow_sunset - timedelta(minutes=candle_offset))),
+    }
