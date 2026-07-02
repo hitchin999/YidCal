@@ -10,7 +10,7 @@ from homeassistant.util import dt as dt_util
 from hdate.converters import gdate_to_jdn
 from hdate.hebrew_date import HebrewDate
 
-from zmanim.zmanim_calendar import ZmanimCalendar
+from .zman_compute import round_ceil as _round_ceil, sunset_for_date
 from zmanim.util.geo_location import GeoLocation
 
 from ..const import DOMAIN
@@ -162,10 +162,6 @@ SEFIRA_SHORT: list[str] = ["ספירת העומר"] + [
 ]
 
 
-def _round_ceil(dt: datetime) -> datetime:
-    """Always bump to next minute (matches Motzi-style boundaries)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
 class SfirahHelper:
     """
     Compute Omer count and corresponding Hebrew texts based on Hebrew date
@@ -211,8 +207,7 @@ class SfirahHelper:
     def _get_threshold(self, for_date: date) -> datetime:
         """Return sunset + user-defined offset for that date (rounded)."""
         self._ensure_geo()
-        cal = ZmanimCalendar(geo_location=self._geo, date=for_date)
-        sunset = cal.sunset().astimezone(self._tz)
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=for_date)
 
         raw = sunset + timedelta(minutes=self._havdalah_offset)
         return _round_ceil(raw)
