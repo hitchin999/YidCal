@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.helpers.device_registry import DeviceEntryType
@@ -17,8 +17,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.util import dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
+from zmanim.util.geo_location import GeoLocation
 from .zman_sensors import get_geo
+from .yidcal_lib.zman_compute import (
+    round_half_up,
+    round_ceil,
+    sun_events_for_date,
+    sunset_for_date,
+)
 from hdate import HDateInfo
 from hdate.translator import set_language
 
@@ -62,17 +68,8 @@ from .device import YidCalDevice
 
 _LOGGER = logging.getLogger(__name__)
 
-# ─── Rounding helpers ────────────────────────────────────────────────────────
-def round_half_up(dt: datetime) -> datetime:
-    """Round dt to nearest minute: <30s floor, ≥30s ceil (matches Zman Erev)."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
+# (Rounding helpers now come from yidcal_lib.zman_compute — single source.)
 
-def round_ceil(dt: datetime) -> datetime:
-    """Always bump to the next minute (matches Zman Motzi)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    
 # ─── Your override map ────────────────────────────────────────────────────────
 SLUG_OVERRIDES: dict[str, str] = {
     "א׳ סליחות":             "alef_selichos",
@@ -287,6 +284,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._geo: GeoLocation | None = None
         self._attr_extra_state_attributes: dict[str, str | bool] = {}
         self._havdalah = cfg.get("havdalah_offset", 72)
+
         # Cache of the most recent *actual* erev window (start, end, candle ref)
         # so non-erev days can publish the previous window with the effective
         # (possibly early) end that was really used.
@@ -302,6 +300,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
+
             # Seed the last-window cache from the previously published attrs
             # (they already hold the correct effective window). async_update
             # only uses the cache if its date is the most recent erev day.
@@ -414,6 +413,8 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         return min(cuts)
 
+    # ---------------- Main update ----------------
+
     def _most_recent_erev_date(self, today) -> "date | None":
         """Most recent day before today that was a valid erev-window day
         (same predicate as the next-window finder)."""
@@ -437,10 +438,8 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         eff_yomtov_map: dict,
     ) -> dict:
         """Window (start, effective end, regular candle ref) for erev day d,
-        mirroring the next-window finder's computation."""
-        cal_d = ZmanimCalendar(geo_location=self._geo, date=d)
-        sunrise_d = cal_d.sunrise().astimezone(self._tz)
-        sunset_d = cal_d.sunset().astimezone(self._tz)
+        mirroring the next-window finder's computation (shared cached zmanim)."""
+        sunrise_d, sunset_d = sun_events_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
         start_cut = round_half_up(sunrise_d - timedelta(minutes=72))
         candle_end_cut = round_half_up(sunset_d - timedelta(minutes=self._candle))
@@ -458,8 +457,6 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         )
         return {"start": start_cut, "end": eff_end, "candle": candle_end_cut}
 
-    # ---------------- Main update ----------------
-
     async def async_update(self, now: datetime | None = None) -> None:
         now = (now or datetime.now(self._tz)).astimezone(self._tz)
         today = now.date()
@@ -468,10 +465,8 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         eff_shabbos_map, eff_yomtov_map = self._get_early_maps()
 
-        # compute raw dawn & candle thresholds
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
-        sunrise = cal_today.sunrise().astimezone(self._tz)
-        sunset  = cal_today.sunset().astimezone(self._tz)
+        # compute raw dawn & candle thresholds (shared cached zmanim)
+        sunrise, sunset = sun_events_for_date(geo=self._geo, tz=self._tz, base_date=today)
 
         raw_alos   = sunrise - timedelta(minutes=72)
         raw_candle = sunset  - timedelta(minutes=self._candle)
@@ -532,9 +527,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             if not (is_erev_shabbos_d or is_erev_hol_weekday_d):
                 continue
 
-            cal_d     = ZmanimCalendar(geo_location=self._geo, date=d)
-            sunrise_d = cal_d.sunrise().astimezone(self._tz)
-            sunset_d  = cal_d.sunset().astimezone(self._tz)
+            sunrise_d, sunset_d = sun_events_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
             raw_start = sunrise_d - timedelta(minutes=72)
             raw_end   = sunset_d  - timedelta(minutes=self._candle)
@@ -771,8 +764,7 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 end_d += timedelta(days=1)
 
             # Candle-based start (Erev YT)
-            cal_prev = ZmanimCalendar(geo_location=self._geo, date=d - timedelta(days=1))
-            start_dt = cal_prev.sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
+            start_dt = sunset_for_date(geo=self._geo, tz=self._tz, base_date=d - timedelta(days=1)) - timedelta(minutes=self._candle)
 
             # Apply early YT if present for that Erev
             erev_yt = d - timedelta(days=1)
@@ -785,8 +777,7 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             )
 
             # End = havdalah after last YT day
-            cal_end = ZmanimCalendar(geo_location=self._geo, date=end_d)
-            end_dt = cal_end.sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
+            end_dt = sunset_for_date(geo=self._geo, tz=self._tz, base_date=end_d) + timedelta(minutes=self._havdalah)
 
             # Ignore clusters whose *rounded* end is already past
             if round_ceil(end_dt) <= now:
@@ -802,8 +793,7 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             f = friday + timedelta(days=7 * week)
             s = f + timedelta(days=1)
 
-            cal_f = ZmanimCalendar(geo_location=self._geo, date=f)
-            start_dt = cal_f.sunset().astimezone(self._tz) - timedelta(minutes=self._candle)
+            start_dt = sunset_for_date(geo=self._geo, tz=self._tz, base_date=f) - timedelta(minutes=self._candle)
 
             # Apply early Shabbos if present for that Friday
             start_dt = self._apply_early_start(
@@ -814,8 +804,7 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 eff_yomtov_map=eff_yomtov_map,
             )
 
-            cal_s = ZmanimCalendar(geo_location=self._geo, date=s)
-            end_dt = cal_s.sunset().astimezone(self._tz) + timedelta(minutes=self._havdalah)
+            end_dt = sunset_for_date(geo=self._geo, tz=self._tz, base_date=s) + timedelta(minutes=self._havdalah)
 
             if round_ceil(end_dt) <= now:
                 continue
