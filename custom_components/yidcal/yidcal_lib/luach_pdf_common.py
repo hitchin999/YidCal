@@ -1,0 +1,150 @@
+"""
+custom_components/yidcal/yidcal_lib/luach_pdf_common.py
+
+Shared helpers for PDF rendering of YidCal luachs.
+
+Font strategy:
+  PRIMARY  = Heebo (Regular + Bold)
+             Modern Hebrew sans-serif by Oded Ezer, originally based on
+             Roboto's metrics. Covers Hebrew letters, Hebrew punctuation
+             (geresh/gershayim/maqaf), digits, basic Latin ASCII, common
+             punctuation, and the bullet "•" separator. SIL-OFL
+             licensed. The bundled TTFs are merged Hebrew + Latin
+             subsets from Google Fonts' static instances (Regular = 400,
+             Bold = 700). Used by the yearly-multi-page renderer AND
+             reused as the serif fallback (see below).
+
+  SERIF    = Frank Ruehl CLM (Medium + Bold)
+             A classical Hebrew serif from the Culmus project, used by
+             traditional printed luachs (e.g. the South Fallsburg
+             yearly-sheet luach). Single TTF per weight covers Hebrew
+             letters + nikud + gershayim/geresh AND full ASCII +
+             digits, so no Hebrew/Latin subset stitching is needed.
+             Used by the weekly and yearly-sheet renderers. It has NO
+             bullet/dot glyph, so it falls back to Heebo for "•".
+
+The old ~800 KB Liberation Sans fallback was removed. The traditional
+bullet "•" separator is kept: the multi-page Heebo face has it
+natively, and the weekly/yearly-sheet Frank Ruehl renderers borrow it
+from the already-bundled Heebo (registered as the serif fallback) —
+zero extra file weight. Every glyph the three renderers draw was
+verified covered by the primary font or this Heebo fallback.
+
+Combined file weight ≈ 164 KB — well within HACS/Docker on a Pi.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fpdf import FPDF
+
+
+# Font filenames bundled under yidcal_lib/fonts/.
+FONT_REGULAR_FILE = "Heebo-Regular.ttf"
+FONT_BOLD_FILE = "Heebo-Bold.ttf"
+
+# Frank Ruehl CLM (Culmus). The "Medium" file is the regular weight —
+# Culmus uses "Medium" rather than "Regular" in the filename, but the
+# font is regular-weight by metric standards.
+SERIF_REGULAR_FILE = "FrankRuehlCLM-Medium.ttf"
+SERIF_BOLD_FILE = "FrankRuehlCLM-Bold.ttf"
+
+# Logical font family names registered into FPDF instances.
+FONT_FAMILY = "YidCalLuach"
+
+# Yearly-sheet-renderer serif family (Frank Ruehl CLM).
+FONT_FAMILY_SERIF = "YidCalLuachSerif"
+
+# Serif-renderer fallback family. Frank Ruehl CLM has NO bullet/dot
+# glyph at all, so the weekly + yearly-sheet renderers fall back to
+# the ALREADY-BUNDLED Heebo TTFs (shipped anyway for the multi-page
+# style) purely for the "•" separator and any other glyph FR lacks.
+# This costs ZERO extra file weight (the ~800 KB Liberation Sans
+# fallback that used to do this is gone — Heebo is reused instead).
+SERIF_FALLBACK_FAMILY = "YidCalLuachSerifFallback"
+
+# Info-ribbon segment separator (also the molad / fast-line / subtitle
+# separator). The traditional luach uses a bullet "•" (U+2022). Frank
+# Ruehl CLM (the weekly + yearly-sheet face) contains no bullet/dot
+# glyph, so for those styles the bullet renders via the Heebo serif
+# fallback above (Heebo has it); the multi-page Heebo face has it
+# natively. Defined once here so producer and the yearly-sheet molad
+# split stay in sync — change this single value to retune globally.
+INFO_SEP = "\u2022"
+
+
+def _fonts_dir() -> Path:
+    """Return the bundled fonts directory."""
+    return Path(__file__).parent / "fonts"
+
+
+def register_fonts(pdf: "FPDF") -> None:
+    """Register YidCal's TTF fonts onto an fpdf.FPDF instance.
+
+    Heebo is the only family — it covers every glyph the multi-page
+    renderer draws (Hebrew + nikud + ASCII + digits + the info-ribbon
+    en-dash separator), so no fallback font is registered or shipped.
+
+    Call AFTER FPDF construction, BEFORE the first set_font().
+    """
+    fonts = _fonts_dir()
+    pdf.add_font(FONT_FAMILY, "", str(fonts / FONT_REGULAR_FILE))
+    pdf.add_font(FONT_FAMILY, "B", str(fonts / FONT_BOLD_FILE))
+
+
+def register_serif_fonts(pdf: "FPDF") -> None:
+    """Register Frank Ruehl CLM (the serif family used by the weekly
+    and yearly-sheet renderers) onto an fpdf.FPDF instance, with the
+    already-bundled Heebo TTFs as the fallback family.
+
+    Frank Ruehl CLM covers Hebrew letters + nikud + gershayim/geresh
+    AND full ASCII/digits in a single TTF, but it contains NO bullet
+    or dot glyph. The traditional luach separator is a bullet "•",
+    so Heebo (shipped anyway for the multi-page style) is registered
+    as the fallback purely so fpdf2 can borrow "•" — and any other
+    glyph Frank Ruehl might lack. This adds ZERO file weight (Heebo
+    is already present) and replaces the old ~800 KB Liberation Sans
+    fallback.
+
+    Call AFTER FPDF construction, BEFORE the first set_font().
+    """
+    fonts = _fonts_dir()
+    pdf.add_font(FONT_FAMILY_SERIF, "", str(fonts / SERIF_REGULAR_FILE))
+    pdf.add_font(FONT_FAMILY_SERIF, "B", str(fonts / SERIF_BOLD_FILE))
+    pdf.add_font(SERIF_FALLBACK_FAMILY, "", str(fonts / FONT_REGULAR_FILE))
+    pdf.add_font(SERIF_FALLBACK_FAMILY, "B", str(fonts / FONT_BOLD_FILE))
+    pdf.set_fallback_fonts([SERIF_FALLBACK_FAMILY])
+
+
+def bidi(s: str) -> str:
+    """Convert a logical-order Hebrew/mixed string to visual order for
+    rendering via fpdf2.
+    """
+    from bidi.algorithm import get_display
+    return get_display(s)
+
+
+def fonts_available() -> bool:
+    """Return True iff all bundled font files are present on disk."""
+    fonts = _fonts_dir()
+    return all(
+        (fonts / name).exists()
+        for name in (
+            FONT_REGULAR_FILE, FONT_BOLD_FILE,
+        )
+    )
+
+
+def serif_fonts_available() -> bool:
+    """Return True iff the Frank Ruehl CLM serif TTFs are present.
+
+    The yearly-sheet renderer needs these in addition to the standard set
+    checked by ``fonts_available``.
+    """
+    fonts = _fonts_dir()
+    return all(
+        (fonts / name).exists()
+        for name in (SERIF_REGULAR_FILE, SERIF_BOLD_FILE)
+    )
