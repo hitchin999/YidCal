@@ -108,7 +108,8 @@ ENGLISH_TO_HEBREW_PARSHA: dict[str, str] = {
 }
 
 CHANUKAH_READINGS: dict[int, dict] = {
-    1: {"opening_words": "ויהי ביום כלות משה להקים את המשכן", "sefer": "במדבר", "parsha_source": "נשא", "reason": "א׳ דחנוכה", "display_title": "א׳ דחנוכה", "aliyah_count": 3, "has_maftir": False},
+    # Day 1 opens from ברכת כהנים per the prevalent minhag and the ZMAN tables.
+    1: {"opening_words": "כה תברכו את בני ישראל", "sefer": "במדבר", "parsha_source": "נשא", "reason": "א׳ דחנוכה", "display_title": "א׳ דחנוכה", "aliyah_count": 3, "has_maftir": False},
     2: {"opening_words": "ביום השני הקריב נתנאל בן צוער", "sefer": "במדבר", "parsha_source": "נשא", "reason": "ב׳ דחנוכה", "display_title": "ב׳ דחנוכה", "aliyah_count": 3, "has_maftir": False},
     3: {"opening_words": "ביום השלישי נשיא לבני זבולון", "sefer": "במדבר", "parsha_source": "נשא", "reason": "ג׳ דחנוכה", "display_title": "ג׳ דחנוכה", "aliyah_count": 3, "has_maftir": False},
     4: {"opening_words": "ביום הרביעי נשיא לבני ראובן", "sefer": "במדבר", "parsha_source": "נשא", "reason": "ד׳ דחנוכה", "display_title": "ד׳ דחנוכה", "aliyah_count": 3, "has_maftir": False},
