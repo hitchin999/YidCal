@@ -93,6 +93,9 @@ from .config_flow import (
     CONF_ENABLE_ZMANIM_LOOKUP,
     DEFAULT_ENABLE_ZMANIM_LOOKUP,
 
+    CONF_ENABLE_LUACH_PDF,
+    DEFAULT_ENABLE_LUACH_PDF,
+
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -376,75 +379,7 @@ async def create_sample_files(hass: HomeAssistant) -> None:
         _LOGGER.info("Created sample muted Yurtzeits file at %s", muted_file)
 
 
-async def resolve_location_from_coordinates(hass, latitude, longitude):
-    """Reverse lookup borough, then forward-geocode that place to snap to its centroid."""
-
-    # 1) Try the curated community-centroid list first. Entries here have
-    # coordinates verified against published luachs, so when matched the zmanim
-    # are guaranteed to align with the printed luach for that community.
-    # Falls through to Nominatim geocoding (below) if no entry matches.
-    from .yidcal_lib.places import find_place
-    snap = find_place(latitude, longitude)
-    if snap is not None:
-        name, state, snap_lat, snap_lon = snap
-        return name, state, snap_lat, snap_lon, hass.config.time_zone
-
-    try:
-        # 1) Reverse-lookup borough
-        def blocking_lookup():
-            from geopy.geocoders import Nominatim
-
-            geolocator = Nominatim(user_agent="yidcal")
-            loc = geolocator.reverse((latitude, longitude), language="en", timeout=10)
-            addr = loc.raw.get("address", {}) if loc else {}
-            city = (
-                addr.get("city")
-                or addr.get("town")
-                or addr.get("village")
-                or addr.get("hamlet")
-                or ""
-            )
-            borough = (
-                addr.get("city_district")
-                or addr.get("borough")
-                or addr.get("suburb")
-                or addr.get("neighbourhood")
-            )
-            if city == "New York" and borough:
-                city = borough
-            state = addr.get("state", "")
-            return city, state
-
-        city, state = await hass.async_add_executor_job(blocking_lookup)
-
-        # 2) Forward-geocode only "City, State" to get the official centroid
-        def blocking_forward():
-            from geopy.geocoders import Nominatim
-
-            geolocator = Nominatim(user_agent="yidcal")
-            query = f"{city}, {state}"
-            loc = geolocator.geocode(query, exactly_one=True, timeout=10)
-            if not loc:
-                raise ValueError(f"Could not geocode '{query}'")
-            return loc.latitude, loc.longitude
-
-        lat, lon = await hass.async_add_executor_job(blocking_forward)
-    except Exception as e:
-        _LOGGER.warning("Geocoding failed (%s), falling back to HA lat/lon", e)
-        city, state = "", ""
-        lat, lon = latitude, longitude
-
-    # 3) Timezone lookup
-    def get_tzname(lat, lon):
-        return TimezoneFinder().timezone_at(lng=lon, lat=lat) or "UTC"
-
-    try:
-        tzname = await hass.async_add_executor_job(get_tzname, lat, lon)
-    except Exception:
-        _LOGGER.warning("Timezone lookup failed, falling back to HA time_zone")
-        tzname = hass.config.time_zone
-
-    return city, state, lat, lon, tzname or "UTC"
+from .yidcal_lib.zman_geocoder import resolve_location_from_coordinates  # noqa: E402
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -613,9 +548,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial.get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
     )
 
+    enable_luach_pdf = opts.get(
+        CONF_ENABLE_LUACH_PDF,
+        initial.get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
+    )
+
     # Resolve and store geo+tz config (with caching to avoid repeated API calls)
     latitude = hass.config.latitude
     longitude = hass.config.longitude
+    
     # Check if we have cached location data AND if HA coordinates haven't changed
     cached = initial.get("resolved_location")
     # Invalidate any cached snap that uses the legacy Kiryas Joel
@@ -784,6 +725,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
             hass.services.async_remove(DOMAIN, SERVICE_CHECK_ZMANIM)
+
+    # Register the yidcal.generate_luach service if the Luach PDF
+    # feature is enabled. Same on/off-on-reload semantics as check_zmanim.
+    from .yidcal_lib.luach_service import (
+        async_register_service as _async_register_luach_service,
+        async_remove_service as _async_remove_luach_service,
+    )
+    if enable_luach_pdf:
+        _async_register_luach_service(hass)
+    else:
+        _async_remove_luach_service(hass)
 
     # Yurtzeit list-management services are always available — they
     # only touch www/yidcal-data/*.txt and don't depend on any optional
@@ -1027,6 +979,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # linger if the user removes the integration.
     if hass.services.has_service(DOMAIN, SERVICE_CHECK_ZMANIM):
         hass.services.async_remove(DOMAIN, SERVICE_CHECK_ZMANIM)
+    # Remove the generate_luach service on full unload.
+    from .yidcal_lib.luach_service import async_remove_service as _remove_luach
+    _remove_luach(hass)
     # Drop yurtzeit list services on full unload too.
     for svc in (SERVICE_SET_YURTZEIT_MUTED, SERVICE_SET_YURTZEIT_CUSTOM):
         if hass.services.has_service(DOMAIN, svc):
