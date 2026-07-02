@@ -203,3 +203,114 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
 
     cache[query] = resolved
     return resolved
+
+
+# ── Coordinate-based snap (used by __init__ at setup time) ─────────────
+# v0.7.8 removed the snapping step from resolve_full (manual location
+# strings now keep the user's coords instead of normalizing to a city
+# centroid), but the AUTO home-location path in __init__ still snaps via
+# this function — kept here so __init__'s import keeps working.
+async def resolve_location_from_coordinates(
+    hass: HomeAssistant,
+    latitude: float,
+    longitude: float,
+) -> tuple[str, str, float, float, str]:
+    """Snap raw coords to the canonical city centroid.
+
+    Returns ``(city, state, lat, lon, tzname)``. The snap covers:
+      • **Curated community-centroid list** (``places.py``) — first the
+        wide custom bbox for Kiryas Joel, then the nearest place within
+        ``DEFAULT_RADIUS_KM`` of the input coords. Coordinates here are
+        verified against published luachs (KJ cross-verified against
+        the South Fallsburg 5786 printed luach to the minute).
+      • **Everywhere else** → reverse-geocode the input coords through
+        Nominatim to derive city/state, then forward-geocode "City,
+        State" to obtain that city's official centroid. This normalizes
+        ZIP-centroid or address-specific coords to the city-level
+        centroid that's appropriate for zmanim.
+
+    Timezone is looked up from the final (snapped) coords via
+    TimezoneFinder, with HA's configured ``time_zone`` as a fallback.
+
+    On geocoding failure, returns the input coords unchanged with
+    empty city/state — the caller decides whether that's acceptable.
+
+    Used at integration setup time as well as by the string-based
+    ``resolve_location`` so the service's location snapping matches
+    HA setup's home-location snapping exactly.
+    """
+    # 1) Try the curated community-centroid list first. Entries here have
+    # coordinates verified against published luachs, so when matched the
+    # zmanim are guaranteed to align with the printed luach for that
+    # community. Falls through to Nominatim geocoding (below) on miss.
+    from .places import find_place
+    snap = find_place(latitude, longitude)
+    if snap is not None:
+        name, state, snap_lat, snap_lon = snap
+        return name, state, snap_lat, snap_lon, hass.config.time_zone
+
+    city = ""
+    state = ""
+    lat = latitude
+    lon = longitude
+    try:
+        # 1) Reverse-lookup → city / state.
+        def blocking_lookup():
+            from geopy.geocoders import Nominatim
+            geolocator = Nominatim(user_agent="yidcal")
+            loc = geolocator.reverse(
+                (latitude, longitude), language="en", timeout=10,
+            )
+            addr = loc.raw.get("address", {}) if loc else {}
+            city_local = (
+                addr.get("city")
+                or addr.get("town")
+                or addr.get("village")
+                or addr.get("hamlet")
+                or ""
+            )
+            borough = (
+                addr.get("city_district")
+                or addr.get("borough")
+                or addr.get("suburb")
+                or addr.get("neighbourhood")
+            )
+            if city_local == "New York" and borough:
+                city_local = borough
+            state_local = addr.get("state", "")
+            return city_local, state_local
+
+        city, state = await hass.async_add_executor_job(blocking_lookup)
+
+        # 2) Forward-geocode "City, State" → official centroid.
+        def blocking_forward():
+            from geopy.geocoders import Nominatim
+            geolocator = Nominatim(user_agent="yidcal")
+            q = f"{city}, {state}"
+            loc = geolocator.geocode(q, exactly_one=True, timeout=10)
+            if not loc:
+                raise ValueError(f"Could not geocode {q!r}")
+            return loc.latitude, loc.longitude
+
+        lat, lon = await hass.async_add_executor_job(blocking_forward)
+    except Exception as e:
+        _LOGGER.warning(
+            "YidCal: snap geocoding failed (%s), keeping input coords", e,
+        )
+        city, state = "", ""
+        lat, lon = latitude, longitude
+
+    # 3) Timezone lookup from the (possibly snapped) coords.
+    def get_tzname(lat_v: float, lon_v: float) -> str:
+        from timezonefinder import TimezoneFinder
+        return TimezoneFinder().timezone_at(lng=lon_v, lat=lat_v) or "UTC"
+
+    try:
+        tzname = await hass.async_add_executor_job(get_tzname, lat, lon)
+    except Exception:
+        _LOGGER.warning(
+            "YidCal: timezone lookup failed, falling back to HA time_zone",
+        )
+        tzname = hass.config.time_zone
+
+    return city, state, lat, lon, tzname or "UTC"
