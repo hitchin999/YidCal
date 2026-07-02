@@ -65,17 +65,14 @@ def _chm_info(month: int, day: int, diaspora: bool) -> tuple[bool, str, int]:
     Sukkos: diaspora CHM = Tishrei 17–20 (4 days), Israel = 16–20 (5 days).
     (Hoshana Rabbah / Tishrei 21 is treated separately — not CHM here.)
     """
-    if month == 1:  # Nisan
-        if diaspora and 17 <= day <= 20:
-            return (True, "פסח", day - 16)
-        if not diaspora and 16 <= day <= 20:
-            return (True, "פסח", day - 15)
-    elif month == 7:  # Tishrei
-        if diaspora and 17 <= day <= 20:
-            return (True, "סוכות", day - 16)
-        if not diaspora and 16 <= day <= 20:
-            return (True, "סוכות", day - 15)
-    return (False, "", 0)
+    # Canonical rule from halacha_events (Hoshana Rabbah excluded here —
+    # it carries its own label).
+    from .halacha_events import chol_hamoed_day
+    res = chol_hamoed_day(month, day, diaspora=diaspora, include_hoshana_rabbah=False)
+    if res is None:
+        return (False, "", 0)
+    chag, n = res
+    return (True, chag, n)
 
 
 _DAY_LETTER = {1: "א׳", 2: "ב׳", 3: "ג׳", 4: "ד׳", 5: "ה׳"}
