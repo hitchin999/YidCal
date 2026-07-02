@@ -24,9 +24,8 @@ import homeassistant.util.dt as dt_util
 
 from hdate import HDateInfo
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-
 from .const import DOMAIN
+from .yidcal_lib.zman_compute import round_ceil, round_half_up
 from .device import YidCalZmanDevice
 from .zman_sensors import (
     get_geo,
@@ -150,12 +149,10 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
         await self.async_update()
 
     def _ceil_minute(self, dt_local: datetime.datetime) -> datetime.datetime:
-        return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        return round_ceil(dt_local)  # shared zman_compute rounding
 
     def _half_up(self, dt_local: datetime.datetime) -> datetime.datetime:
-        if dt_local.second >= 30:
-            dt_local += timedelta(minutes=1)
-        return dt_local.replace(second=0, microsecond=0)
+        return round_half_up(dt_local)  # shared zman_compute rounding
 
     def _round_for_kind(self, dt_local: datetime.datetime, kind: str) -> datetime.datetime:
         """After-tzeis candle lighting rounds up (chumrah); before-sunset uses half-up."""

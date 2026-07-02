@@ -25,23 +25,16 @@ from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
 
 from pyluach.dates import HebrewDate as PHebrewDate
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-
-
-def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
-    """Round to nearest minute: <30s floor, ≥30s ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    """Always bump to next full minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 class MoridGeshemSensor(YidCalDisplayDevice, SensorEntity):
@@ -84,8 +77,7 @@ class MoridGeshemSensor(YidCalDisplayDevice, SensorEntity):
         today = now_local.date()
 
         # Dawn (alos) = sunrise - 72 min, rounded half-up
-        sunrise = ZmanimCalendar(geo_location=self._geo, date=today).sunrise().astimezone(self._tz)
-        raw_dawn = sunrise - timedelta(minutes=72)
+        raw_dawn = dawn_for_date(geo=self._geo, tz=self._tz, base_date=today)
         dawn = _round_half_up(raw_dawn)
 
         # Hebrew date based on CIVIL day (your original behavior)
@@ -160,7 +152,7 @@ class TalUMatarSensor(YidCalDisplayDevice, SensorEntity):
         today = now_local.date()
 
         def sunset_on(d: date) -> datetime.datetime:
-            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+            return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
         # Halachic roll at sunset + havdalah_offset (rounded ceil)
         raw_hav_today = sunset_on(today) + timedelta(minutes=self._havdalah_offset)

@@ -10,8 +10,8 @@ from homeassistant.util import dt as dt_util
 
 import pyluach.dates as pdates
 from .device import YidCalDisplayDevice
+from .yidcal_lib import halacha_events as he
 from .const import DOMAIN
-from .yidcal_lib.helper import int_to_hebrew
 
 _LOGGER = logging.getLogger(__name__)
 ChapterType = Union[int, Tuple[int, int]]
@@ -58,29 +58,8 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
     # ───────────────── helpers ─────────────────
 
     def _skip_reason(self, shabbat_date: date) -> Optional[str]:
-        """Return the skip reason string if Avos is skipped this Shabbos, else None."""
-        sh_hd = pdates.HebrewDate.from_pydate(shabbat_date)
-
-        # Shavuos on Shabbos → skip
-        if sh_hd.month == 3 and (
-            sh_hd.day == 6 or (self._diaspora and sh_hd.day == 7)
-        ):
-            day_lbl = int_to_hebrew(sh_hd.day)  # e.g., ו׳ / ז׳
-            return f"הדלגה — שבועות ({day_lbl} סיון)"
-
-        # Tisha B'Av-related skips:
-        #   • 9 Av falls on Shabbos itself (נדחה — fast pushed to Sunday) →
-        #     Perek Avos is omitted as a Tisha B'Av stringency.
-        #   • Shabbos = 8 Av AND 9 Av falls on Sunday (ערב תשעה באב) → skip.
-        # All other Shabbos Chazon cases (3–7 Av) are normal reading weeks.
-        if sh_hd.month == 5 and sh_hd.day == 9:
-            return "הדלגה — תשעה באב נדחה"
-        if sh_hd.month == 5 and sh_hd.day == 8:
-            tisha_bav_py = pdates.HebrewDate(sh_hd.year, 5, 9).to_pydate()
-            if tisha_bav_py.weekday() == 6:  # Sunday (Mon=0 … Sun=6)
-                return "הדלגה — שבת חזון (ערב תשעה באב)"
-
-        return None
+        """Canonical skip rule (halacha_events) — shared with the luach."""
+        return he.avos_skip_reason(shabbat_date, diaspora=self._diaspora)
 
     @staticmethod
     def _fmt_date(d: date) -> str:
@@ -142,50 +121,24 @@ class PerekAvotSensor(YidCalDisplayDevice, SensorEntity):
             self.async_write_ha_state()
             return
 
-        # Count valid reading weeks up to & including this Shabbos
-        valid_week_count = 0
-        d = first_shabbos
-        while d <= shabbat_of_week:
-            if not self._skip_reason(d):
-                valid_week_count += 1
-            d += timedelta(days=7)
-
-        # Count valid reading weeks remaining including this Shabbos
-        valid_remaining = 0
-        d = shabbat_of_week
-        while d <= last_shabbos:
-            if not self._skip_reason(d):
-                valid_remaining += 1
-            d += timedelta(days=7)
-
-        # Total valid reading weeks for the season
-        total = 0
-        d = first_shabbos
-        while d <= last_shabbos:
-            if not self._skip_reason(d):
-                total += 1
-            d += timedelta(days=7)
-
-        # Universal halachic rule: always start at פרק א and end at פרק ו.
-        # Total perakim covered = total + doubles_needed must be a multiple of 6,
-        # so doubles_needed = (6 − total mod 6) mod 6:
-        #   N=24 → 0 doubles
-        #   N=23 → 1: (5-6)
-        #   N=22 → 2: (3-4)(5-6)
-        #   N=21 → 3: (1-2)(3-4)(5-6)
-        # The doubling phase always lands at the END of the season,
-        # walking the cycle's pairs backward from (5-6).
-        doubles_needed = (6 - total % 6) % 6
-
-        if 0 < valid_remaining <= doubles_needed:
+        # Canonical computation (halacha_events.pirkei_avos_info) — the
+        # exact audited v0.7.8 algorithm, now shared with the luach.
+        chapter_label, _reason, valid_week_count, total = he.pirkei_avos_info(
+            shabbat_of_week, diaspora=self._diaspora
+        )
+        if "-" in chapter_label:
+            # Reconstruct the (n1, n2) pair for the chapter_number attr
+            valid_remaining = 0
+            d = shabbat_of_week
+            while d <= last_shabbos:
+                if not self._skip_reason(d):
+                    valid_remaining += 1
+                d += timedelta(days=7)
             pairs = [(1, 2), (3, 4), (5, 6)]
             n1, n2 = pairs[(3 - valid_remaining) % 3]
             chapter: ChapterType = (n1, n2)
-            chapter_label = f"פרק {int_to_hebrew(n1)}-{int_to_hebrew(n2)}"
         else:
-            n = ((valid_week_count - 1) % 6) + 1
-            chapter = n
-            chapter_label = f"פרק {int_to_hebrew(n)}"
+            chapter = ((valid_week_count - 1) % 6) + 1
 
         attrs["reading_index"] = valid_week_count
         attrs["reading_total"] = total

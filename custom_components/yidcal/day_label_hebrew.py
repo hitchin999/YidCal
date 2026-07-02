@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timedelta
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
@@ -7,20 +7,15 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from .zman_sensors import get_geo
 
 from .device import YidCalDevice
 from .const import DOMAIN
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 
 
 class DayLabelHebrewSensor(YidCalDevice, SensorEntity):
@@ -81,11 +76,7 @@ class DayLabelHebrewSensor(YidCalDevice, SensorEntity):
         today = now_local.date()
 
         # Zmanim sunset (same engine as ZmanMotzi / ZmanErev)
-        sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=today)
-            .sunset()
-            .astimezone(tz)
-        )
+        sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=today)
 
         raw_candle   = sunset - timedelta(minutes=self._candle_offset)
         raw_havdalah = sunset + timedelta(minutes=self._havdalah_offset)

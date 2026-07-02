@@ -16,10 +16,14 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-
 from .device import YidCalDisplayDevice
 from .yidcal_lib.helper import YidCalHelper
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .const import DOMAIN
 from .zman_sensors import get_geo
 
@@ -27,18 +31,6 @@ _LOGGER = logging.getLogger(__name__)
 
 NAILS_TEXT = "שניידן די נעגל, האר היינט לכבוד שבת"
 STATE_OPTIONS = [NAILS_TEXT, ""]
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    """Always bump to the next minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
@@ -96,14 +88,16 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
 
         await self.async_update()
 
-        # Polling + key flips
-        async_track_time_interval(self.hass, self.async_update, timedelta(minutes=30))
-        async_track_state_change_event(
-            self.hass,
-            ["sensor.yidcal_molad"],
-            self._handle_molad_change,
+        # Polling + key flips (all registered for cleanup)
+        self._register_interval(self.hass, self.async_update, timedelta(minutes=30))
+        self._register_listener(
+            async_track_state_change_event(
+                self.hass,
+                ["sensor.yidcal_molad"],
+                self._handle_molad_change,
+            )
         )
-        async_track_sunset(
+        self._register_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
@@ -115,28 +109,16 @@ class FridayIsRoshChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity
     # ---------------- helpers ----------------
 
     def _sunset(self, d: date) -> datetime:
-        """Zmanim sunset using shared geo."""
-        return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+        """Raw sunset via the shared cached helper (same geo)."""
+        return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
     def _alos(self, d: date) -> datetime:
-        """
-        Get Alos via zmanim calendar.
-        Fallback to sunrise-72 via zmanim (no Astral).
-        """
-        cal = ZmanimCalendar(geo_location=self._geo, date=d)
+        """Alos (MGA): raw sunrise - 72 min via the shared cached helper.
 
-        # Try multiple common method names safely
-        for name in ("alos_72", "alos72", "alos"):
-            fn = getattr(cal, name, None)
-            if callable(fn):
-                try:
-                    return fn().astimezone(self._tz)
-                except Exception:
-                    pass
-
-        # Fallback: zmanim sunrise - 72
-        sunrise = cal.sunrise().astimezone(self._tz)
-        return sunrise - timedelta(minutes=72)
+        Replaces the old getattr cascade — its first hit, cal.alos_72(),
+        equals sunrise - 72 min exactly for YidCal's elevation-0 geo.
+        """
+        return dawn_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
     def _get_upcoming_rosh_chodesh_gdays(
         self, today: date

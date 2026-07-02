@@ -25,21 +25,15 @@ from homeassistant.core import HomeAssistant
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from hdate import HDateInfo
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-
 from .device import YidCalSpecialDevice
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
 from .const import DOMAIN
-
-
-# --------- rounding helpers ---------
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0) if dt.second or dt.microsecond else dt
 
 
 class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
@@ -86,22 +80,18 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     # ------------- helpers -------------
-    def _sun_times_local(self, gdate):
-        """Return (sunrise, sunset) localized for gdate."""
-        cal = ZmanimCalendar(geo_location=self._geo, date=gdate)
-        sr = cal.sunrise().astimezone(self._tz)
-        ss = cal.sunset().astimezone(self._tz)
-        return sr, ss
-
     def _alos_local_on(self, gdate) -> datetime:
         """Alos (MGA 72) for gdate: sunrise - 72 minutes, rounded half-up."""
-        sunrise, _ = self._sun_times_local(gdate)
-        return _round_half_up(sunrise - timedelta(minutes=72))
+        return _round_half_up(
+            dawn_for_date(geo=self._geo, tz=self._tz, base_date=gdate)
+        )
 
     def _tzeis_local_on(self, gdate) -> datetime:
         """Tzeis for gdate: sunset + havdalah offset, rounded ceil."""
-        _, sunset = self._sun_times_local(gdate)
-        return _round_ceil(sunset + timedelta(minutes=self._havdalah))
+        return _round_ceil(
+            sunset_for_date(geo=self._geo, tz=self._tz, base_date=gdate)
+            + timedelta(minutes=self._havdalah)
+        )
 
     def _yt_span_end(self, start: date) -> date:
         """

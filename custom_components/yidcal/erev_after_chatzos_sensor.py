@@ -26,26 +26,15 @@ from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
 
 from hdate import HDateInfo
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .device import YidCalSpecialDevice
 from .const import DOMAIN
+from .yidcal_lib.zman_compute import (
+    chatzos_hayom_for_date,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-
-
-# ── rounding helpers (same conventions as the rest of YidCal) ──
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (
-        (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-        if dt.second or dt.microsecond
-        else dt
-    )
 
 
 class ErevAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
@@ -84,19 +73,15 @@ class ErevAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
     # ── helpers ──
 
     def _chatzos_for(self, d) -> datetime:
-        """Compute chatzos hayom (MGA midpoint: dawn + 6 zmaniyos hours)."""
-        cal = ZmanimCalendar(geo_location=self._geo, date=d)
-        sunrise = cal.sunrise().astimezone(self._tz)
-        sunset = cal.sunset().astimezone(self._tz)
-        dawn = sunrise - timedelta(minutes=72)
-        nightfall = sunset + timedelta(minutes=72)
-        hour_td = (nightfall - dawn) / 12
-        return _round_half_up(dawn + hour_td * 6)
+        """Compute chatzos hayom (Grossman true solar transit)."""
+        # Now the Grossman transit matching the dedicated chatzos sensor (tiny value change, intentional).
+        return _round_half_up(
+            chatzos_hayom_for_date(geo=self._geo, tz=self._tz, base_date=d)
+        )
 
     def _effective_erev_end(self, d) -> datetime:
         """Candle-lighting time (possibly overridden by early-start maps)."""
-        cal = ZmanimCalendar(geo_location=self._geo, date=d)
-        sunset = cal.sunset().astimezone(self._tz)
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
         candle_cut = _round_half_up(sunset - timedelta(minutes=self._candle))
 
         # Respect early-start maps if available

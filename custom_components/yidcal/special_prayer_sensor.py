@@ -81,7 +81,7 @@ Attributes include: "הושענות היום", per-day Hoshanos, "הושענא �
 
 from __future__ import annotations
 
-from datetime import timedelta, time, date, datetime
+from datetime import timedelta, time, date
 import calendar
 from zoneinfo import ZoneInfo
 import re
@@ -97,30 +97,22 @@ from homeassistant.util import dt as dt_util
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from pyluach.dates import GregorianDate
 from pyluach import parshios
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
 from .zman_sensors import get_geo
+from .yidcal_lib.zman_compute import (
+    chatzos_hayom_for_date,
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 
 
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
 NO_MELOCHA_SENSOR = "binary_sensor.yidcal_no_melucha"
-
-
-# ---------- Rounding helpers (same semantics as other YidCal sensors) ----------
-
-def _round_half_up(dt: datetime) -> datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    """Always bump to the *next* minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 # Hoshanos sequences depend on the weekday of 15 Tishrei (first day of Sukkos, chutz la'aretz).
@@ -338,29 +330,28 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             )
 
             # ---------- Zmanim for today / yesterday / tomorrow ----------
-            cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
-            cal_yesterday = ZmanimCalendar(geo_location=self._geo, date=today - timedelta(days=1))
-            cal_tomorrow = ZmanimCalendar(geo_location=self._geo, date=today + timedelta(days=1))
-
-            sunrise = cal_today.sunrise().astimezone(tz)
-            sunset = cal_today.sunset().astimezone(tz)
+            sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=today)
 
             # Dawn, candle-lighting, havdalah – with same rounding semantics as other sensors
-            dawn = _round_half_up(sunrise - timedelta(minutes=72))
+            dawn = _round_half_up(dawn_for_date(geo=self._geo, tz=tz, base_date=today))
             candle_time = _round_half_up(sunset - timedelta(minutes=self._candle))
             havdala_raw = sunset + timedelta(minutes=self._havdalah)
             havdala = _round_ceil(havdala_raw)
 
             # Chatzos (no need for rounding; we never hit it exactly)
-            hal_mid = sunrise + (sunset - sunrise) / 2
+            # Now the Grossman true solar transit, matching the dedicated chatzos
+            # sensor (was the sunrise/sunset midpoint — tiny value change, intentional).
+            hal_mid = chatzos_hayom_for_date(geo=self._geo, tz=tz, base_date=today)
 
             # Nightfall (tzeis) window: prev_tzeis .. next_tzeis, round Motzi-style
             yest_tzeis = _round_ceil(
-                cal_yesterday.sunset().astimezone(tz) + timedelta(minutes=self._havdalah)
+                sunset_for_date(geo=self._geo, tz=tz, base_date=today - timedelta(days=1))
+                + timedelta(minutes=self._havdalah)
             )
             tod_tzeis = havdala  # already rounded
             tom_tzeis = _round_ceil(
-                cal_tomorrow.sunset().astimezone(tz) + timedelta(minutes=self._havdalah)
+                sunset_for_date(geo=self._geo, tz=tz, base_date=today + timedelta(days=1))
+                + timedelta(minutes=self._havdalah)
             )
 
             if now < tod_tzeis:
@@ -432,11 +423,9 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                     dec_year = now.year - 1 if now.month <= 4 else now.year
                     start_day = 5 if calendar.isleap(dec_year + 1) else 4
                     start_gdate = date(dec_year, 12, start_day)
-                    cal_start = ZmanimCalendar(
-                        geo_location=self._geo,
-                        date=start_gdate,
+                    start_sunset = sunset_for_date(
+                        geo=self._geo, tz=tz, base_date=start_gdate,
                     )
-                    start_sunset = cal_start.sunset().astimezone(tz)
                     start_dt = _round_ceil(
                         start_sunset + timedelta(minutes=self._havdalah)
                     )

@@ -6,8 +6,14 @@ from zoneinfo import ZoneInfo
 from typing import Dict
 
 from hdate import HDateInfo
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
+
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 
 EXTRA_ATTRS = [
     "ערב שבת",
@@ -20,30 +26,6 @@ EXTRA_ATTRS = [
     "מוצאי יום טוב שחל בשבת",
     "שבת ערב פורים",
 ]
-
-
-def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
-
-def _chatzos(cal: ZmanimCalendar, tz: ZoneInfo) -> datetime.datetime:
-    """
-    Prefer library chatzos() if present; otherwise midpoint sunrise↔sunset.
-    """
-    try:
-        c = cal.chatzos().astimezone(tz)
-        return _round_half_up(c)
-    except Exception:
-        sr = cal.sunrise().astimezone(tz)
-        ss = cal.sunset().astimezone(tz)
-        mid = sr + (ss - sr) / 2
-        return _round_half_up(mid)
 
 
 def compute_erev_motzei_flags(
@@ -68,11 +50,9 @@ def compute_erev_motzei_flags(
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
-    cal_today = ZmanimCalendar(geo_location=geo, date=today)
-    sunrise = cal_today.sunrise().astimezone(tz)
-    sunset  = cal_today.sunset().astimezone(tz)
+    sunset = sunset_for_date(geo=geo, tz=tz, base_date=today)
 
-    alos   = _round_half_up(sunrise - timedelta(minutes=72))
+    alos   = _round_half_up(dawn_for_date(geo=geo, tz=tz, base_date=today))
     candle = _round_half_up(sunset  - timedelta(minutes=candle_offset))
     havdalah = _round_ceil(sunset + timedelta(minutes=havdalah_offset))
 
@@ -91,7 +71,7 @@ def compute_erev_motzei_flags(
 
     # ---- helpers for motzei-style windows ----
     def _motzei_window(base_date: datetime.date) -> tuple[datetime.datetime, datetime.datetime]:
-        s = ZmanimCalendar(geo_location=geo, date=base_date).sunset().astimezone(tz)
+        s = sunset_for_date(geo=geo, tz=tz, base_date=base_date)
         start = _round_ceil(s + timedelta(minutes=havdalah_offset))
         end   = datetime.datetime.combine(base_date + timedelta(days=1), time(2, 0), tz)
         return start, end
@@ -176,11 +156,9 @@ def compute_erev_motzei_flags(
     # Purim starts Motzei Shabbos (Megillah reading at Tzeis), so end at havdalah/tzeis.
     if is_sat:
         from pyluach.dates import HebrewDate as PHebrewDate
-        from pyluach.hebrewcal import Year as PYear
+        from .yidcal_lib import halacha_events as he
         hd_sat = PHebrewDate.from_pydate(today)
-        is_leap = PYear(hd_sat.year).leap
-        adar_month = 13 if is_leap else 12
-        if hd_sat.month == adar_month and hd_sat.day == 13:
+        if hd_sat.month == he.real_adar_month(hd_sat.year) and hd_sat.day == 13:
             flags["שבת ערב פורים"] = _in(alos, havdalah)
 
     return flags

@@ -15,11 +15,12 @@ from homeassistant.helpers.event import (
 )
 
 from hdate import HDateInfo
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .const import DOMAIN
 from .device import YidCalEarlyDevice
 from .zman_sensors import get_geo
+from zmanim.zmanim_calendar import ZmanimCalendar
+from .yidcal_lib.zman_compute import round_half_up as _round_half_up, sunset_for_date
 from .config_flow import (
     # Early Shabbos
     CONF_ENABLE_EARLY_SHABBOS,
@@ -49,12 +50,6 @@ from .config_flow import (
 
 _LOGGER = logging.getLogger(__name__)
 
-
-def _round_half_up(dt: datetime) -> datetime:
-    """Round dt to nearest minute: <30s floor, ≥30s ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
 
 
 class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
@@ -221,6 +216,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         if not self._geo:
             return None
 
+        # kept inline: plag hamincha (GRA/MGA) not covered by shared helpers
         cal = ZmanimCalendar(geo_location=self._geo, date=d)
 
         # "disabled" in your UI really means "manual only":
@@ -268,8 +264,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             days_until_fri = (4 - wd) % 7
             fri = today + timedelta(days=days_until_fri + 7 * week)
 
-            cal_fri = ZmanimCalendar(geo_location=self._geo, date=fri)
-            fri_sunset = cal_fri.sunset().astimezone(self._tz)
+            fri_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=fri)
 
             # Regular Zman Erev for that Friday
             regular_start = _round_half_up(fri_sunset - timedelta(minutes=candle_offset))
@@ -338,8 +333,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         if enable_ey and first_yt_day:
             erev = first_yt_day - timedelta(days=1)
 
-            cal_erev = ZmanimCalendar(geo_location=self._geo, date=erev)
-            erev_sunset = cal_erev.sunset().astimezone(self._tz)
+            erev_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=erev)
 
             # Regular Erev YT (like Zman Erev before sunset)
             regular_yt_start = _round_half_up(erev_sunset - timedelta(minutes=candle_offset))

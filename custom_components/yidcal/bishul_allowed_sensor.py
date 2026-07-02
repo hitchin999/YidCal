@@ -10,23 +10,15 @@ from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .const import DOMAIN
 from .device import YidCalDevice
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    """Always bump to the *next* minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
@@ -76,7 +68,7 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     # ----- helpers -----
 
     def _sunset(self, d) -> datetime:
-        return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+        return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
     def _is_yom_kippur(self, d) -> bool:
         """Return True if halachic day 'd' is 10 Tishrei (Yom Kippur)."""

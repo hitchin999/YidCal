@@ -18,11 +18,16 @@ import homeassistant.util.dt as dt_util
 from hdate import HDateInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
 from .device import YidCalZmanDevice
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_ceil as ceil_minute,
+    round_half_up as half_up,
+    sunset_for_date,
+)
 
 
 # ─── Helper: compute holiday duration via pyluach ───────────────────────────
@@ -142,8 +147,7 @@ def lighting_event_for_day(
     is_yt_today = hd_today.is_yom_tov
     is_yt_tom   = hd_tom.is_yom_tov
 
-    cal = ZmanimCalendar(geo_location=geo, date=d)
-    sunset = cal.sunset().astimezone(tz)
+    sunset = sunset_for_date(geo=geo, tz=tz, base_date=d)
 
     # Tomorrow Shabbos → standard Erev (before sunset)
     if is_shabbos_tom:
@@ -223,7 +227,11 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        async_track_time_change(self.hass, self._midnight_update, hour=0, minute=0, second=0)
+        self._register_listener(
+            async_track_time_change(
+                self.hass, self._midnight_update, hour=0, minute=0, second=0
+            )
+        )
 
     async def _midnight_update(self, now: datetime.datetime) -> None:
         await self.async_update()
@@ -239,22 +247,13 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             today + timedelta(days=1), datetime.time(0), tzinfo=self._tz
         )
 
-        def half_up(dt_local: datetime.datetime) -> datetime.datetime:
-            if dt_local.second >= 30:
-                dt_local += timedelta(minutes=1)
-            return dt_local.replace(second=0, microsecond=0)
-
-        def ceil_minute(dt_local: datetime.datetime) -> datetime.datetime:
-            return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
         def round_for_kind(dt_local: datetime.datetime, kind: str) -> datetime.datetime:
             """After-tzeis candle lighting rounds up (chumrah); before-sunset uses half-up."""
             if kind in ("between_yt_after_tzeis", "motzaei_shabbos_after_tzeis"):
                 return ceil_minute(dt_local)
             return half_up(dt_local)
 
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
-        sunset_today = cal_today.sunset().astimezone(self._tz)
+        sunset_today = sunset_for_date(geo=self._geo, tz=self._tz, base_date=today)
         candle_today_std = sunset_today - timedelta(minutes=self._candle)
 
         today_event, today_kind = lighting_event_for_day(
@@ -371,8 +370,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 chosen = round_for_kind(entry_ev, entry_kind)
             else:
                 # Fallback: compute candle time for erev_day
-                cal_erev = ZmanimCalendar(geo_location=self._geo, date=erev_day)
-                s_erev = cal_erev.sunset().astimezone(self._tz)
+                s_erev = sunset_for_date(geo=self._geo, tz=self._tz, base_date=erev_day)
                 chosen_unrounded = s_erev - timedelta(minutes=self._candle)
                 chosen = half_up(chosen_unrounded)
 
@@ -415,8 +413,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                         wd = today.weekday()
                         days_to_fri = (4 - wd) % 7
                         d = today + timedelta(days=days_to_fri)
-                        cal_fri = ZmanimCalendar(geo_location=self._geo, date=d)
-                        s_fri = cal_fri.sunset().astimezone(self._tz)
+                        s_fri = sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
                         chosen_unrounded = s_fri - timedelta(minutes=self._candle)
                         chosen = half_up(chosen_unrounded)
                 else:
@@ -595,7 +592,11 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        async_track_time_change(self.hass, self._midnight_update, hour=0, minute=0, second=0)
+        self._register_listener(
+            async_track_time_change(
+                self.hass, self._midnight_update, hour=0, minute=0, second=0
+            )
+        )
 
     async def _midnight_update(self, now: datetime.datetime) -> None:
         await self.async_update()
@@ -605,9 +606,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
     def _alos_for_date(self, d: datetime.date) -> datetime.datetime:
         """Compute Alos (sunrise − 72 min) for the given civil date, aware in local tz."""
-        cal = ZmanimCalendar(geo_location=self._geo, date=d)
-        sunrise = cal.sunrise().astimezone(self._tz)
-        return sunrise - timedelta(minutes=72)
+        return dawn_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
     def _schedule_alos_update(self, d: datetime.date) -> None:
         """Schedule a one-shot update at Alos for the given civil date."""
@@ -647,11 +646,8 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         today = now.date()
         alos_next_morning = self._alos_for_date(today + timedelta(days=1))
 
-        def ceil_minute(dt_local: datetime.datetime) -> datetime.datetime:
-            return (dt_local + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
         def sunset_on(d: datetime.date) -> datetime.datetime:
-            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+            return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
             
         # Helper: nearest earlier Motzi (block-end havdalah) before a reference datetime
         def _last_motzi_before(ref_dt: datetime.datetime) -> datetime.datetime | None:

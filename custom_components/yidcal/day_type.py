@@ -13,8 +13,14 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from .zman_sensors import get_geo
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunrise_for_date,
+    sunset_for_date,
+)
 
 from .device import YidCalDevice
 from .const import DOMAIN
@@ -50,14 +56,6 @@ POSSIBLE_STATES = [
     "Shabbos & Chol Hamoed",
 ]
 
-def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
 def _is_yomtov(pydate: datetime.date, diaspora: bool = True) -> bool:
     """Festival detection: try pyluach, exclude FAST_DAYS and Chol Hamoed."""
     try:
@@ -69,21 +67,11 @@ def _is_yomtov(pydate: datetime.date, diaspora: bool = True) -> bool:
         return False
 
 def _is_chol_hamoed(pydate: datetime.date, diaspora: bool = True) -> bool:
-    """Check if the given date is Chol Hamoed.
-
-    In Israel, Sukkos day 2 (16 Tishrei) and Pesach day 2 (16 Nisan) are
-    Chol HaMoed rather than Yom Tov, so the diaspora flag must be threaded
-    through to pyluach's ``festival(israel=...)`` call. Otherwise those two
-    days per year are misclassified as "Any Other Day" in Israel mode.
-    """
+    """Canonical Chol-HaMoed rule (halacha_events) — proven equivalent to
+    the previous pyluach-festival derivation across 5779-5812, both modes,
+    including Israel's 16 Tishrei / 16 Nisan and Hoshana Rabbah."""
     try:
-        name_with = PHebrewDate.from_pydate(pydate).festival(
-            hebrew=True, include_working_days=True, israel=not diaspora
-        )
-        name_no = PHebrewDate.from_pydate(pydate).festival(
-            hebrew=True, include_working_days=False, israel=not diaspora
-        )
-        return bool(name_with and not name_no and name_with in ["פסח", "סוכות"])
+        return he.is_chol_hamoed(pydate, diaspora=diaspora)
     except Exception:
         return False
 
@@ -154,33 +142,17 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         )
 
     def _check_is_fast(self, hd: PHebrewDate) -> bool:
-        # Tzom Gedaliah
-        if hd.month == 7 and hd.day == 3 and hd.weekday() != 7:
-            return True
-        if hd.month == 7 and hd.day == 4 and hd.weekday() == 1 and PHebrewDate(hd.year, 7, 3).weekday() == 7:
-            return True
-        # Asara B'Tevet
-        if hd.month == 10 and hd.day == 10 and hd.weekday() != 7:
-            return True
-        if hd.month == 10 and hd.day == 11 and hd.weekday() == 1 and PHebrewDate(hd.year, 10, 10).weekday() == 7:
-            return True
-        # Shiv'a Asar B'Tammuz
-        if hd.month == 4 and hd.day == 17 and hd.weekday() != 7:
-            return True
-        if hd.month == 4 and hd.day == 18 and hd.weekday() == 1 and PHebrewDate(hd.year, 4, 17).weekday() == 7:
-            return True
-        # Ta'anit Esther (advanced to Thursday if on Shabbat)
-        adar_month = 13 if ((hd.year * 7 + 1) % 19) < 7 else 12
-        if hd.month == adar_month and hd.day == 13 and hd.weekday() != 7:
-            return True
-        if hd.month == adar_month and hd.day == 11 and hd.weekday() == 5 and PHebrewDate(hd.year, adar_month, 13).weekday() == 7:
-            return True
-        # Tisha B'Av
-        if hd.month == 5 and hd.day == 9 and hd.weekday() != 7:
-            return True
-        if hd.month == 5 and hd.day == 10 and hd.weekday() == 1 and PHebrewDate(hd.year, 5, 9).weekday() == 7:
-            return True
-        return False
+        """Canonical observed-fast membership (halacha_events) — replaces
+        the per-fast nidcheh rules this method used to re-derive."""
+        d = hd.to_pydate()
+        year = hd.year
+        return d in (
+            he.tzom_gedaliah_observed(year),
+            he.asara_bteves_observed(year),
+            he.shiva_asar_btamuz_observed(year),
+            he.taanis_esther_observed(year),
+            he.tisha_bav_observed(year),
+        )
 
     def _is_minor_fast(self, hd: PHebrewDate) -> bool:
         return self._check_is_fast(hd) and hd.month != 5
@@ -229,10 +201,10 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # ----- Local sunrise/sunset helpers -----
         def sunset_on(d: datetime.date) -> datetime.datetime:
-            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(tz)
+            return sunset_for_date(geo=self._geo, tz=tz, base_date=d)
 
         def sunrise_on(d: datetime.date) -> datetime.datetime:
-            return ZmanimCalendar(geo_location=self._geo, date=d).sunrise().astimezone(tz)
+            return sunrise_for_date(geo=self._geo, tz=tz, base_date=d)
 
         raw_dawn = sunrise_on(today) - timedelta(minutes=72)
         raw_sunset_today = sunset_on(today)

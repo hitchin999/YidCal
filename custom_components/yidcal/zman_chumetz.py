@@ -9,11 +9,14 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
 from pyluach import dates as pl_dates
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
 from .device import YidCalZmanDevice
+from .yidcal_lib.zman_compute import (
+    compute_chametz_zmanim,
+    sun_events_for_date,
+)
 from .zman_sensors import get_geo
 
 
@@ -71,11 +74,13 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         await super().async_added_to_hass()
         self._geo = await get_geo(self.hass)
         await self.async_update()
-        # recompute at midnight local
-        async_track_time_change(
-            self.hass,
-            self._midnight_update,
-            hour=0, minute=0, second=0,
+        # recompute at midnight local (registered for cleanup)
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self._midnight_update,
+                hour=0, minute=0, second=0,
+            )
         )
 
     async def _midnight_update(self, now: datetime) -> None:
@@ -89,10 +94,28 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         Returns (rounded_local_dt, raw_iso_string).
         round_half_up=False (default) → floor to minute (machmir for deadlines).
         round_half_up=True            → ≥30s rounds up, <30s floors.
+
+        The rounded value comes from the shared compute_chametz_zmanim
+        helper (achilas = 4h/floored, sriefes = 5h/half-up — built to
+        match this sensor), so the only supported argument combinations
+        are (4.0, False) and (5.0, True) — exactly what the two
+        sensors pass.
         """
-        cal     = ZmanimCalendar(geo_location=self._geo, date=civil_date)
-        sunrise = cal.sunrise().astimezone(self._tz)
-        sunset  = cal.sunset().astimezone(self._tz)
+        # Rounded deadlines from the shared helper (achilas = dawn + 4h
+        # FLOORED, sriefes = dawn + 5h HALF-UP, its default sriefes_round).
+        achilas, sriefes = compute_chametz_zmanim(
+            geo=self._geo,
+            tz=self._tz,
+            base_date=civil_date,
+            havdalah_offset=self._havdalah,
+        )
+        rounded = sriefes if round_half_up else achilas
+
+        # Raw (unrounded) value for the *_With_Seconds attributes — same
+        # MGA day the helper uses, from the shared cached sun events.
+        sunrise, sunset = sun_events_for_date(
+            geo=self._geo, tz=self._tz, base_date=civil_date,
+        )
 
         # MGA "day": dawn = sunrise − havdalah, nightfall = sunset + havdalah
         dawn      = sunrise - timedelta(minutes=self._havdalah)
@@ -104,12 +127,6 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         # raw target
         raw = dawn + hour_len * hours_from_dawn
         raw_iso = raw.isoformat()
-
-        # rounding
-        if round_half_up and raw.second >= 30:
-            rounded = (raw + timedelta(minutes=1)).replace(second=0, microsecond=0)
-        else:
-            rounded = raw.replace(second=0, microsecond=0)
 
         return rounded, raw_iso
 

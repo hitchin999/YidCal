@@ -13,21 +13,15 @@ from .const import DOMAIN
 from . import DEFAULT_DAY_LABEL_LANGUAGE
 from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 from pyluach import dates
 from .zman_sensors import get_geo
-
-def _round_half_up(local_dt: datetime.datetime) -> datetime.datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if local_dt.second >= 30:
-        local_dt += timedelta(minutes=1)
-    return local_dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(local_dt: datetime.datetime) -> datetime.datetime:
-    """Always bump up to the *next* minute (Motzei-style rounding)."""
-    return (local_dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 
 class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
     """
@@ -140,8 +134,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 today = now.date()
 
                 # sunset + havdalah_offset → rounded up (Motzei style)
-                cal_today = ZmanimCalendar(geo_location=self._geo, date=today)
-                sunset_today_raw = cal_today.sunset().astimezone(tz)
+                sunset_today_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=today)
                 havdalah_cut = _round_ceil(
                     sunset_today_raw + timedelta(minutes=self._havdalah_offset)
                 )
@@ -150,8 +143,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 halachic_date = today if now < havdalah_cut else (today + timedelta(days=1))
 
                 # Alos for that halachic day: sunrise - 72, rounded half-up
-                cal_hal = ZmanimCalendar(geo_location=self._geo, date=halachic_date)
-                dawn_raw = cal_hal.sunrise().astimezone(tz) - timedelta(minutes=72)
+                dawn_raw = dawn_for_date(geo=self._geo, tz=tz, base_date=halachic_date)
                 dawn = _round_half_up(dawn_raw)
 
                 # Hide ערב… on display until alos
@@ -180,10 +172,9 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 if wd == 4:  # Friday
                     if self._geo:
                         today = now.date()
-                        cal = ZmanimCalendar(geo_location=self._geo, date=today)
-                        sunset_raw = cal.sunset()
+                        sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=today)
                         if sunset_raw:
-                            sunset = sunset_raw.astimezone(tz)
+                            sunset = sunset_raw
                             candle_raw = sunset - timedelta(minutes=self._candle_offset)
                             candle = _round_half_up(candle_raw)
 
@@ -215,10 +206,9 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
 
                 elif wd == 5 and self._geo:  # Shabbos
                     today = now.date()
-                    cal = ZmanimCalendar(geo_location=self._geo, date=today)
-                    sunset_raw = cal.sunset()
+                    sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=today)
                     if sunset_raw:
-                        sunset = sunset_raw.astimezone(tz)
+                        sunset = sunset_raw
                         havdalah_raw = sunset + timedelta(minutes=self._havdalah_offset)
                         havdalah = _round_ceil(havdalah_raw)
                         if now < havdalah:

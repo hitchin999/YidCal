@@ -15,13 +15,19 @@ from homeassistant.helpers.event import async_track_time_interval, async_track_t
 
 from pyluach.dates import GregorianDate, HebrewDate
 import pyluach.hebrewcal as hebrewcal
-from pyluach.hebrewcal import Year as HebrewYear
 import pyluach.parshios as parshios
 
 from .const import DOMAIN
 from .device import YidCalDisplayDevice
 from .zman_sensors import get_geo
-from zmanim.zmanim_calendar import ZmanimCalendar
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    chatzos_hayom_for_date,
+    dawn_for_date,
+    mincha_ketana_for_date,
+    round_ceil,
+    sunset_for_date,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,59 +95,26 @@ WEEKDAY_HAFTAROT = {
 }
 
 
-def _is_leap_year(year: int) -> bool:
-    """Check if Hebrew year is a leap year."""
-    return ((year * 7 + 1) % 19) < 7
-
-
 def _get_fast_info(hd: HebrewDate, wd: int) -> tuple[bool, str | None, bool]:
     """
-    Check if date is a public fast day.
+    Check if date is a public fast day — canonical observed-fast rules
+    from halacha_events (single source of truth).
     Returns: (is_fast, fast_name, is_tisha_bav)
-    wd: Python weekday (Mon=0, Sat=5, Sun=6)
     """
+    d = hd.to_pydate()
     year = hd.year
-    is_leap = _is_leap_year(year)
-    adar = 13 if is_leap else 12
-    
-    # Tzom Gedaliah - 3 Tishrei (or 4 if 3 is Shabbos)
-    gedaliah_day = 4 if HebrewDate(year, 7, 3).to_pydate().weekday() == 5 else 3
-    if hd.month == 7 and hd.day == gedaliah_day:
+    if d == he.tzom_gedaliah_observed(year):
         return True, "צום גדליה", False
-    
-    # Asara B'Teves - 10 Teves (never postponed)
-    if hd.month == 10 and hd.day == 10:
+    if d == he.asara_bteves_observed(year):
         return True, "צום עשרה בטבת", False
-    
-    # Taanis Esther - 13 Adar (or 11 if 13 is Shabbos)
-    if hd.month == adar and hd.day == 13 and wd != 5:
+    if d == he.taanis_esther_observed(year):
         return True, "תענית אסתר", False
-    if hd.month == adar and hd.day == 11 and wd == 3:
-        try:
-            if HebrewDate(year, adar, 13).to_pydate().weekday() == 5:
-                return True, "תענית אסתר", False
-        except:
-            pass
-    
-    # Shiva Asar B'Tammuz - 17 Tammuz (or 18 if 17 is Shabbos)
-    if hd.month == 4 and hd.day == 17 and wd != 5:
+    if d == he.shiva_asar_btamuz_observed(year):
         return True, "צום שבעה עשר בתמוז", False
-    if hd.month == 4 and hd.day == 18 and wd == 6:
-        try:
-            if HebrewDate(year, 4, 17).to_pydate().weekday() == 5:
-                return True, "צום שבעה עשר בתמוז", False
-        except:
-            pass
-    
-    # Tisha B'Av - 9 Av (or 10 if 9 is Shabbos)
-    if hd.month == 5 and hd.day == 9 and wd != 5:
+    if d == he.tisha_bav_observed(year):
+        if he.is_tisha_bav_nidche(year):
+            return True, "תשעה באב נדחה", True
         return True, "תשעה באב", True
-    if hd.month == 5 and hd.day == 10 and wd == 6:
-        try:
-            if HebrewDate(year, 5, 9).to_pydate().weekday() == 5:
-                return True, "תשעה באב נדחה", True
-        except:
-            pass
     
     return False, None, False
 
@@ -217,8 +190,8 @@ def _determine_shabbos_target(
         friday = today if wd == 4 else (today - timedelta(days=1))
         saturday = friday + timedelta(days=1)
 
-        fri_sunset = ZmanimCalendar(geo_location=geo, date=friday).sunset().astimezone(tz)
-        sat_sunset = ZmanimCalendar(geo_location=geo, date=saturday).sunset().astimezone(tz)
+        fri_sunset = sunset_for_date(geo=geo, tz=tz, base_date=friday)
+        sat_sunset = sunset_for_date(geo=geo, tz=tz, base_date=saturday)
 
         candle = fri_sunset - timedelta(minutes=candle_offset)
         havdalah = sat_sunset + timedelta(minutes=havdalah_offset)
@@ -474,6 +447,8 @@ class HaftorahResolver:
                 ent = self._lookup_special(["pesach", "day_2_diaspora"])
                 if ent and "id" in ent:
                     return str(ent["id"]), "pesach:day_2_diaspora", extra
+            # (JSON routing key — diaspora CHM-Pesach days; Israel day-16 routes
+            #  via its own branch above. Kept inline: routing, not the CHM rule.)
             if hd.month == 1 and 17 <= hd.day <= 20:
                 ent = self._lookup_special(["pesach", "chol_hamoed"])
                 if ent and "id" in ent:
@@ -497,6 +472,7 @@ class HaftorahResolver:
                 ent = self._lookup_special(["sukkot", "day_2_diaspora"])
                 if ent and "id" in ent:
                     return str(ent["id"]), "sukkot:day_2_diaspora", extra
+            # (JSON routing key — diaspora CHM-Sukkos days incl. Hoshana Rabbah.)
             if hd.month == 7 and 17 <= hd.day <= 21:
                 ent = self._lookup_special(["sukkot", "chol_hamoed"])
                 if ent and "id" in ent:
@@ -587,8 +563,7 @@ class HaftorahResolver:
                 return str(ent["id"]), "shabbat_shuva", extra
 
         hy = hd.year
-        leap = HebrewYear(hy).leap
-        purim_month = 13 if leap else 12
+        purim_month = he.real_adar_month(hy)
 
         # Arba parshiyot
         rc_adar = _to_pydate(HebrewDate(hy, purim_month, 1).to_greg())
@@ -596,10 +571,13 @@ class HaftorahResolver:
 
         purim = _to_pydate(HebrewDate(hy, purim_month, 14).to_greg())
         zachor = _prev_shabbos_strict(purim)
-        parah = zachor + timedelta(days=7)
 
         rc_nisan = _to_pydate(HebrewDate(hy, 1, 1).to_greg())
         hachodesh = _prev_or_same_shabbos(rc_nisan)
+        # Parah is ALWAYS the Shabbos immediately before HaChodesh — the old
+        # "zachor + 7" put it a week early whenever a gap-Shabbos follows
+        # Purim (e.g. 5789).
+        parah = hachodesh - timedelta(days=7)
 
         pesach1 = _to_pydate(HebrewDate(hy, 1, 15).to_greg())
         hagadol = _prev_or_same_shabbos(pesach1 - timedelta(days=1))
@@ -734,7 +712,12 @@ class HaftorahResolver:
                 return str(ent["id"]), "shabbat_rosh_chodesh", extra
 
         tomorrow = _greg_from_pydate(shabbos + timedelta(days=1)).to_heb()
-        if (not _is_rosh_chodesh(hd)) and _is_rosh_chodesh(tomorrow):
+        # Machar Chodesh is NOT read during the fixed puranusa/nechemta
+        # series (after 17 Tammuz through Elul). RC-on-Shabbos still overrides.
+        in_fixed_series = (
+            (hd.month == 4 and hd.day >= 18) or hd.month == 5 or hd.month == 6
+        )
+        if (not _is_rosh_chodesh(hd)) and _is_rosh_chodesh(tomorrow) and not in_fixed_series:
             ent = self._lookup_special(["special_shabbatot", "shabbat_machar_chodesh"])
             if ent and "id" in ent:
                 extra["machar_chodesh"] = True
@@ -742,7 +725,7 @@ class HaftorahResolver:
 
         return None, None, extra
 
-    def _resolve_parsha(self, shabbos: date, israel: bool) -> tuple[str | None, str | None, dict[str, Any]]:
+    def _resolve_parsha(self, shabbos: date, israel: bool, minhag: str = "ashkenazi") -> tuple[str | None, str | None, dict[str, Any]]:
         extra: dict[str, Any] = {}
         gd = _greg_from_pydate(shabbos)
         p = parshios.getparsha(gd, israel=israel)
@@ -775,6 +758,41 @@ class HaftorahResolver:
         suffix = "_".join(slugs)
         # keep the suffix internal for lookup, but don't expose it as an attribute
 
+        # Acharei-Mos / Kedoshim (Ashkenaz) — ZMAN-verified rules:
+        # combined → הלא כבני; אחרי alone → הלא כבני; קדושים alone → התשפט,
+        # unless אחרי was displaced that year (HaGadol / Machar-Chodesh / RC),
+        # in which case קדושים inherits הלא כבני.
+        if minhag in ("ashkenazi", "ashkenaz") and slugs in (["acharei_mot"], ["kedoshim"], ["acharei_mot", "kedoshim"]):
+            if slugs == ["kedoshim"]:
+                displaced = False
+                try:
+                    for back in (7, 14, 21):
+                        prev = shabbos - timedelta(days=back)
+                        p_prev = parshios.getparsha(_greg_from_pydate(prev), israel=israel)
+                        if not p_prev:
+                            continue
+                        prev_names = [parshios.PARSHIOS[i] for i in p_prev]
+                        if not any("Acharei" in n or "Achrei" in n for n in prev_names):
+                            break
+                        sid, _r, _e = self._resolve_special_shabbatot(prev, "ashkenazi")
+                        if sid is not None:
+                            displaced = True
+                        else:
+                            rid, _r2, _e2 = self._resolve_rosh_machar(prev)
+                            if rid is not None:
+                                displaced = True
+                        break
+                except Exception:
+                    displaced = False
+                return ("31" if displaced else "30"), "parsha:kedoshim_ashkenaz", extra
+            return "31", "parsha:acharei_ashkenaz", extra
+
+        # Pinchas on/after 17 Tammuz (bein hametzarim) reads דברי ירמיהו.
+        if slugs == ["pinchas"]:
+            hd_shabbos = gd.to_heb()
+            if hd_shabbos.month == 4 and hd_shabbos.day >= 17:
+                return "43", "parsha:pinchas_bein_hametzarim", extra
+
         rule = self._rule_by_suffix.get(suffix)
         if isinstance(rule, dict):
             hid = rule.get("haftarah_id") or rule.get("id")
@@ -784,7 +802,15 @@ class HaftorahResolver:
             # direct mapping suffix -> id
             return str(rule), f"parsha:{suffix}", extra
 
-        # Combined parsha fallback: use the second (last) parsha's haftarah
+        # Combined parsha fallback: use the second (last) parsha's haftarah.
+        # EXCEPTION: נצבים-וילך reads Nitzavim's שוש אשיש — Vayeilech's
+        # שובה ישראל belongs only to Shabbos Shuva.
+        if len(slugs) > 1 and slugs == ["nitzavim", "vayeilech"]:
+            rule = self._rule_by_suffix.get(slugs[0])
+            if isinstance(rule, dict):
+                hid = rule.get("haftarah_id") or rule.get("id")
+                if hid:
+                    return str(hid), f"parsha:{suffix}", extra
         if len(slugs) > 1:
             rule = self._rule_by_suffix.get(slugs[-1])
             if isinstance(rule, dict):
@@ -867,7 +893,7 @@ class HaftorahResolver:
                 extra=extra3,
             )
 
-        hid, reason, extra4 = self._resolve_parsha(shabbos, israel=israel)
+        hid, reason, extra4 = self._resolve_parsha(shabbos, israel=israel, minhag=minhag)
         if not hid:
             _LOGGER.warning("Haftorah resolve failed for %s (israel=%s): %s", shabbos, israel, extra4)
             return None
@@ -964,13 +990,18 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         wd_today = civil_today.weekday()
         
         # Calculate zmanim for today
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=civil_today)
-        sunrise_today = cal_today.sunrise().astimezone(self._tz)
-        alos_today = sunrise_today - timedelta(minutes=72)
-        chatzos_today = cal_today.chatzos().astimezone(self._tz)
+        alos_today = dawn_for_date(geo=self._geo, tz=self._tz, base_date=civil_today)
+        # Chatzos is now the Grossman true solar transit, matching the dedicated
+        # chatzos sensor (was cal.chatzos() midpoint — tiny value change, intentional).
+        chatzos_today = chatzos_hayom_for_date(geo=self._geo, tz=self._tz, base_date=civil_today)
         mincha_gedola_today = chatzos_today + timedelta(minutes=30)
-        mincha_ketana_today = cal_today.mincha_ketana().astimezone(self._tz)
-        sunset_today = cal_today.sunset().astimezone(self._tz)
+        # MGA mincha ketana from the shared helper, ceil-rounded — flips at the
+        # same displayed minute as sensor.yidcal_mincha_ketana. (Was the
+        # library's GRA mincha_ketana(), ~42 min earlier — intentional change.)
+        mincha_ketana_today = round_ceil(
+            mincha_ketana_for_date(geo=self._geo, tz=self._tz, base_date=civil_today)
+        )
+        sunset_today = sunset_for_date(geo=self._geo, tz=self._tz, base_date=civil_today)
         tzeis_today = sunset_today + timedelta(minutes=havdalah_offset)
         
         # Check if we're in Shabbos window
@@ -988,8 +1019,11 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             # mincha ketana is computed for shabbos_date (the YK day), so
             # Kol Nidrei night / Shabbos morning correctly show Shacharis.
             if _is_yom_kippur(_greg_from_pydate(shabbos_date).to_heb()):
-                cal_yk = ZmanimCalendar(geo_location=self._geo, date=shabbos_date)
-                mk_yk = cal_yk.mincha_ketana().astimezone(self._tz)
+                # MGA mincha ketana (shared helper, ceil) — same convention
+                # as the weekday switch above and the dedicated sensor.
+                mk_yk = round_ceil(
+                    mincha_ketana_for_date(geo=self._geo, tz=self._tz, base_date=shabbos_date)
+                )
                 if now_local >= mk_yk:
                     self._show_weekday_haftorah(
                         WEEKDAY_HAFTAROT["yom_kippur_mincha"],

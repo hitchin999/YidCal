@@ -20,26 +20,16 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.core import HomeAssistant
 
 from hdate import HDateInfo
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .const import DOMAIN
 from .device import YidCalSpecialDevice
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
+from .yidcal_lib.zman_compute import (
+    dawn_for_date,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
-
-def _alos_mga_72(cal: ZmanimCalendar, tz: ZoneInfo) -> datetime:
-    sr = cal.sunrise().astimezone(tz)
-    return _round_half_up(sr - timedelta(minutes=72))
 
 
 class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
@@ -54,6 +44,9 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
     _attr_name = "3 Days Yom Tov"
     _attr_icon = "mdi:calendar-weekend"
     _attr_unique_id = "yidcal_three_day_yomtov"
+    # Self-driven minute tick; without this HA's 30-second poller ALSO ran
+    # the full 400-day scan twice a minute.
+    _attr_should_poll = False
 
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         super().__init__()
@@ -67,6 +60,13 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         self._havdalah = havdalah_offset
         self._geo = None
         self._attr_extra_state_attributes = {}
+        # Cached result of the last full scan + clock-jump bookkeeping.
+        self._win_start = None
+        self._win_end = None
+        self._shabbos_first = False
+        self._have_window = False
+        self._computed_on = None
+        self._last_tick = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -89,8 +89,8 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
     # ── helpers ──────────────────────────────────────────────────────
 
     def _is_yom_tov(self, d: date) -> bool:
-        """True if d is Yom Tov (hdate)."""
-        return HDateInfo(d, diaspora=self._diaspora).is_yom_tov
+        """True if d is Yom Tov (cached — pure function of date+diaspora)."""
+        return _cached_is_yom_tov(d, self._diaspora)
 
     def _is_no_melacha(self, d: date) -> bool:
         """True if d is Shabbos OR Yom Tov."""
@@ -139,13 +139,22 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
             d += timedelta(days=1)
         return False
 
-    def _shabbos_first(self, start: date) -> bool:
+    def _shabbos_first_day(self, start: date) -> bool:
         """True when the first day of the block is Shabbos (not YT)."""
         return start.weekday() == 5 and not self._is_yom_tov(start)
 
     # ── main update ──────────────────────────────────────────────────
 
     async def async_update(self, now: datetime | None = None) -> None:
+        """Cheap minute tick — full 400-day scan only on a crossing.
+
+        Recompute when: the cached window ended, the civil date rolled
+        (daily self-heal), or the clock STEPPED (manual time-walk / NTP:
+        now < last_tick, or gap > 90s). Every other tick just re-evaluates
+        ``window_start <= now < window_end`` against cached datetimes.
+        Mirrors the ZmanimCoordinator's crossing-check design, so manual
+        clock jumps still update the sensor within one minute.
+        """
         if not self._geo:
             self._geo = await get_geo(self.hass)
             if not self._geo:
@@ -153,6 +162,39 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
 
         tz = self._tz
         now = (now or datetime.now(tz)).astimezone(tz)
+
+        last = self._last_tick
+        self._last_tick = now
+        stepped = last is None or now < last or (now - last) > timedelta(seconds=90)
+        need_scan = (
+            self._computed_on is None
+            or stepped
+            or now.date() != self._computed_on
+            or (self._have_window and self._win_end is not None and now >= self._win_end)
+        )
+        if not need_scan:
+            self._apply_cached(now)
+            return
+
+        await self._full_scan(now)
+
+    def _apply_cached(self, now: datetime) -> None:
+        if self._have_window and self._win_start is not None:
+            is_on = self._win_start <= now < self._win_end
+            self._attr_is_on = is_on
+            self._attr_extra_state_attributes = {
+                'שבת ואח"כ יום טוב': str(bool(self._shabbos_first and is_on)).lower(),
+                'יום טוב ואח"כ שבת': str(bool((not self._shabbos_first) and is_on)).lower(),
+            }
+        else:
+            self._attr_is_on = False
+            self._attr_extra_state_attributes = {
+                'שבת ואח"כ יום טוב': "false",
+                'יום טוב ואח"כ שבת': "false",
+            }
+
+    async def _full_scan(self, now: datetime) -> None:
+        tz = self._tz
         ref_date = now.date()
 
         # Scan from a few days back (we might be inside a block's window)
@@ -167,26 +209,23 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
                 if self._block_has_both(d, block_end):
                     # Compute window
                     erev = d - timedelta(days=1)
-                    cal_erev = ZmanimCalendar(geo_location=self._geo, date=erev)
                     window_start = _round_half_up(
-                        cal_erev.sunset().astimezone(tz)
+                        sunset_for_date(geo=self._geo, tz=tz, base_date=erev)
                         - timedelta(minutes=self._candle)
                     )
 
                     morning_after = block_end + timedelta(days=1)
-                    cal_after = ZmanimCalendar(geo_location=self._geo, date=morning_after)
-                    window_end = _alos_mga_72(cal_after, tz)
+                    window_end = _round_half_up(
+                        dawn_for_date(geo=self._geo, tz=tz, base_date=morning_after)
+                    )
 
                     if now < window_end:
-                        # This is either current or next qualifying block
-                        is_on = window_start <= now < window_end
-                        self._attr_is_on = is_on
-
-                        shabbos_first = self._shabbos_first(d)
-                        self._attr_extra_state_attributes = {
-                            'שבת ואח"כ יום טוב': str(bool(shabbos_first and is_on)).lower(),
-                            'יום טוב ואח"כ שבת': str(bool((not shabbos_first) and is_on)).lower(),
-                        }
+                        # Cache; the minute tick evaluates against it until
+                        # window_end (or a clock step) forces a rescan.
+                        self._win_start = window_start
+                        self._win_end = window_end
+                        self._shabbos_first = self._shabbos_first_day(d)
+                        self._have_window = True
                         found = True
                         break
 
@@ -196,8 +235,9 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
                 d += timedelta(days=1)
 
         if not found:
-            self._attr_is_on = False
-            self._attr_extra_state_attributes = {
-                'שבת ואח"כ יום טוב': "false",
-                'יום טוב ואח"כ שבת': "false",
-            }
+            self._win_start = self._win_end = None
+            self._shabbos_first = False
+            self._have_window = False
+
+        self._computed_on = now.date()
+        self._apply_cached(now)

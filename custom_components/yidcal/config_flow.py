@@ -37,6 +37,15 @@ DEFAULT_ENABLE_MULTIDAY_CANDLES = False
 CONF_ENABLE_ZMANIM_LOOKUP = "enable_zmanim_lookup"
 DEFAULT_ENABLE_ZMANIM_LOOKUP = False
 
+# ============ Luach PDF generator ============
+# Options-only toggle. When True, registers the yidcal.generate_luach
+# service which creates a printable luach PDF under
+# /config/www/yidcal-data/. Kept out of the initial setup since users
+# typically discover printable luachs after using the integration for
+# a while; behaves like enable_zmanim_lookup in that respect.
+CONF_ENABLE_LUACH_PDF = "enable_luach_pdf"
+DEFAULT_ENABLE_LUACH_PDF = False
+
 # ============ Haftorah Minhag (NEW) ============
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
 DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
@@ -402,6 +411,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional(
                         CONF_ENABLE_ZMANIM_LOOKUP,
                         default=get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
+                    ): bool,
+                    # Luach PDF generator — options-only (advanced).
+                    # Exposes the yidcal.generate_luach service. No
+                    # sensor is added; the service produces files
+                    # under /config/www/yidcal-data/.
+                    vol.Optional(
+                        CONF_ENABLE_LUACH_PDF,
+                        default=get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
                     ): bool,
                 }
             )

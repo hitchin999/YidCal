@@ -14,11 +14,12 @@ from homeassistant.helpers.event import async_track_time_interval
 from hdate import HDateInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .device import YidCalDevice
 from .const import DOMAIN
+from .yidcal_lib.zman_compute import sunset_for_date  # shared cached zmanim
+from .yidcal_lib import halacha_events as he
 from .zman_sensors import get_geo  # reuse geo helper like Zman Erev
 
 _LOGGER = logging.getLogger(__name__)
@@ -113,7 +114,8 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         await self._maybe_refresh_config()
         await self.async_update()
-        async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
+        # registered for cleanup — a bare call leaked the timer across reloads
+        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     @property
     def available(self) -> bool:
@@ -176,13 +178,12 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 return (True, "פסח")
             return (True, "")
 
-        # Fallback windows (diaspora):
-        #   Sukkos (Tishrei): CHM = 17..21
-        if mon == 7 and 17 <= day <= 21:
-            return (True, "סוכות")
-        #   Pesach (Nisan): CHM = 17..20
-        if mon == 1 and 17 <= day <= 20:
-            return (True, "פסח")
+        # Fallback windows — canonical rule (halacha_events). This fallback
+        # path has always used the DIASPORA ranges regardless of mode (the
+        # hdate flag above handles Israel); preserved exactly.
+        res = he.chol_hamoed_day(mon, day, diaspora=True)
+        if res is not None:
+            return (True, res[0])
 
         return (False, "")
 
@@ -266,8 +267,9 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     def _candle_lighting_prev_day(self, target: datetime.date) -> datetime.datetime:
         """Candle-lighting time for the eve of `target` (prev civil day before sunset)."""
         assert self._geo is not None
-        cal = ZmanimCalendar(geo_location=self._geo, date=target - timedelta(days=1))
-        sunset = cal.sunset().astimezone(self._tz)
+        sunset = sunset_for_date(
+            geo=self._geo, tz=self._tz, base_date=target - timedelta(days=1),
+        )
         return sunset - timedelta(minutes=self._candle_offset)
 
     # ── Core update ──────────────────────────────────────────────────────────

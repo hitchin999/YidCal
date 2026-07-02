@@ -13,7 +13,6 @@ from homeassistant.helpers.event import async_track_time_change
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from hdate import HDateInfo
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .device import YidCalDevice
@@ -21,20 +20,22 @@ from .zman_sensors import get_geo
 from .const import DOMAIN
 from typing import Callable, Optional
 
+# Shared zmanim primitives (cached; single source of truth) — replaces
+# the local round_ceil / alos_mga_72 copies this module used to carry.
+# Every alos in this module (live window end AND look-ahead attrs) is the
+# coordinator-consistent MGA sunrise−72, half-up.
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    round_ceil,
+    round_half_up,
+    sunset_for_date,
+    dawn_for_date,
+)
 
-def round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    """Round up to next minute only if needed."""
-    if dt.second == 0 and dt.microsecond == 0:
-        return dt
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-def alos_mga_72(cal: ZmanimCalendar, tz: ZoneInfo) -> datetime.datetime:
-    """MGA alos = sunrise - 72 minutes, rounded half-up like AlosSensor/HolidaySensor."""
-    sunrise = cal.sunrise().astimezone(tz)
-    alos = sunrise - timedelta(minutes=72)
-    if alos.second >= 30:
-        alos += timedelta(minutes=1)
-    return alos.replace(second=0, microsecond=0)
+def alos_mga_72_for(geo: GeoLocation, tz: ZoneInfo, d: date) -> datetime.datetime:
+    """MGA alos = sunrise − 72 minutes, rounded half-up like AlosSensor/HolidaySensor."""
+    return round_half_up(dawn_for_date(geo=geo, tz=tz, base_date=d))
 
 """
 Base class for “מוצאי <holiday>” sensors.
@@ -176,21 +177,20 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
             self._state = False
             return
 
-        # 2) Compute motzei window (holiday-based) via Zmanim
-        sunset_hol = ZmanimCalendar(geo_location=self._geo, date=holiday_date).sunset().astimezone(tz)
+        # 2) Compute motzei window (holiday-based) via shared cached zmanim
+        sunset_hol = sunset_for_date(geo=self._geo, tz=tz, base_date=holiday_date)
         motzei_start = round_ceil(sunset_hol + timedelta(minutes=self._havdalah_offset))
 
         next_day = holiday_date + timedelta(days=1)
-        next_cal = ZmanimCalendar(geo_location=self._geo, date=next_day)
-        motzei_end = alos_mga_72(next_cal, tz)
+        motzei_end = alos_mga_72_for(self._geo, tz, next_day)
 
         # 3) Shabbos blocking / deferral
         off_from_fri = (holiday_date.weekday() - 4) % 7  # 0 if Friday
         fri = holiday_date - timedelta(days=off_from_fri)
         sat = fri + timedelta(days=1)
 
-        fri_sunset = ZmanimCalendar(geo_location=self._geo, date=fri).sunset().astimezone(tz)
-        sat_sunset = ZmanimCalendar(geo_location=self._geo, date=sat).sunset().astimezone(tz)
+        fri_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=fri)
+        sat_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=sat)
 
         shabbos_start = fri_sunset - timedelta(minutes=self._candle_offset)
         shabbos_end   = round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset))
@@ -202,8 +202,7 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
             # Defer motzei to Motzaei Shabbos: Sat havdalah → Sun Alos.
             deferred_start = round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset))
             sun = sat + timedelta(days=1)
-            sun_cal = ZmanimCalendar(geo_location=self._geo, date=sun)
-            deferred_end = alos_mga_72(sun_cal, tz)
+            deferred_end = alos_mga_72_for(self._geo, tz, sun)
             self._state = (deferred_start <= now < deferred_end)
         elif shabbos_blocks_motzi and holiday_date.weekday() == 5:
             # Holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Sat, or
@@ -302,13 +301,9 @@ class MotzeiRoshHashanaSensor(MotzeiHolidaySensor):
 class MotzeiShivaUsorBTammuzSensor(MotzeiHolidaySensor):
     """מוצאי צום שבעה עשר בתמוז (י״ז בתמוז)"""
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
-        # observed 17 Tammuz (nidcheh to 18 if 17 is Shabbos)
+        # observed 17 Tammuz (nidcheh to 18 if 17 is Shabbos) — canonical rule
         def _matcher(d: date, _dias: bool) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            y  = hd.year
-            d17 = PHebrewDate(y, 4, 17).to_pydate()
-            observed = d17 if d17.weekday() != 5 else (d17 + timedelta(days=1))
-            return d == observed
+            return d == he.shiva_asar_btamuz_observed(PHebrewDate.from_pydate(d).year)
         super().__init__(
             hass,
             holiday_name=None,
@@ -328,11 +323,8 @@ class MotzeiChanukahSensor(MotzeiHolidaySensor):
     """
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
         def _matcher(d: date, _dias: bool) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            # Chanukah starts 25 Kislev of this Hebrew year
-            first_day = PHebrewDate(hd.year, 9, 25).to_pydate()
-            last_day  = first_day + timedelta(days=7)  # 8th day
-            return d == last_day
+            # canonical Chanukah day-counting (Kislev 29/30-safe)
+            return he.chanukah_day_for_date(d) == 8
 
         super().__init__(
             hass,
@@ -347,13 +339,9 @@ class MotzeiChanukahSensor(MotzeiHolidaySensor):
 class MotzeiTishaBavSensor(MotzeiHolidaySensor):
     """מוצאי תשעה באב (י״ט אב)"""
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
-        # observed 9 Av (nidcheh to 10 if 9 is Shabbos)
+        # observed 9 Av (nidcheh to 10 if 9 is Shabbos) — canonical rule
         def _matcher(d: date, _dias: bool) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            y  = hd.year
-            d9 = PHebrewDate(y, 5, 9).to_pydate()
-            observed = d9 if d9.weekday() != 5 else (d9 + timedelta(days=1))
-            return d == observed
+            return d == he.tisha_bav_observed(PHebrewDate.from_pydate(d).year)
         super().__init__(
             hass,
             holiday_name=None,
@@ -385,17 +373,10 @@ class MotzeiLagBaOmerSensor(MotzeiHolidaySensor):
 class MotzeiShushanPurimSensor(MotzeiHolidaySensor):
     """מוצאי שושן פורים (ט\"ו אדר / אדר ב')"""
     def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
-        # Hebrew leap-year helper (no pyluach dependency)
-        def _is_hebrew_leap(year: int) -> bool:
-            # Leap years are years 3,6,8,11,14,17,19 of 19-year cycle
-            return ((7 * year + 1) % 19) < 7
-
         def _matcher(d: date, _dias: bool) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            target_month = 13 if _is_hebrew_leap(hd.year) else 12  # Adar II vs Adar
-            d15 = PHebrewDate(hd.year, target_month, 15).to_pydate()
-            observed = d15 if d15.weekday() != 5 else (d15 + timedelta(days=1))
-            # Fire on 15 Adar unless it is Shabbos, then fire on Sunday (Purim Meshulash)
+            # Fire on 15 Adar (real Adar) unless it is Shabbos, then on
+            # Sunday (Purim Meshulash) — canonical rule.
+            observed = he.shushan_purim_observed(PHebrewDate.from_pydate(d).year)
             return d == observed and d.weekday() != 5
 
         super().__init__(
@@ -511,13 +492,12 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         if not self._geo:
             return
 
-        # Compute candidate Motzi window (without blocking) via Zmanim
+        # Compute candidate Motzi window (without blocking) via shared cached zmanim
         candidate_on = False
         if holiday_date:
-            sunset_hol = ZmanimCalendar(geo_location=self._geo, date=holiday_date).sunset().astimezone(self._tz)
+            sunset_hol = sunset_for_date(geo=self._geo, tz=self._tz, base_date=holiday_date)
             start      = round_ceil(sunset_hol + timedelta(minutes=self._havdalah))
-            next_cal = ZmanimCalendar(geo_location=self._geo, date=holiday_date + timedelta(days=1))
-            motzi_end = alos_mga_72(next_cal, self._tz)
+            motzi_end = alos_mga_72_for(self._geo, self._tz, holiday_date + timedelta(days=1))
             candidate_on = (start <= now < motzi_end)
 
         # Blocking rules (YT→Shabbos or Shabbos→YT)
@@ -553,9 +533,7 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         yak_active = False
         if yak_base is not None and self._geo:
             yak_start = round_ceil(
-                ZmanimCalendar(geo_location=self._geo, date=yak_base)
-                .sunset()
-                .astimezone(self._tz)
+                sunset_for_date(geo=self._geo, tz=self._tz, base_date=yak_base)
                 + timedelta(minutes=self._havdalah)
             )
             yak_end = datetime.datetime.combine(
@@ -585,12 +563,14 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 cand_start, cand_end = start, motzi_end
 
         def sunset_on(d: datetime.date) -> datetime.datetime:
-            return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+            return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
         def alos_on(d: datetime.date) -> datetime.datetime:
-            return round_ceil(
-                ZmanimCalendar(geo_location=self._geo, date=d).alos().astimezone(self._tz)
-            )
+            # Coordinator-consistent Alos (sunrise − 72, half-up) — the same
+            # עלות השחר the dedicated alos sensor shows. Replaces the old
+            # 16.1° cal.alos() here so the frozen Next_Motzi_Window_End
+            # agrees with the live window end (which always used MGA-72).
+            return alos_mga_72_for(self._geo, self._tz, d)
 
         def yt_span_end_from(start_date: datetime.date) -> datetime.date:
             """Walk forward while is_yom_tov is True; return the last YT day."""

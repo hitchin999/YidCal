@@ -15,7 +15,6 @@ import logging
 from .device import YidCalDevice
 from .const import DOMAIN
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 from hdate import HDateInfo
 from hdate.translator import set_language
@@ -28,47 +27,32 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 from .erev_motzei_extra import compute_erev_motzei_flags, EXTRA_ATTRS
 from .zman_sensors import get_geo
+from .yidcal_lib import halacha_events as he
 
-def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
+# Shared zmanim primitives (cached; single source of truth) — replace the
+# local _round_half_up / _round_ceil / _compute_chatzos_hayom copies this
+# module used to carry.
+from .yidcal_lib.zman_compute import (
+    round_half_up as _round_half_up,
+    round_ceil as _round_ceil,
+    round_floor as _round_floor,
+    compute_holiday_windows,
+    sunset_for_date,
+    sun_events_for_date,
+    dawn_for_date,
+    chatzos_hayom_for_date,
+)
 
-def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    """Always bump up to the next minute."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-def _round_floor(dt: datetime.datetime) -> datetime.datetime:
-    """Truncate seconds (lechumra rounding for fast-start anchors).
-
-    Used for alos (start of minor fasts) and shkia (start of Tisha
-    B'Av). The fast must begin BEFORE the astronomical moment, never
-    after — so half-up rounding (which can push the displayed minute
-    one tick later than the true zman) is lechumra-violating in these
-    contexts. Other uses of alos/shkia (positive zmanim like sof zman
-    krias shma, sof zman mincha gedola) keep half-up / ceil
-    respectively.
-    """
-    return dt.replace(second=0, microsecond=0)
-    
 def _compute_chatzos_hayom(geo: GeoLocation, base_date: datetime.date, tz: ZoneInfo) -> datetime.datetime:
-    """Compute Chatzos Hayom (halachic midday) for a given date using MGA day."""
-    cal = ZmanimCalendar(geo_location=geo, date=base_date)
-    sunrise = cal.sunrise().astimezone(tz)
-    sunset = cal.sunset().astimezone(tz)
+    """Chatzos Hayom (halachic midday), half-up rounded.
 
-    # MGA day: 72 minutes before sunrise to 72 minutes after sunset
-    dawn = sunrise - timedelta(minutes=72)
-    nightfall = sunset + timedelta(minutes=72)
-
-    hour_td = (nightfall - dawn) / 12
-    chatzos = dawn + hour_td * 6
-
-    # Round: <30s floor, >=30s ceil
-    if chatzos.second >= 30:
-        chatzos += timedelta(minutes=1)
-    return chatzos.replace(second=0, microsecond=0)
+    Now sourced from the shared Grossman true-solar-transit helper so the
+    fast-countdown timers agree to the minute with sensor.yidcal_chatzos_hayom
+    (the old local copy used the sunrise/sunset midpoint, which drifts
+    15–30 s off true noon and could land one display-minute away).
+    """
+    return _round_half_up(chatzos_hayom_for_date(geo=geo, tz=tz, base_date=base_date))
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -269,84 +253,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "יום כיפור קטן",
     ]
 
-    # ─── Window‐type map: holiday‑name → named window key ───────────
-    WINDOW_TYPE: dict[str, str] = {
-        "א׳ סליחות":                     "havdalah_candle",
-        "ערב ראש השנה":                  "havdalah_candle",
-        "ראש השנה א׳":                   "candle_havdalah",
-        "ראש השנה ב׳":                   "havdalah_havdalah",
-        "ראש השנה א׳ וב׳":                "candle_both",
-        "צום גדליה":                      "alos_havdalah",
-        "שלוש עשרה מדות":                 "alos_candle",
-        "ערב יום כיפור":                   "candle_candle",
-        "יום הכיפורים":                    "candle_havdalah",
-        "ערב סוכות":                      "havdalah_candle",
-        "סוכות א׳":                       "candle_havdalah",
-        "סוכות ב׳":                       "havdalah_havdalah",
-        "סוכות א׳ וב׳":                    "candle_both",
-        "א׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ב׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ג׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ד׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ה׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "חול המועד סוכות":                  "havdalah_havdalah",
-        "הושענא רבה":                     "havdalah_candle",
-        "שמיני עצרת":                      "candle_havdalah",
-        "שמחת תורה":                     "havdalah_havdalah",
-        "אסרו חג סוכות":                   "havdalah_havdalah",
-        "ערב חנוכה":                      "alos_havdalah",
-        "חנוכה":                         "havdalah_havdalah",
-        "ערב שבת חנוכה":                  "alos_candle",
-        "שבת חנוכה":                      "candle_havdalah", 
-        "שבת חנוכה ראש חודש":              "candle_havdalah",
-        "א׳ דחנוכה":                      "havdalah_havdalah",
-        "ב׳ דחנוכה":                      "havdalah_havdalah",
-        "ג׳ דחנוכה":                      "havdalah_havdalah",
-        "ד׳ דחנוכה":                      "havdalah_havdalah",
-        "ה׳ דחנוכה":                      "havdalah_havdalah",
-        "ו׳ דחנוכה":                      "havdalah_havdalah",
-        "ז׳ דחנוכה":                      "havdalah_havdalah",
-        "זאת חנוכה":                      "havdalah_havdalah",
-        "שובבים":                        "havdalah_havdalah",
-        "שובבים ת\"ת":                   "havdalah_havdalah",
-        "צום עשרה בטבת":                 "alos_havdalah",
-        "חמשה עשר בשבט":                "havdalah_havdalah",
-        "תענית אסתר":                     "alos_havdalah",
-        "תענית אסתר מוקדם":                "alos_havdalah",
-        "פורים":                         "havdalah_havdalah",
-        "שושן פורים":                     "havdalah_havdalah",
-        "ערב בדיקת חמץ":                  "alos_havdalah",
-        "ליל בדיקת חמץ":                   "havdalah_alos",
-        "ערב פסח מוקדם":                  "havdalah_candle",
-        "שבת ערב פסח":                   "candle_candle",
-        "ערב פסח":                       "havdalah_candle",
-        "פסח א׳":                        "candle_havdalah",
-        "פסח ב׳":                        "havdalah_havdalah",
-        "פסח א׳ וב׳":                     "candle_both",
-        "א׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ב׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ג׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ד׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ה׳ דחול המועד פסח":                "havdalah_havdalah",
-        "חול המועד פסח":                  "havdalah_candle",
-        "שביעי של פסח":                   "candle_havdalah",
-        "אחרון של פסח":                   "havdalah_havdalah",
-        "אסרו חג פסח":                    "havdalah_havdalah",
-        "פסח שני":                       "havdalah_havdalah",
-        "ל\"ג בעומר":                    "havdalah_havdalah",
-        "ערב שבועות":                    "havdalah_candle",
-        "שבועות א׳":                     "candle_havdalah",
-        "שבועות ב׳":                     "havdalah_havdalah",
-        "שבועות א׳ וב׳":                  "candle_both",
-        "אסרו חג שבועות":                "havdalah_havdalah",
-        "צום שבעה עשר בתמוז":             "alos_havdalah",
-        "ערב תשעה באב":                 "alos_havdalah",
-        "תשעה באב":                    "candle_havdalah",
-        "תשעה באב נדחה":                "candle_havdalah",
-        "ט\"ו באב":                     "alos_havdalah",
-        "יום כיפור קטן":                  "alos_havdalah",
-        "ראש חודש":                    "havdalah_havdalah",
-    }
+    # ─── Window-type map — canonical copy lives in halacha_events
+    #     (shared with the luach / future range features) ───────────
+    WINDOW_TYPE: dict[str, str] = he.HOLIDAY_WINDOW_TYPE
     
     # Attributes that should only exist in one mode to avoid confusion
     EY_ONLY_ATTRS = {
@@ -549,8 +458,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         now = now or datetime.datetime.now(tz)
         actual_date = now.date()
         wd = now.weekday()
-        cal = ZmanimCalendar(geo_location=self._geo, date=actual_date)
-        actual_sunset = cal.sunset().astimezone(tz)
+        actual_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=actual_date)
 
         # Compute roll‐points using rounded candle/havdalah (aligned with other sensors)
         raw_candle_cut = actual_sunset - timedelta(minutes=self._candle_offset)
@@ -587,17 +495,12 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         sunset_detect_date = actual_date + timedelta(days=1) if now >= sunset_cut else actual_date
         hd_sunset = PHebrewDate.from_pydate(sunset_detect_date)
         wd_sunset = wd if sunset_detect_date == actual_date else (wd + 1) % 7
-        # Anchor sunsets around festival_date
-        cal_fest = ZmanimCalendar(geo_location=self._geo, date=festival_date)
-        prev_cal = ZmanimCalendar(geo_location=self._geo, date=festival_date - timedelta(days=1))
-        next_cal = ZmanimCalendar(geo_location=self._geo, date=festival_date + timedelta(days=1))
+        # Anchor sunsets around festival_date (shared cached zmanim)
+        prev_sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=festival_date - timedelta(days=1))
+        festival_sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=festival_date)
+        next_sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=festival_date + timedelta(days=1))
 
-        prev_sunset_raw = prev_cal.sunset().astimezone(tz)
-        festival_sunset_raw = cal_fest.sunset().astimezone(tz)
-        next_sunset_raw = next_cal.sunset().astimezone(tz)
-
-        tomorrow_cal = ZmanimCalendar(geo_location=self._geo, date=actual_date + timedelta(days=1))
-        tomorrow_sunset_raw = tomorrow_cal.sunset().astimezone(tz)
+        tomorrow_sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=actual_date + timedelta(days=1))
         
         # Convenience aliases (raw sunsets)
         prev_sunset = prev_sunset_raw
@@ -622,8 +525,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # astronomical alos, never after. The general-purpose alos
         # sensor (zman_alos.py) keeps half-up — that's correct for
         # positive uses like sof zman krias shma, tefilas, etc.
-        dawn = cal_fest.sunrise().astimezone(tz) - timedelta(minutes=72)
-        dawn = _round_floor(dawn)
+        dawn = _round_floor(dawn_for_date(geo=self._geo, tz=tz, base_date=festival_date))
         #_LOGGER.debug(f"Dawn: {dawn}, now: {now}, festival_date: {festival_date}")
         
         # Hebrew dates
@@ -657,105 +559,52 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         #_LOGGER.debug(f"Current time: {now}, Hebrew date (hd_py): {hd_py.month}/{hd_py.day}, "
         #              f"hd_fest: {hd_fest.month}/{hd_fest.day}, hd_py_fast: {hd_py_fast.month}/{hd_py_fast.day}")
 
-        # Build windows (rounded to match Erev/Motzei / DayType behavior)
-        candle_havdalah_start = _round_half_up(
-            prev_sunset_raw - timedelta(minutes=self._candle_offset)
+        # Build windows — single source of truth (zman_compute), shared
+        # with any range/JSON consumer via he.HOLIDAY_WINDOW_TYPE.
+        _wins = compute_holiday_windows(
+            geo=self._geo, tz=tz,
+            festival_date=festival_date, actual_date=actual_date,
+            candle_offset=self._candle_offset,
+            havdalah_offset=self._havdalah_offset,
         )
-        candle_havdalah_end = _round_ceil(
-            festival_sunset_raw + timedelta(minutes=self._havdalah_offset)
-        )
+        candle_havdalah_start, candle_havdalah_end = _wins["candle_havdalah"]
+        candle_both_start, candle_both_end = _wins["candle_both"]
+        alos_havdalah_start, alos_havdalah_end = _wins["alos_havdalah"]
+        alos_candle_start, alos_candle_end = _wins["alos_candle"]
+        candle_alos_start, candle_alos_end = _wins["candle_alos"]
+        havdalah_alos_start, havdalah_alos_end = _wins["havdalah_alos"]
+        havdalah_havdalah_start, havdalah_havdalah_end = _wins["havdalah_havdalah"]
+        havdalah_candle_start, havdalah_candle_end = _wins["havdalah_candle"]
+        candle_candle_start, candle_candle_end = _wins["candle_candle"]
 
-        candle_both_start = _round_half_up(
-            prev_sunset_raw - timedelta(minutes=self._candle_offset)
-        )
-        candle_both_end = _round_ceil(
-            next_sunset_raw + timedelta(minutes=self._havdalah_offset)
-        )
-
-        alos_havdalah_start = dawn  # already rounded above
-        alos_havdalah_end = _round_ceil(
-            festival_sunset_raw + timedelta(minutes=self._havdalah_offset)
-        )
-
-        alos_candle_start = dawn
-        alos_candle_end = _round_half_up(
-            festival_sunset_raw - timedelta(minutes=self._candle_offset)
-        )
-
-        candle_alos_start = _round_half_up(
-            prev_sunset_raw - timedelta(minutes=self._candle_offset)
-        )
-        candle_alos_end = dawn
-
-        havdalah_alos_start = _round_ceil(
-            prev_sunset_raw + timedelta(minutes=self._havdalah_offset)
-        )
-        havdalah_alos_end = dawn
-
-        shabbat_second = festival_date.weekday() == 5
-        if shabbat_second:
-            # Second day is Shabbos → start at Friday candles
-            havdalah_havdalah_start = _round_half_up(
-                prev_sunset_raw - timedelta(minutes=self._candle_offset)
-            )
-        else:
-            # Normal case → start at Motzei previous day
-            havdalah_havdalah_start = _round_ceil(
-                prev_sunset_raw + timedelta(minutes=self._havdalah_offset)
-            )
-        havdalah_havdalah_end = _round_ceil(
-            festival_sunset_raw + timedelta(minutes=self._havdalah_offset)
-        )
-
-        havdalah_candle_start = _round_ceil(
-            prev_sunset_raw + timedelta(minutes=self._havdalah_offset)
-        )
-        havdalah_candle_end = _round_half_up(
-            festival_sunset_raw - timedelta(minutes=self._candle_offset)
-        )
-
-        candle_candle_start = _round_half_up(
-            prev_sunset_raw - timedelta(minutes=self._candle_offset)
-        )
-        candle_candle_end = _round_half_up(
-            tomorrow_sunset_raw - timedelta(minutes=self._candle_offset)
-        )
-
-        # leap-year for Shovavim
+        # leap-year for Shovavim (canonical rule helpers)
         year = hd_py.year
-        is_leap = ((year * 7 + 1) % 19) < 7
-        
+        is_leap = he.is_leap_hebrew_year(year)
 
         # --- Purim-on-Friday detection (used for window overrides) ---
-        adar_month = 13 if is_leap else 12
+        adar_month = he.real_adar_month(year)
 
         # hd_fest can sit in the PREVIOUS Hebrew year for the ~90 minutes
         # between candle-roll and havdalah-roll on Erev Rosh Hashanah. When
-        # those two years differ in leap status (e.g. 5786 non-leap → 5787
-        # leap), an Adar lookup that mixes hd_fest.year with the hd_py-derived
-        # adar_month raises ValueError ("not a leap year") and kills this
-        # update right as RH enters. Every hd_fest-context Adar lookup must
-        # use the leap status of hd_fest's OWN year. Outside that boundary
-        # window the two are equal, so behavior is unchanged.
-        fest_is_leap = ((hd_fest.year * 7 + 1) % 19) < 7
-        fest_adar_month = 13 if fest_is_leap else 12
+        # those two years differ in leap status (e.g. 5786→5787), an Adar
+        # lookup that mixes hd_fest.year with hd_py-derived adar_month
+        # raises ValueError ("not a leap year") and kills the update right
+        # as RH enters. Every hd_fest-context Adar lookup must use the leap
+        # status of hd_fest's OWN year. Outside that boundary window the two
+        # are equal, so behavior is unchanged.
+        fest_adar_month = he.real_adar_month(hd_fest.year)
         purim_friday = PHebrewDate(hd_fest.year, fest_adar_month, 14).to_pydate().weekday() == 4  # Fri
 
-        #Tzom Gedalye Deferred
+        # Observed fast dates — canonical rules from halacha_events.
         h_year = year if hd_py.month >= 7 else year + 1
-        gedaliah_day = 3
-        tishrei_3_greg = PHebrewDate(h_year, 7, 3).to_pydate()
-        if tishrei_3_greg.weekday() == 5:
-            gedaliah_day = 4
+        gedaliah_day = PHebrewDate.from_pydate(he.tzom_gedaliah_observed(h_year)).day
 
-        av9_greg = PHebrewDate(hd_fest.year, 5, 9).to_pydate()
-        is_tisha_on_shabbat = av9_greg.weekday() == 5
+        is_tisha_on_shabbat = he.is_tisha_bav_nidche(hd_fest.year)
 
-        # Tzom 17 Tammuz Deferred — when 17 Tammuz falls on Shabbos, fast moves to Sunday 18 Tammuz
-        tammuz_17_day = 17
-        tammuz_17_greg = PHebrewDate(hd_fest.year, 4, 17).to_pydate()
-        if tammuz_17_greg.weekday() == 5:
-            tammuz_17_day = 18
+        # 17 Tammuz: 18 when 17 falls on Shabbos (canonical)
+        tammuz_17_day = PHebrewDate.from_pydate(
+            he.shiva_asar_btamuz_observed(hd_fest.year)
+        ).day
 
         # ─── Fast start/end times
         # Default for regular fasts
@@ -873,10 +722,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["אסרו חג סוכות"] = True
 
         # ─── Chanukah (8-day span from 25 Kislev) ─────────────────────────
-        # Do NOT hardcode Kislev/Tevet day numbers; Kislev can be 29 or 30.
-        chan_first_py = PHebrewDate(hd_fest.year, 9, 25).to_pydate()
-        days_into_chan = (festival_date - chan_first_py).days
-        in_chanukah = 0 <= days_into_chan <= 7
+        # Canonical day-counting (Kislev 29/30-safe) from halacha_events.
+        _chan_day = he.chanukah_day_for_date(festival_date)
+        in_chanukah = _chan_day is not None
+        days_into_chan = (_chan_day - 1) if in_chanukah else -99
 
         # Erev Chanukah = 24 Kislev
         if hd_fest.month == 9 and hd_fest.day == 24:
@@ -922,8 +771,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # In a leap year, Purim/Taanis Esther/Shushan Purim are observed in
         # Adar II (month 13) only, NOT in Adar I (month 12).
         if hd_fest.month == fest_adar_month:
-            thirteen_adar_py = PHebrewDate(hd_fest.year, fest_adar_month, 13).to_pydate()
-            taanit_pushed = thirteen_adar_py.weekday() == 5  # 13 Adar is Shabbat
+            # canonical: observed TE lands on 11 Adar (Thu) when 13 is Shabbos
+            taanit_pushed = (
+                PHebrewDate.from_pydate(he.taanis_esther_observed(hd_fest.year)).day == 11
+            )
 
             if taanit_pushed:
                 if hd_fest.day == 11 and dawn <= now <= end_time:
@@ -938,10 +789,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 attrs["שושן פורים"] = True
         # --- Purim-on-Friday: defer Shushan Purim to Motzaei Shabbos → Motzaei Sunday ---
         if purim_friday:
-            fifteen_py = PHebrewDate(hd_fest.year, fest_adar_month, 15).to_pydate()
+            fifteen_py = he.shushan_purim_date(hd_fest.year)
             if fifteen_py.weekday() == 5:  # 15 Adar is Shabbos
-                sat_sunset = ZmanimCalendar(geo_location=self._geo, date=fifteen_py).sunset().astimezone(tz)
-                sun_sunset = ZmanimCalendar(geo_location=self._geo, date=fifteen_py + timedelta(days=1)).sunset().astimezone(tz)
+                sat_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=fifteen_py)
+                sun_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=fifteen_py + timedelta(days=1))
 
                 shushan_start = _round_ceil(
                     sat_sunset + timedelta(minutes=self._havdalah_offset)
@@ -951,7 +802,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 )  # Motzaei Sunday
         
                 # Only show "שושן פורים" in that deferred window; otherwise suppress it
-                attrs["שושן פורים"] = (shushan_start <= now <= shushan_end)
+                attrs["שושן פורים"] = (shushan_start <= now < shushan_end)
 
         # Erev Bedikat Chametz (daytime before bedika night)
         # Normal year: bedikat_day=14 → erev=13 Nisan
@@ -1055,8 +906,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["צום שבעה עשר בתמוז"] = True
 
         # Fixed: Erev Tisha B’Av with extension to sunset and deferred handling
-        if (hd_sunset.month == 5 and hd_sunset.day == 8 and not is_tisha_on_shabbat) or \
-           (hd_sunset.month == 5 and hd_sunset.day == 9 and is_tisha_on_shabbat):
+        # hd_fest guard: without it the flag was true from sunset→havdalah
+        # on the evening BEFORE Erev T"B (~72 min false positive).
+        if (hd_sunset.month == 5 and hd_sunset.day == 8 and hd_fest.month == 5 and hd_fest.day == 8 and not is_tisha_on_shabbat) or \
+           (hd_sunset.month == 5 and hd_sunset.day == 9 and hd_fest.month == 5 and hd_fest.day == 9 and is_tisha_on_shabbat):
             attrs["ערב תשעה באב"] = True
 
         # Fixed: Tisha B’Av proper - use hd_sunset to prevent early turn-on
@@ -1120,7 +973,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             (7, gedaliah_day),                    # Tzom Gedaliah
             (10, 10),                             # 10 Tevet
             (4, 17),                              # 17 Tammuz
-            (13 if is_leap else 12, 13),          # Ta'anit Esther
+            (adar_month, 13),                     # Ta'anit Esther (real Adar)
         ]
         
         # Check if tomorrow (by halachic day) is a minor fast
@@ -1142,9 +995,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # and the countdown should reach 0 at the floor minute, not
         # the half-up minute (which could land after astronomical
         # alos when alos seconds ≥ 30).
-        tomorrow_cal_for_dawn = ZmanimCalendar(geo_location=self._geo, date=festival_date)
-        next_dawn = tomorrow_cal_for_dawn.sunrise().astimezone(tz) - timedelta(minutes=72)
-        next_dawn = _round_floor(next_dawn)
+        next_dawn = _round_floor(dawn_for_date(geo=self._geo, tz=tz, base_date=festival_date))
         
         # ─── MINOR FASTS: Pre-fast countdown (tzeis evening before → alos) ───
         no_fast_active_now = not any(attrs.get(f) for f in self.FAST_FLAGS)
@@ -1232,9 +1083,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # helper: are we inside עשי"ת right now?
         def _in_ayt_window(now, tz, geo, candle_offset, havdalah_offset) -> bool:
             today = now.date()
-            cal = ZmanimCalendar(geo_location=geo, date=today)
-            sunrise = cal.sunrise().astimezone(tz)
-            sunset  = cal.sunset().astimezone(tz)
+            # raw (unrounded) sun events, as before — only the computation
+            # moved to the shared cached helper
+            sunrise, sunset = sun_events_for_date(geo=geo, tz=tz, base_date=today)
             havdala = sunset + timedelta(minutes=havdalah_offset)
             candle  = sunset - timedelta(minutes=candle_offset)
         
@@ -1247,12 +1098,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if hd_sun.month != 7 or not (3 <= hd_sun.day <= 9):
                 return False
         
-            # Start only *after* havdalah on Motzaei R"H (the early part of 3 Tishrei is still R"H-night)
-            if hd_sun.day == 3 and now < havdala:
+            # Start only *after* havdalah on Motzaei R"H: the early part of
+            # 3 Tishrei (between sunset and havdalah of THAT evening) is
+            # still R"H-night. The old bare "now < havdala" also wrongly
+            # excluded the entire daytime of 3 Tishrei (midnight → sunset).
+            if hd_sun.day == 3 and sunset <= now < havdala:
                 return False
-        
-            # End at candle-lighting on Erev YK (9 Tishrei)
-            if hd_sun.day == 9 and now >= candle:
+
+            # End at candle-lighting on Erev YK (9 Tishrei) — daytime only.
+            # The old bare "now >= candle" also killed the flag for the whole
+            # NIGHT of Erev YK.
+            if hd_sun.day == 9 and candle <= now < sunset:
                 return False
         
             return True
@@ -1289,23 +1145,23 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if not on:
                 continue
             w = _dynamic_window(name, self.WINDOW_TYPE.get(name))
-            if w == "candle_havdalah" and not (candle_havdalah_start <= now <= candle_havdalah_end):
+            if w == "candle_havdalah" and not (candle_havdalah_start <= now < candle_havdalah_end):
                 attrs[name] = False
-            elif w == "havdalah_havdalah" and not (havdalah_havdalah_start <= now <= havdalah_havdalah_end):
+            elif w == "havdalah_havdalah" and not (havdalah_havdalah_start <= now < havdalah_havdalah_end):
                 attrs[name] = False
-            elif w == "alos_havdalah" and not (alos_havdalah_start <= now <= alos_havdalah_end):
+            elif w == "alos_havdalah" and not (alos_havdalah_start <= now < alos_havdalah_end):
                 attrs[name] = False
-            elif w == "alos_candle" and not (alos_candle_start <= now <= alos_candle_end):
+            elif w == "alos_candle" and not (alos_candle_start <= now < alos_candle_end):
                 attrs[name] = False
-            elif w == "candle_alos" and not (candle_alos_start <= now <= candle_alos_end):
+            elif w == "candle_alos" and not (candle_alos_start <= now < candle_alos_end):
                 attrs[name] = False
-            elif w == "havdalah_alos" and not (havdalah_alos_start <= now <= havdalah_alos_end):
+            elif w == "havdalah_alos" and not (havdalah_alos_start <= now < havdalah_alos_end):
                 attrs[name] = False
-            elif w == "candle_both" and not (candle_both_start <= now <= candle_both_end):
+            elif w == "candle_both" and not (candle_both_start <= now < candle_both_end):
                 attrs[name] = False
-            elif w == "havdalah_candle" and not (havdalah_candle_start <= now <= havdalah_candle_end):
+            elif w == "havdalah_candle" and not (havdalah_candle_start <= now < havdalah_candle_end):
                 attrs[name] = False
-            elif w == "candle_candle" and not (candle_candle_start <= now <= candle_candle_end):
+            elif w == "candle_candle" and not (candle_candle_start <= now < candle_candle_end):
                 attrs[name] = False
             # others stay full day
             
@@ -1361,9 +1217,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         
         # Shabbos Chanukah flags (Fri candle → Sat havdalah)
         if hd_shabbos:
-            chan_first_py_shabbos = PHebrewDate(hd_shabbos.year, 9, 25).to_pydate()
-            days_into_chan_shabbos = (shabbos_pydate - chan_first_py_shabbos).days
-            if 0 <= days_into_chan_shabbos <= 7:
+            if he.chanukah_day_for_date(shabbos_pydate) is not None:
                 attrs["שבת חנוכה"] = True
 
                 # Shabbos Chanukah that is also Rosh Chodesh (exclude RH 1 Tishrei)

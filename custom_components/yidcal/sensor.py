@@ -5,11 +5,26 @@ import homeassistant.util.dt as dt_util
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from .device import YidCalDevice, YidCalDisplayDevice
-from zmanim.zmanim_calendar import ZmanimCalendar
+from zmanim.util.geo_location import GeoLocation
 from .zman_sensors import get_geo
 
-from astral import LocationInfo
-from astral.sun import sun
+# Shared cached zmanim primitives so every window edge agrees with the
+# dedicated zman sensors (Grossman engine, one computation per date).
+from .yidcal_lib.zman_compute import (
+    round_half_up as _round_half_up,
+    round_ceil as _round_ceil,
+    sunset_for_date,
+)
+
+# Fixed Jerusalem location for molad time-of-day labels (same coords the
+# old astral-based code used).
+_JERUSALEM_GEO = GeoLocation(
+    name="YidCal-Jerusalem",
+    latitude=31.7683,
+    longitude=35.2137,
+    time_zone="Asia/Jerusalem",
+    elevation=0,
+)
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.sensor import SensorEntity
@@ -127,17 +142,6 @@ ENG2HEB = {
     "Adar II": "אדר ב",   # leap year month 13
 }
 
-def _round_half_up(dt: datetime) -> datetime:
-    """Round dt to nearest minute: <30s floor, ≥30s ceil (matches Zman Erev)."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    """Always bump to the next minute (matches Zman Motzi)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    
 def _molad_time_of_day_jerusalem(jer_dt: datetime, jer_tzeis: datetime) -> str:
     """
     Yiddish time-of-day label based on JERUSALEM clock.
@@ -378,6 +382,7 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         self._havdalah_offset = havdalah_offset
         self._attr_native_value = None
         self._attr_extra_state_attributes: dict[str, any] = {}
+        self._geo: GeoLocation | None = None
 
     async def _handle_minute_tick(self, now):
         """Called every minute by async_track_time_interval."""
@@ -386,6 +391,8 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register immediate update and once-per-minute polling."""
         await super().async_added_to_hass()
+
+        self._geo = await get_geo(self.hass)
 
         # Immediate first update
         await self.async_update()
@@ -402,13 +409,10 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         tz = ZoneInfo(self.hass.config.time_zone)
         now_local = (now or dt_util.now()).astimezone(tz)
         today = now_local.date()
-        
-        # Local location (for RC nightfall etc.)
-        loc = LocationInfo(
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-            timezone=self.hass.config.time_zone,
-        )
+
+        # Shared geo (lazy fallback for very-early updates)
+        if not self._geo:
+            self._geo = await get_geo(self.hass)
 
         jdn = gdate_to_jdn(today)
         heb = HHebrewDate.from_jdn(jdn)
@@ -437,14 +441,8 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             friday = today if wd == 4 else (today - timedelta(days=1))
             saturday = friday + timedelta(days=1)
         
-            # Location for sun times
-            loc = LocationInfo(
-                latitude=self.hass.config.latitude,
-                longitude=self.hass.config.longitude,
-                timezone=self.hass.config.time_zone,
-            )
-            fri_sunset = sun(loc.observer, date=friday, tzinfo=tz)["sunset"]
-            sat_sunset = sun(loc.observer, date=saturday, tzinfo=tz)["sunset"]
+            fri_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=friday)
+            sat_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=saturday)
             shabbos_on  = fri_sunset - timedelta(minutes=self._candle_offset)
             shabbos_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
         
@@ -468,13 +466,7 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         # Check if molad time is during motzei Shabbos (after havdalah) till Sunday 4am (Israel)
         is_special = False
         jer_tz = ZoneInfo("Asia/Jerusalem")
-        jer_loc = LocationInfo(
-            latitude=31.7683,
-            longitude=35.2137,
-            timezone="Asia/Jerusalem",
-        )
-        sd = sun(jer_loc.observer, date=m.date, tzinfo=jer_tz)
-        jer_sunset = sd["sunset"]
+        jer_sunset = sunset_for_date(geo=_JERUSALEM_GEO, tz=jer_tz, base_date=m.date)
         jer_tzeis = jer_sunset + timedelta(minutes=self._havdalah_offset)
 
         # Dynamic time-of-day label in Jerusalem
@@ -527,8 +519,8 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         rc_night = []
         for gd in rc.gdays:
             prev = gd - timedelta(days=1)
-            sd = sun(loc.observer, date=prev, tzinfo=tz)
-            rc_night.append((sd["sunset"] + timedelta(minutes=self._havdalah_offset)).isoformat())
+            prev_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=prev)
+            rc_night.append((prev_sunset + timedelta(minutes=self._havdalah_offset)).isoformat())
 
         rc_days = [DAY_MAPPING.get(d, d) for d in rc.days]
         rc_text = rc_days[0] if len(rc_days) == 1 else " & ".join(rc_days)
@@ -616,11 +608,7 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         current = (now or dt_util.now()).astimezone(self._tz)
         today = current.date()
 
-        sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=today)
-            .sunset()
-            .astimezone(self._tz)
-        )
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=today)
 
         raw_candle   = sunset - timedelta(minutes=self._candle)
         raw_havdalah = sunset + timedelta(minutes=self._havdalah)
@@ -696,19 +684,20 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
 
         await self.async_update()
 
-        async_track_time_interval(
+        # registered for cleanup — bare calls leaked these across reloads
+        self._register_interval(
             self.hass,
             self.async_update,
             timedelta(hours=1),
         )
 
-        async_track_sunset(
+        self._register_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=-self._candle_offset),
         )
 
-        async_track_sunset(
+        self._register_sunset(
             self.hass,
             self.async_update,
             offset=timedelta(minutes=self._havdalah_offset),
@@ -748,16 +737,8 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
                 self._attr_is_on = False
                 return
 
-            fri_sunset = (
-                ZmanimCalendar(geo_location=self._geo, date=friday)
-                .sunset()
-                .astimezone(self._tz)
-            )
-            sat_sunset = (
-                ZmanimCalendar(geo_location=self._geo, date=saturday)
-                .sunset()
-                .astimezone(self._tz)
-            )
+            fri_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=friday)
+            sat_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=saturday)
 
             raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
             raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
@@ -798,10 +779,11 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
 
         await self.async_update()
 
-        async_track_time_interval(self.hass, self.async_update, timedelta(hours=1))
+        # registered for cleanup — bare calls leaked these across reloads
+        self._register_interval(self.hass, self.async_update, timedelta(hours=1))
 
-        async_track_sunset(self.hass, self.async_update, offset=timedelta(minutes=-self._candle_offset))
-        async_track_sunset(self.hass, self.async_update, offset=timedelta(minutes=self._havdalah_offset))
+        self._register_sunset(self.hass, self.async_update, offset=timedelta(minutes=-self._candle_offset))
+        self._register_sunset(self.hass, self.async_update, offset=timedelta(minutes=self._havdalah_offset))
 
         # NEW: lockstep minute beat
         self._register_listener(
@@ -825,16 +807,8 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             friday = today if wd == 4 else (today - timedelta(days=1))
             saturday = friday + timedelta(days=1)
 
-            fri_sunset = (
-                ZmanimCalendar(geo_location=self._geo, date=friday)
-                .sunset()
-                .astimezone(self._tz)
-            )
-            sat_sunset = (
-                ZmanimCalendar(geo_location=self._geo, date=saturday)
-                .sunset()
-                .astimezone(self._tz)
-            )
+            fri_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=friday)
+            sat_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=saturday)
 
             raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
             raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
@@ -850,11 +824,7 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
 
         # After candles Friday, must be OFF
         if wd == 4:
-            sunset_today = (
-                ZmanimCalendar(geo_location=self._geo, date=today)
-                .sunset()
-                .astimezone(self._tz)
-            )
+            sunset_today = sunset_for_date(geo=self._geo, tz=self._tz, base_date=today)
             candle = _round_half_up(sunset_today - timedelta(minutes=self._candle_offset))
             if now_local >= candle:
                 flag = False
@@ -918,11 +888,7 @@ class RoshChodeshToday(YidCalDisplayDevice, SensorEntity):
 
     def _tzeis(self, d: date) -> datetime:
         """Rounded tzeis = sunset(d) + offset, Motzi-style."""
-        sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=d)
-            .sunset()
-            .astimezone(self._tz)
-        )
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
         return _round_ceil(sunset + timedelta(minutes=self._havdalah_offset))
 
     async def async_update(self, now: datetime | None = None) -> None:

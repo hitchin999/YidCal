@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.const import STATE_UNKNOWN
@@ -13,26 +13,14 @@ from homeassistant.util import dt as dt_util
 
 from pyluach.hebrewcal import Year, HebrewDate as PHebrewDate
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-
 from .const import DOMAIN
 from .zman_sensors import get_geo
 from .yidcal_lib.helper import int_to_hebrew
+from .yidcal_lib.zman_compute import round_ceil as _round_ceil, sunset_for_date
 from .device import YidCalDevice, YidCalDisplayDevice
 
 _LOGGER = logging.getLogger(__name__)
 
-
-def _round_half_up(dt: datetime) -> datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    """Always bump to the *next* full minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 def get_hebrew_month_name(month: int, year: int) -> str:
@@ -161,10 +149,8 @@ class DateSensor(YidCalDevice, RestoreEntity, SensorEntity):
         now = dt_util.now().astimezone(self._tz)
 
         # Zmanim sunset for *today* (same engine as Zman Motzi)
-        sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=now.date())
-            .sunset()
-            .astimezone(self._tz)
+        sunset = sunset_for_date(
+            geo=self._geo, tz=self._tz, base_date=now.date()
         )
 
         raw_switch_time = sunset + self._havdalah_offset
@@ -257,10 +243,8 @@ class ChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
         now = dt_util.now().astimezone(self._tz)
 
-        sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=now.date())
-            .sunset()
-            .astimezone(self._tz)
+        sunset = sunset_for_date(
+            geo=self._geo, tz=self._tz, base_date=now.date()
         )
         raw_switch_time = sunset + self._havdalah_offset
         switch_time = _round_ceil(raw_switch_time)
@@ -344,10 +328,8 @@ class YomLChodeshSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
         now = dt_util.now().astimezone(self._tz)
 
-        sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=now.date())
-            .sunset()
-            .astimezone(self._tz)
+        sunset = sunset_for_date(
+            geo=self._geo, tz=self._tz, base_date=now.date()
         )
         raw_switch_time = sunset + self._havdalah_offset
         switch_time = _round_ceil(raw_switch_time)

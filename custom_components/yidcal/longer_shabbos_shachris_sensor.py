@@ -32,31 +32,21 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-
 from pyluach.dates import HebrewDate as PHebrewDate
 from pyluach.hebrewcal import Year as PYear
 from pyluach import parshios as pyluach_parshios, dates as pyluach_dates
 
 from .device import YidCalSpecialDevice
 from .const import DOMAIN
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (
-        (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-        if dt.second or dt.microsecond
-        else dt
-    )
 
 
 def _month_length_safe(y: int, m: int) -> int:
@@ -113,7 +103,7 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
         reasons: list[str] = []
 
         is_leap = PYear(Y).leap
-        adar_month = 13 if is_leap else 12
+        adar_month = he.real_adar_month(hd.year)
 
         # ── Four Parshiyos ──
         rc_adar = PHebrewDate(Y, adar_month, 1).to_pydate()
@@ -180,12 +170,7 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
         # actually fall on Shabbos in any Kislev=29 keviut combo, so this
         # branch is unreachable on Shabbos — fixed here for consistency
         # with longer_shachris_sensor.py.)
-        try:
-            chanukah_start = PHebrewDate(hd.year, 9, 25).to_pydate()
-            days_into_chanukah = (shabbat_date - chanukah_start).days
-            is_chanukah = 0 <= days_into_chanukah <= 7
-        except Exception:
-            is_chanukah = False
+        is_chanukah = he.chanukah_day_for_date(shabbat_date) is not None
         if is_chanukah:
             # Check if also Rosh Chodesh
             is_rc = hd.day == 1 or (hd.day == 30 and _month_length_safe(hd.year, hd.month) == 30)
@@ -194,36 +179,24 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
             else:
                 reasons.append("שבת חנוכה")
 
-        # ── שבת חול המועד סוכות ──
-        if self._diaspora:
-            is_chm_sukkos = hd.month == 7 and 17 <= hd.day <= 20
-        else:
-            is_chm_sukkos = hd.month == 7 and 16 <= hd.day <= 20
-        if is_chm_sukkos:
-            reasons.append("שבת חול המועד סוכות")
-
-        # ── שבת חול המועד פסח ──
-        if self._diaspora:
-            is_chm_pesach = hd.month == 1 and 17 <= hd.day <= 20
-        else:
-            is_chm_pesach = hd.month == 1 and 16 <= hd.day <= 20
-        if is_chm_pesach:
-            reasons.append("שבת חול המועד פסח")
+        # ── שבת חול המועד (canonical rule; Hoshana Rabbah excluded here —
+        #    a Shabbos can never be HR anyway, but the ranges match the
+        #    original 17/16..20 exactly) ──
+        chm = he.chol_hamoed_day(
+            hd.month, hd.day, diaspora=self._diaspora,
+            include_hoshana_rabbah=False,
+        )
+        if chm is not None:
+            reasons.append(
+                "שבת חול המועד סוכות" if chm[0] == "סוכות" else "שבת חול המועד פסח"
+            )
 
         return reasons
 
     def _shabbos_window(self, friday, saturday) -> tuple[datetime, datetime]:
         """Candle-lighting Friday → havdalah Motzei Shabbos."""
-        fri_sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=friday)
-            .sunset()
-            .astimezone(self._tz)
-        )
-        sat_sunset = (
-            ZmanimCalendar(geo_location=self._geo, date=saturday)
-            .sunset()
-            .astimezone(self._tz)
-        )
+        fri_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=friday)
+        sat_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=saturday)
         on_time = _round_half_up(fri_sunset - timedelta(minutes=self._candle))
         off_time = _round_ceil(sat_sunset + timedelta(minutes=self._havdalah))
         return on_time, off_time

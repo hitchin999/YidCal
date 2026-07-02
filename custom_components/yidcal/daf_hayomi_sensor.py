@@ -17,7 +17,8 @@ Attributes:
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
@@ -172,8 +173,16 @@ class DafHaYomiSensor(YidCalDisplayDevice, SensorEntity):
             )
         )
 
+
+    def _today_local(self):
+        """Civil date in the integration's configured timezone — NOT the
+        host clock (Docker-on-UTC installs rolled the sensor hours early)."""
+        cfg = (self.hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
+        tzname = cfg.get("tzname", getattr(self.hass.config, "time_zone", None)) or "UTC"
+        return datetime.now(ZoneInfo(tzname)).date()
+
     async def async_update(self, now=None) -> None:
-        today = date.today()
+        today = self._today_local()
         heb_name, eng_name, daf, daf_heb, cycle_num, day_in_cycle = compute_daf_yomi(today)
 
         self._state = f"{heb_name} דף {daf_heb}"

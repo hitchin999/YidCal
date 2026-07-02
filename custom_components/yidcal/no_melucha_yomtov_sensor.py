@@ -11,21 +11,15 @@ from homeassistant.core import HomeAssistant
 
 from hdate import HDateInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .const import DOMAIN
 from .device import YidCalDevice
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
@@ -85,7 +79,7 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
     # ---- helpers ----
 
     def _sunset(self, d) -> datetime:
-        return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+        return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
     def _get_effective_early_yomtov_start(self, erev_date):
         """

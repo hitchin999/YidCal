@@ -1,6 +1,7 @@
 # custom_components/yidcal/parsha_sensor.py
 from __future__ import annotations
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from .device import YidCalDevice
 from .const import DOMAIN
 
@@ -57,7 +58,7 @@ class ParshaSensor(YidCalDevice, SensorEntity):
         we ran. If so, recalculate Parsha. This guarantees that if you manually
         jump the system clock, within 60 seconds the sensor will update.
         """
-        today = date.today()
+        today = self._today_local()
         # If we haven't calculated today yet, or if the date rolled over, update.
         if self._last_calculated_date != today:
             await self._update_state()
@@ -135,9 +136,17 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             combined = combined.replace("מצורע", "טהרה")
         return combined
 
+
+    def _today_local(self):
+        """Civil date in the integration's configured timezone — NOT the
+        host clock (Docker-on-UTC installs rolled the sensor hours early)."""
+        cfg = (self.hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
+        tzname = cfg.get("tzname", getattr(self.hass.config, "time_zone", None)) or "UTC"
+        return datetime.now(ZoneInfo(tzname)).date()
+
     async def _update_state(self) -> None:
         """Recompute which Parsha applies based on the upcoming Shabbat."""
-        today = date.today()
+        today = self._today_local()
         self._last_calculated_date = today
 
         # Find the next Saturday (weekday==5)

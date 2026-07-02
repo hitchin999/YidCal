@@ -25,45 +25,37 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.core import callback
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from .zman_sensors import get_geo
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    round_half_up as _round_half_up,
+    round_ceil as _round_ceil,
+    sunset_for_date,
+    dawn_for_date,
+)
 
 from .device import YidCalDevice
 from .holiday_sensor import HolidaySensor
 from .const import DOMAIN
 
-def _round_half_up(local_dt: dt.datetime) -> dt.datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if local_dt.second >= 30:
-        local_dt += timedelta(minutes=1)
-    return local_dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(local_dt: dt.datetime) -> dt.datetime:
-    """Always bump up to the *next* minute."""
-    return (local_dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
 def _alos_mga_72_for_date(geo, base_date: dt.date, tz: ZoneInfo) -> dt.datetime:
     """
     MGA alos = sunrise(base_date) - 72 minutes.
     Rounded half-up to minute, matching AlosSensor/HolidaySensor style.
+    (Shared cached zmanim — rounding helpers imported from zman_compute.)
     """
-    cal = ZmanimCalendar(geo_location=geo, date=base_date)
-    sunrise = cal.sunrise().astimezone(tz)
-    alos = sunrise - timedelta(minutes=72)
-    if alos.second >= 30:
-        alos += timedelta(minutes=1)
-    return alos.replace(second=0, microsecond=0)
+    return _round_half_up(dawn_for_date(geo=geo, tz=tz, base_date=base_date))
 
-
-def _is_hebrew_leap(year: int) -> bool:
-    # Leap years are years 3,6,8,11,14,17,19 of the 19-year cycle
-    return ((7 * year + 1) % 19) < 7
 
 _LOGGER = logging.getLogger(__name__)
 
 class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
+    # Self-driven (minute guard + 15-min interval + midnight snap). Without
+    # this, HA's default 30-second entity poller re-ran the full horizon
+    # simulation twice a minute.
+    _attr_should_poll = False
+
     _attr_name = "Upcoming Holiday"
     _attr_icon = "mdi:calendar-clock"
 
@@ -95,6 +87,10 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Read mode (diaspora vs EY) from config
         cfg = hass.data.get(DOMAIN, {}).get("config", {})
         self._diaspora: bool = cfg.get("diaspora", True)
+
+        # Crossing-check memory for the cheap minute guard.
+        self._guard_last_now: Optional[dt.datetime] = None
+        self._guard_hal_date: Optional[dt.date] = None
 
         # Base of all boolean flags (False), pruned to the current mode
         self._all_flags_template: Dict[str, bool] = {name: False for name in self._allowed_names()}
@@ -131,6 +127,33 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             self.hass, self._handle_midnight, hour=0, minute=2, second=0
         )
         self.async_on_remove(self._unsub_midnight)
+
+        # Cheap minute guard: detects the halachic-date flip and manual
+        # clock jumps within 60s; heavy horizon simulation runs only when
+        # something actually changed.
+        self._unsub_guard = async_track_time_change(
+            self.hass, self._handle_minute_guard, second=30
+        )
+        self.async_on_remove(self._unsub_guard)
+
+    async def _handle_minute_guard(self, now) -> None:
+        try:
+            tz = ZoneInfo(self.hass.config.time_zone)
+            now_l = dt.datetime.now(tz)
+            last = self._guard_last_now
+            self._guard_last_now = now_l
+            stepped = (
+                last is None
+                or now_l < last
+                or (now_l - last) > timedelta(seconds=90)
+            )
+            hal = await self._halachic_date_for(now_l, tz)
+            flipped = self._guard_hal_date is not None and hal != self._guard_hal_date
+            civil_rolled = last is not None and now_l.date() != last.date()
+            if stepped or flipped or civil_rolled:
+                self.async_schedule_update_ha_state(True)
+        except Exception:  # noqa: BLE001 — guard must never kill the tick
+            pass
 
     @callback
     def _handle_interval(self, now) -> None:
@@ -187,36 +210,22 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             return hd.month == 7 and hd.day == 2
 
         def match_17tammuz(d: dt.date) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            y = hd.year
-            d17 = PHebrewDate(y, 4, 17).to_pydate()
-            observed = d17 if d17.weekday() != 5 else (d17 + timedelta(days=1))
-            return d == observed
+            return d == he.shiva_asar_btamuz_observed(PHebrewDate.from_pydate(d).year)
 
         def match_9av(d: dt.date) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            y = hd.year
-            d9 = PHebrewDate(y, 5, 9).to_pydate()
-            observed = d9 if d9.weekday() != 5 else (d9 + timedelta(days=1))
-            return d == observed
+            return d == he.tisha_bav_observed(PHebrewDate.from_pydate(d).year)
 
         def match_lag(d: dt.date) -> bool:
             hd = PHebrewDate.from_pydate(d)
             return hd.month == 2 and hd.day == 18 and d.weekday() != 5  # no motzaei if Shabbos
 
         def match_chanukah(d: dt.date) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            first_day = PHebrewDate(hd.year, 9, 25).to_pydate()
-            last_day = first_day + timedelta(days=7)
             # When day 8 falls on Shabbos, מוצאי חנוכה fires at tzeis Shabbos
             # (= מוצאי שבת). The Shabbos-blocking branch below special-cases this.
-            return d == last_day
+            return he.chanukah_day_for_date(d) == 8
 
         def match_shushan(d: dt.date) -> bool:
-            hd = PHebrewDate.from_pydate(d)
-            target_month = 13 if _is_hebrew_leap(hd.year) else 12
-            d15 = PHebrewDate(hd.year, target_month, 15).to_pydate()
-            observed = d15 if d15.weekday() != 5 else (d15 + timedelta(days=1))
+            observed = he.shushan_purim_observed(PHebrewDate.from_pydate(d).year)
             return d == observed and d.weekday() != 5
 
         matcher_map = {
@@ -248,7 +257,7 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             return False
 
         # Motzaei window
-        sunset_hol = ZmanimCalendar(geo_location=geo, date=holiday_date).sunset().astimezone(tz)
+        sunset_hol = sunset_for_date(geo=geo, tz=tz, base_date=holiday_date)
         motzei_start = _round_ceil(sunset_hol + timedelta(minutes=self._havdalah_offset))
 
         motzei_end = _alos_mga_72_for_date(geo, holiday_date + timedelta(days=1), tz)
@@ -258,13 +267,14 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         fri = holiday_date - timedelta(days=off_from_fri)
         sat = fri + timedelta(days=1)
 
-        fri_sunset = ZmanimCalendar(geo_location=geo, date=fri).sunset().astimezone(tz)
-        sat_sunset = ZmanimCalendar(geo_location=geo, date=sat).sunset().astimezone(tz)
+        fri_sunset = sunset_for_date(geo=geo, tz=tz, base_date=fri)
+        sat_sunset = sunset_for_date(geo=geo, tz=tz, base_date=sat)
 
         shabbos_start = fri_sunset - timedelta(minutes=self._candle_offset)
         shabbos_end = _round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset))
 
         shabbos_blocks = shabbos_start <= motzei_start <= shabbos_end
+
         # If the holiday's last day IS Shabbos, motzei_start lands exactly at
         # Shabbos end (sat_sunset + havdalah) — that's correct, not a block.
         # Applies to every motzei whose matcher returns True for a Saturday
@@ -285,6 +295,7 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # 1) Today's halachic date (flip at sunset + havdalah offset)
         hal_today = await self._halachic_date_for(now, tz)
+        self._guard_hal_date = hal_today
 
         # 2) Find the block start (D0) — prefers current block if we're inside it
         d0_info = await self._find_block_start(hal_today, tz)
@@ -406,8 +417,7 @@ class UpcomingHolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         rounded up to the next minute (to match Holiday/DayType/Date sensors).
         """
         geo = await get_geo(self.hass)
-        cal = ZmanimCalendar(geo_location=geo, date=now.date())
-        sunset_raw = cal.sunset().astimezone(tz)
+        sunset_raw = sunset_for_date(geo=geo, tz=tz, base_date=now.date())
         havdalah_raw = sunset_raw + timedelta(minutes=self._havdalah_offset)
 
         # Use the same rounding convention as HolidaySensor/DayType: Motzei = ceil.

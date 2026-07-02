@@ -26,7 +26,6 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
-from zmanim.zmanim_calendar import ZmanimCalendar
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .device import YidCalSpecialDevice
@@ -35,6 +34,8 @@ from .config_flow import CONF_SLICHOS_LABEL_ROLLOVER
 from .config_flow import DEFAULT_SLICHOS_LABEL_ROLLOVER
 from .zman_sensors import get_geo
 from .yidcal_lib.helper import int_to_hebrew  # existing util in YidCal
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import sunset_for_date  # shared cached zmanim
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,8 +136,7 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
 
         # -------------------------------------------------------------------
         # Determine festival date (after Havdalah roll‑over)
-        cal_today = ZmanimCalendar(geo_location=geo, date=actual_date)
-        sunset_today = cal_today.sunset().astimezone(tz)
+        sunset_today = sunset_for_date(geo=geo, tz=tz, base_date=actual_date)
         havdalah_cut_today = sunset_today + timedelta(minutes=self._havdalah_offset)
         festival_date = (
             actual_date + timedelta(days=1) if now >= havdalah_cut_today else actual_date
@@ -156,18 +156,14 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
             alef_shabbos -= timedelta(days=7)
 
         alef_start = (
-            ZmanimCalendar(geo_location=geo, date=alef_shabbos)
-            .sunset()
-            .astimezone(tz)
+            sunset_for_date(geo=geo, tz=tz, base_date=alef_shabbos)
             + timedelta(minutes=self._havdalah_offset)
         )
 
         # ------------------------------------------------ Erev YK candle‑lighting
         erev_yk_greg = PHebrewDate(target_year, 7, 9).to_pydate()
         erev_yk_candle = (
-            ZmanimCalendar(geo_location=geo, date=erev_yk_greg)
-            .sunset()
-            .astimezone(tz)
+            sunset_for_date(geo=geo, tz=tz, base_date=erev_yk_greg)
             - timedelta(minutes=self._candle_offset)
         )
 
@@ -179,30 +175,22 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
         saturday = friday + timedelta(days=1)
 
         shabbos_start = (
-            ZmanimCalendar(geo_location=geo, date=friday)
-            .sunset()
-            .astimezone(tz)
+            sunset_for_date(geo=geo, tz=tz, base_date=friday)
             - timedelta(minutes=self._candle_offset)
         )
         shabbos_end = (
-            ZmanimCalendar(geo_location=geo, date=saturday)
-            .sunset()
-            .astimezone(tz)
+            sunset_for_date(geo=geo, tz=tz, base_date=saturday)
             + timedelta(minutes=self._havdalah_offset)
         )
         excluded_shabbos = shabbos_start <= now < shabbos_end
 
         tishrei2_greg = tishrei1_greg + timedelta(days=1)
         rh_start = (
-            ZmanimCalendar(geo_location=geo, date=tishrei1_greg - timedelta(days=1))
-            .sunset()
-            .astimezone(tz)
+            sunset_for_date(geo=geo, tz=tz, base_date=tishrei1_greg - timedelta(days=1))
             - timedelta(minutes=self._candle_offset)
         )
         rh_end = (
-            ZmanimCalendar(geo_location=geo, date=tishrei2_greg)
-            .sunset()
-            .astimezone(tz)
+            sunset_for_date(geo=geo, tz=tz, base_date=tishrei2_greg)
             + timedelta(minutes=self._havdalah_offset)
         )
         excluded_rosh_hashanah = rh_start <= now < rh_end
@@ -224,19 +212,9 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
 
         # Anchor dates
         erev_rh_greg = tishrei1_greg - timedelta(days=1)
-        # Tzom Gedaliah is on 3 Tishrei, pushed to 4 Tishrei when 3 Tishrei
-        # falls on Shabbos (which happens when Rosh Hashana day 1 is Thursday).
-        # Previously this checked tishrei1_greg.weekday()==5, which
-        # mis-classified RH=Thursday years (real fast pushed to 4 Tishrei but
-        # the check missed it) and RH=Saturday years (3 Tishrei is Monday so
-        # no push needed, but the check wrongly forced one). Matches the rule
-        # used in holiday_sensor.py lines 731-734.
-        three_tishrei_greg = tishrei1_greg + timedelta(days=2)
-        tzom_gedaliah_greg = (
-            three_tishrei_greg
-            if three_tishrei_greg.weekday() != 5  # 3 Tishrei not Shabbos
-            else three_tishrei_greg + timedelta(days=1)  # postponed to 4 Tishrei
-        )
+        # Canonical observed Tzom Gedaliah (3 Tishrei, pushed to Sunday
+        # 4 Tishrei when 3 Tishrei is Shabbos) — single source of truth.
+        tzom_gedaliah_greg = he.tzom_gedaliah_observed(target_year)
 
         # ---- 13 Middos overrides everything else
         if _is_xiiimiddos(hd_today, weekday):
@@ -253,6 +231,8 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
         # ---- Aseres-Yemei-Teshuvah numbering (after the fast, before Erev YK)
         elif hd_today.month == 7 and tzom_gedaliah_greg < today < erev_yk_greg:
             # Day-1 = Tzom Gedaliah itself (3 Tishrei)
+            cnt = 1
+            d = tzom_gedaliah_greg + timedelta(days=1)     # start with 4 Tishrei
             # Skip incrementing on:
             #   - Shabbos Shuvah (no slichos that day)
             #   - The 13-middos override day, since the override has already
@@ -262,8 +242,6 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
             #     duplicating "חמישי". In normal years (RH=Mon/Tue/Thu) the
             #     override is on day 5 = the last AYT day, so this skip is a
             #     no-op there.
-            cnt = 1
-            d = tzom_gedaliah_greg + timedelta(days=1)     # start with 4 Tishrei
             while d <= today:
                 hd_d = PHebrewDate.from_pydate(d)
                 if d.weekday() != 5 and not _is_xiiimiddos(hd_d, d.weekday()):

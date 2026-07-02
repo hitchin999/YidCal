@@ -63,10 +63,16 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
         diaspora = cfg.get("diaspora", True)
         is_in_israel = not diaspora
 
+        # Pass the date in the CONFIGURED timezone explicitly (host clock
+        # differs on Docker-on-UTC installs).
+        from zoneinfo import ZoneInfo as _ZoneInfo
+        tzname = cfg.get("tzname", getattr(self.hass.config, "time_zone", None)) or "UTC"
+        today_local = datetime.now(_ZoneInfo(tzname)).date()
+
         try:
-            raw = specials.get_special_shabbos_name(is_in_israel=is_in_israel)
+            raw = specials.get_special_shabbos_name(today=today_local, is_in_israel=is_in_israel)
         except TypeError:
-            raw = specials.get_special_shabbos_name()
+            raw = specials.get_special_shabbos_name(today_local)
 
         self._attr_native_value = raw or ""
 

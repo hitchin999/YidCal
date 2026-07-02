@@ -10,21 +10,16 @@ from homeassistant.util import dt as dt_util
 
 from hdate import HDateInfo
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
-from zmanim.zmanim_calendar import ZmanimCalendar
 
 from .const import DOMAIN
+from .yidcal_lib import halacha_events as he
 from .device import YidCalSpecialDevice
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
@@ -74,14 +69,9 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
 
     def _festival_date(self, now: datetime) -> datetime.date:
         """Halachic date that rolls at havdalah (sunset + havdalah_offset)."""
-        cal_today = ZmanimCalendar(geo_location=self._geo, date=now.date())
-        sunset = cal_today.sunset().astimezone(self._tz)
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=now.date())
         havdalah_cut = sunset + timedelta(minutes=self._havdalah)
         return (now.date() + timedelta(days=1)) if now >= havdalah_cut else now.date()
-
-    @staticmethod
-    def _is_leap(hebrew_year: int) -> bool:
-        return ((hebrew_year * 7 + 1) % 19) < 7
 
     def _is_shabbos(self, d: datetime.date) -> bool:
         return d.weekday() == 5
@@ -93,7 +83,6 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         """Whether the HALACHIC day d qualifies (before Shabbos/YT exclusions)."""
         hd = PHebrewDate.from_pydate(d)
         m, day, y = hd.month, hd.day, hd.year
-        is_leap = self._is_leap(y)
 
         # Rosh Chodesh (excluding 1 Tishrei)
         is_rc = (day in (1, 30)) and not (m == 7 and day == 1)
@@ -102,26 +91,13 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         # 8 days regardless of Kislev length. In Kislev=29 years (e.g. 5790,
         # 5793, 5797, 5812), Chanukah day 8 is 3 Tevet, which the old
         # month/day-range check (m==10 and day in (1,2)) missed.
-        try:
-            chanukah_start = PHebrewDate(y, 9, 25).to_pydate()
-            days_into_chanukah = (d - chanukah_start).days
-            is_chanukah = 0 <= days_into_chanukah <= 7
-        except Exception:
-            is_chanukah = False
+        is_chanukah = he.chanukah_day_for_date(d) is not None
 
-        # Chol Hamoed (diaspora/EY differ, and we include הושענא רבה)
-        if self._diaspora:
-            # Pesach: 17–20  | Sukkos: 17–21 (includes הושענא רבה)
-            is_chm_pesach = (m == 1 and 17 <= day <= 20)
-            is_chm_sukkos = (m == 7 and 17 <= day <= 21)
-        else:
-            # Pesach: 16–20  | Sukkos: 16–21 (includes הושענא רבה)
-            is_chm_pesach = (m == 1 and 16 <= day <= 20)
-            is_chm_sukkos = (m == 7 and 16 <= day <= 21)
-        is_chm = is_chm_pesach or is_chm_sukkos
+        # Chol Hamoed — canonical rule (halacha_events), Hoshana Rabbah included.
+        is_chm = he.chol_hamoed_day(m, day, diaspora=self._diaspora) is not None
 
         # Purim (Adar II in leap years)
-        is_purim = (m == (13 if is_leap else 12) and day == 14)
+        is_purim = (m == he.real_adar_month(y) and day == 14)
 
         # Tisha B'Av incl. nidcheh (10 Av when 9 Av is Shabbos)
         av9_wd = PHebrewDate(y, 5, 9).to_pydate().weekday()

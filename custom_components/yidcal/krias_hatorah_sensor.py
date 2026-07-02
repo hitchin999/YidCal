@@ -9,7 +9,6 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
-from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from pyluach.parshios import getparsha, PARSHIOS_HEBREW
@@ -23,6 +22,14 @@ from homeassistant.util import dt as dt_util
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
 from .zman_sensors import get_geo
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    chatzos_hayom_for_date,
+    dawn_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .data.krias_hatorah_data import (
     PARSHIYOT, ENGLISH_TO_HEBREW_PARSHA, CHANUKAH_READINGS, ROSH_CHODESH_READING,
     FAST_DAY_READING, YOM_KIPPUR_READINGS, TISHA_BAV_READINGS, ROSH_HASHANAH_READINGS,
@@ -36,17 +43,6 @@ _LOGGER = logging.getLogger(__name__)
 
 # Hebrew numerals for sefer count
 HEBREW_NUMERALS = {1: "א'", 2: "ב'", 3: "ג'"}
-
-def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
-    """Round to nearest minute (<30s floor, ≥30s ceil)."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    """Always bump to the next minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 @dataclass
@@ -225,11 +221,12 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             idxs = getparsha(hd_shabbos, israel=not self._diaspora)
             
             if not idxs and wd != 5:
-                # Tishrei (Sukkos area) → look backward
-                if hd_shabbos.month == 7 and hd_shabbos.day >= 15:
-                    prev_shabbos = shabbos_date - timedelta(days=7)
-                    hd_prev = PHebrewDate.from_pydate(prev_shabbos)
-                    idxs = getparsha(hd_prev, israel=not self._diaspora)
+                # Tishrei parsha gap: per the luach rule, weekday (Mon/Thu)
+                # kriah from after the last pre-Sukkos parsha until Simchas
+                # Torah is וזאת הברכה — NOT the previous week's parsha and
+                # NOT Bereishis.
+                if hd_shabbos.month == 7:
+                    return "וזאת הברכה"
                 else:
                     # Pesach / Shavuos / other → look forward
                     scan = shabbos_date + timedelta(days=7)
@@ -285,51 +282,28 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         return hd.day in (1, 30)
 
     def _get_chanukah_day(self, hd: PHebrewDate) -> int | None:
-        try:
-            chan_first = PHebrewDate(hd.year, 9, 25).to_pydate()
-            days = (hd.to_pydate() - chan_first).days
-            return days + 1 if 0 <= days <= 7 else None
-        except:
-            return None
+        # canonical Chanukah day-counting (Kislev 29/30-safe)
+        return he.chanukah_day_for_date(hd.to_pydate())
 
     def _is_purim(self, hd: PHebrewDate) -> bool:
-        is_leap = ((hd.year * 7 + 1) % 19) < 7
-        adar = 13 if is_leap else 12
-        return hd.month == adar and hd.day == 14
+        return hd.month == he.real_adar_month(hd.year) and hd.day == 14
 
     def _get_fast_info(self, hd: PHebrewDate, wd: int) -> tuple[bool, str | None, bool]:
+        # canonical observed-fast rules from halacha_events
+        d = hd.to_pydate()
         year = hd.year
-        is_leap = ((year * 7 + 1) % 19) < 7
-        adar = 13 if is_leap else 12
-        gedaliah_day = 4 if PHebrewDate(year, 7, 3).to_pydate().weekday() == 5 else 3
-        if hd.month == 7 and hd.day == gedaliah_day:
+        if d == he.tzom_gedaliah_observed(year):
             return True, "צום גדליה", False
-        if hd.month == 10 and hd.day == 10:
+        if d == he.asara_bteves_observed(year):
             return True, "צום עשרה בטבת", False
-        if hd.month == adar and hd.day == 13 and wd != 5:
+        if d == he.taanis_esther_observed(year):
             return True, "תענית אסתר", False
-        if hd.month == adar and hd.day == 11 and wd == 3:
-            try:
-                if PHebrewDate(year, adar, 13).to_pydate().weekday() == 5:
-                    return True, "תענית אסתר", False
-            except:
-                pass
-        if hd.month == 4 and hd.day == 17 and wd != 5:
+        if d == he.shiva_asar_btamuz_observed(year):
             return True, "צום שבעה עשר בתמוז", False
-        if hd.month == 4 and hd.day == 18 and wd == 6:
-            try:
-                if PHebrewDate(year, 4, 17).to_pydate().weekday() == 5:
-                    return True, "צום שבעה עשר בתמוז", False
-            except:
-                pass
-        if hd.month == 5 and hd.day == 9 and wd != 5:
+        if d == he.tisha_bav_observed(year):
+            if he.is_tisha_bav_nidche(year):
+                return True, "תשעה באב נדחה", True
             return True, "תשעה באב", True
-        if hd.month == 5 and hd.day == 10 and wd == 6:
-            try:
-                if PHebrewDate(year, 5, 9).to_pydate().weekday() == 5:
-                    return True, "תשעה באב נדחה", True
-            except:
-                pass
         return False, None, False
 
     def _is_yom_kippur(self, hd: PHebrewDate) -> bool:
@@ -363,7 +337,26 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         is_shabbos_chm, chag = self._is_shabbos_chol_hamoed(hd, wd)
         if is_shabbos_chm:
             if chag == "sukkos":
-                return {"key": "shabbos_chol_hamoed_sukkos", "data": SUKKOS_READINGS["shabbos_chol_hamoed"]}
+                # Maftir = the actual day's korbanos (diaspora reads from
+                # יום (d-15), sfeika-d'yoma; EY from יום (d-14)).
+                day_idx = hd.day - 15 if self._diaspora else hd.day - 14
+                openings = {
+                    2: "וביום השני פרים בני בקר",
+                    3: "וביום השלישי עשתי עשר פרים",
+                    4: "וביום הרביעי עשרה פרים",
+                    5: "וביום החמישי תשעה פרים",
+                    6: "וביום הששי שמונה פרים",
+                }
+                base = SUKKOS_READINGS["shabbos_chol_hamoed"]
+                if day_idx in openings:
+                    sifrei = [dict(x) for x in base.get("sifrei_torah", [])]
+                    for x in sifrei:
+                        if x.get("sefer_number") == 2:
+                            x["opening_words"] = openings[day_idx]
+                    data = {**base, "sifrei_torah": sifrei}
+                else:
+                    data = base
+                return {"key": "shabbos_chol_hamoed_sukkos", "data": data}
             elif chag == "pesach":
                 return {"key": "shabbos_chol_hamoed_pesach", "data": PESACH_READINGS["shabbos_chol_hamoed"]}
         if m == 7 and d == 1: return {"key": "rosh_hashanah_1", "data": ROSH_HASHANAH_READINGS["day_1"]}
@@ -410,8 +403,9 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                     override_key = "chol_hamoed_1"
                 elif dia_day == 3 and wd == MONDAY:
                     override_key = "chol_hamoed_2"
-                elif dia_day == 4 and wd == TUESDAY:
-                    override_key = "chol_hamoed_3"
+                # NOTE: day 4 gets NO override — when Shabbos CH"M read
+                # ראה אתה אומר (which contains פסל לך), the weekdays read
+                # קדש / אם כסף / ויעשו (verified vs ZMAN/Grossman 5787).
                 if override_key:
                     override_data = PESACH_READINGS[override_key]
                     data = {**position_data, "sifrei_torah": override_data["sifrei_torah"]}
@@ -503,13 +497,14 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         Returns: (readings_list, has_kriah, sefer_count_max, aliyah_count_max, reason, nasi_reading)
         """
         wd = target_date.weekday()
-        cal = ZmanimCalendar(geo_location=self._geo, date=target_date)
 
         # Raw zmanim
-        alos_raw = cal.sunrise().astimezone(tz) - timedelta(minutes=72)
-        chatzos_raw = cal.chatzos().astimezone(tz)
+        alos_raw = dawn_for_date(geo=self._geo, tz=tz, base_date=target_date)
+        # Chatzos is now the Grossman true solar transit, matching the dedicated
+        # chatzos sensor (was cal.chatzos() midpoint — tiny value change, intentional).
+        chatzos_raw = chatzos_hayom_for_date(geo=self._geo, tz=tz, base_date=target_date)
         mincha_g_raw = chatzos_raw + timedelta(minutes=30)
-        sunset_raw = cal.sunset().astimezone(tz)
+        sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=target_date)
         tzeis_raw = sunset_raw + timedelta(minutes=self._havdalah_offset)
 
         # Rounded, aligned with other YidCal sensors
@@ -543,7 +538,11 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         aliyah_count_max = 0
 
         # SHABBOS
-        if is_shabbos and not yom_tov:
+        # NOTE: is_yom_kippur must be excluded — YK is not in the yom_tov
+        # table, so when YK fell on Shabbos this branch swallowed it and
+        # produced an empty 'פרשת השבוע' with one sefer instead of the YK
+        # kriah with two (YK-Shabbos 5785/5789).
+        if is_shabbos and not yom_tov and not is_yom_kippur:
             has_kriah = True
             sifrei = [{"sefer_number": 1, "opening_words": parsha_info.get("opening_words", ""),
                        "sefer": parsha_info.get("sefer", ""), "parsha_source": weekly_parsha or "",
@@ -594,8 +593,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             if is_simchas_torah_diaspora or is_simchas_torah_israel:
                 # Calculate maariv window (tzeis of previous day until alos)
                 yesterday = target_date - timedelta(days=1)
-                yesterday_cal = ZmanimCalendar(geo_location=self._geo, date=yesterday)
-                yesterday_sunset_raw = yesterday_cal.sunset().astimezone(tz)
+                yesterday_sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=yesterday)
                 yesterday_tzeis = _round_ceil(
                     yesterday_sunset_raw + timedelta(minutes=self._havdalah_offset)
                 )
@@ -618,8 +616,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             if is_hoshana_rabba and self._read_mishne_torah:
                 # Calculate maariv window (tzeis of previous day until alos)
                 yesterday = target_date - timedelta(days=1)
-                yesterday_cal = ZmanimCalendar(geo_location=self._geo, date=yesterday)
-                yesterday_sunset_raw = yesterday_cal.sunset().astimezone(tz)
+                yesterday_sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=yesterday)
                 yesterday_tzeis = _round_ceil(
                     yesterday_sunset_raw + timedelta(minutes=self._havdalah_offset)
                 )
@@ -640,8 +637,10 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
             has_kriah = True
             yk_s = YOM_KIPPUR_READINGS["shacharis"]
             sefer_torah_count_max = len(yk_s["sifrei_torah"])
-            aliyah_count_max = 6
-            shacharis = self._build_reading("שחרית", yk_s["display_title"], yk_s["reason"], yk_s["aliyah_count"],
+            # On Shabbos-YK the shacharis kriah is divided into 7 aliyos.
+            aliyah_count_max = 7 if is_shabbos else 6
+            shacharis = self._build_reading("שחרית", yk_s["display_title"], yk_s["reason"],
+                                            7 if is_shabbos else yk_s["aliyah_count"],
                                             yk_s["has_maftir"], yk_s["sifrei_torah"], shacharis_start, shacharis_end)
             readings.append(shacharis)
             yk_m = YOM_KIPPUR_READINGS["mincha"]
@@ -798,8 +797,7 @@ class KriasHaTorahSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
         # --- Halachic cutover (tzeis/havdalah) for DISPLAY ONLY ---
         def _havdalah_cutover(d: datetime.date) -> datetime.datetime:
-            cal = ZmanimCalendar(geo_location=self._geo, date=d)
-            sunset_raw = cal.sunset().astimezone(tz)
+            sunset_raw = sunset_for_date(geo=self._geo, tz=tz, base_date=d)
             return _round_ceil(sunset_raw + timedelta(minutes=self._havdalah_offset))
 
         havdalah_today = await self.hass.async_add_executor_job(_havdalah_cutover, civil_today)

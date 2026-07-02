@@ -24,18 +24,14 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 
 from .device import YidCalSpecialDevice
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    chatzos_hayom_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-from zmanim.zmanim_calendar import ZmanimCalendar
-
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-
-def _round_ceil(dt: datetime) -> datetime:
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0) if dt.second or dt.microsecond else dt
 
 
 class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
@@ -74,21 +70,17 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
 
     # ---- helpers ----
     def _tzeis_on(self, greg_date) -> datetime:
-        """Use ZmanimCalendar sunset + havdalah offset for consistency with the rest of YidCal."""
-        cal = ZmanimCalendar(geo_location=self._geo, date=greg_date)
-        sunset = cal.sunset().astimezone(self._tz)
+        """Shared cached sunset + havdalah offset for consistency with the rest of YidCal."""
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=greg_date)
         return sunset + timedelta(minutes=self._havdalah)
 
     def _compute_chatzos_for_date(self, base_date) -> datetime:
-        """Match ChatzosHayomSensor exactly: MGA day (sr-72/ss+72) with round-half-up."""
+        """Match ChatzosHayomSensor exactly: Grossman true solar transit, round-half-up."""
         assert self._geo is not None
-        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        sunrise = cal.sunrise().astimezone(self._tz)
-        sunset  = cal.sunset().astimezone(self._tz)
-        dawn      = sunrise - timedelta(minutes=72)
-        nightfall = sunset  + timedelta(minutes=72)
-        target = dawn + (nightfall - dawn) / 12 * 6
-        return _round_half_up(target)
+        # Now the Grossman transit matching the dedicated chatzos sensor (tiny value change, intentional).
+        return _round_half_up(
+            chatzos_hayom_for_date(geo=self._geo, tz=self._tz, base_date=base_date)
+        )
 
     def _activation_logic_text(self) -> str:
         return (
@@ -109,17 +101,17 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
 
         # Current year's window
         av1   = HebrewDate(year, 5, 1).to_pydate()
-        av9   = HebrewDate(year, 5, 9).to_pydate()
         av10  = HebrewDate(year, 5, 10).to_pydate()
 
         on_time  = _round_half_up(self._tzeis_on(av1 - timedelta(days=1)))
-        is_nidche = (av9.weekday() == 5)
+        is_nidche = he.is_tisha_bav_nidche(year)  # canonical nidche rule
         self._nidche_year = is_nidche
 
         if is_nidche:
             off_time = _round_ceil(self._tzeis_on(av10))
         else:
-            off_time = _round_ceil(self._compute_chatzos_for_date(av10))
+            # chatzos is already minute-exact — no ceil wrapper needed
+            off_time = self._compute_chatzos_for_date(av10)
 
         # State
         in_window = (on_time <= now < off_time)
@@ -140,15 +132,15 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
             # next year's window
             next_year = year + 1
             av1n  = HebrewDate(next_year, 5, 1).to_pydate()
-            av9n  = HebrewDate(next_year, 5, 9).to_pydate()
             av10n = HebrewDate(next_year, 5, 10).to_pydate()
         
-            nidche_for_next = (av9n.weekday() == 5)
+            nidche_for_next = he.is_tisha_bav_nidche(next_year)  # canonical nidche rule
             next_on = _round_half_up(self._tzeis_on(av1n - timedelta(days=1)))
             if nidche_for_next:
                 next_off = _round_ceil(self._tzeis_on(av10n))
             else:
-                next_off = _round_ceil(self._compute_chatzos_for_date(av10n))
+                # chatzos is already minute-exact — no ceil wrapper needed
+                next_off = self._compute_chatzos_for_date(av10n)
         
         self._next_window_start = next_on
         self._next_window_end   = next_off

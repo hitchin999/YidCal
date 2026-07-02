@@ -133,3 +133,157 @@ set_yurtzeit_custom:
           name: 'רבי פלוני זי״ע'
       selector:
         object:
+
+generate_luach:
+  name: Generate Luach (PDF)
+  description: >
+    Generate a printable luach (Jewish calendar) PDF for a given date
+    range. The PDF is written to /config/www/yidcal-data/ and a
+    persistent notification is fired with a direct download link.
+    Requires "Generate Luach PDF" to be enabled in Settings → Devices
+    & Services → YidCal → Configure → General.
+  fields:
+    style:
+      name: Style
+      description: >
+        Layout style. "Yearly (Multi Sheet)" (default) produces a
+        multi-page table with one row per candle-lighting event.
+        "Yearly (Single Sheet)" produces a single-page two-column
+        layout covering the entire Hebrew year (the "hebrew_year"
+        field is optional — leave it blank to use the current Hebrew
+        year; rejects start_date / end_date).
+      required: false
+      default: yearly_multi_page
+      selector:
+        select:
+          custom_value: true
+          options:
+            - value: "yearly_multi_page"
+              label: "Yearly (Multi Sheet)"
+            - value: "yearly_sheet"
+              label: "Yearly (Single Sheet)"
+    hebrew_year:
+      name: Hebrew year (full-year shortcut)
+      description: >-
+        For the yearly styles this generates the whole Hebrew year.
+        Enter the Hebrew year as a number (e.g. 5787 for תשפ״ז, 5788
+        for תשפ״ח). Generates a full year of luach — from Tishrei 1 of
+        the given year through Tishrei 2 of the following year (matching
+        the printed-luach convention). When provided, overrides
+        start_date and end_date. Leave blank for the default: for the
+        "Yearly (Single Sheet)" style this is the CURRENT Hebrew year;
+        for the other styles it is today → ב׳ תשרי of the next Hebrew
+        year.
+      required: false
+      example: 5787
+      selector:
+        number:
+          min: 5780
+          max: 5900
+          mode: box
+    start_date:
+      name: Start date
+      description: >
+        First civil date to include. Defaults to today.
+      required: false
+      example: "2026-05-08"
+      selector:
+        date:
+    end_date:
+      name: End date
+      description: >
+        Last civil date to include. Defaults to ב׳ תשרי of the next
+        Hebrew year (matches the standard printed-luach end-point).
+      required: false
+      example: "2026-09-20"
+      selector:
+        date:
+    location:
+      name: Location (optional)
+      description: >
+        Free-form location override (ZIP code, city, landmark). Geocoded
+        via Nominatim. When omitted, the integration uses Home Assistant's
+        configured home location.
+      required: false
+      example: "Monsey, NY"
+      selector:
+        text:
+    is_in_israel:
+      name: Generate for Israel (optional)
+      description: >
+        Override the diaspora setting for this single PDF. Set to true
+        when generating a luach for a location in Eretz Yisroel (one-day
+        yom tov, different parsha around Pesach in some years) or to
+        false when generating a diaspora luach from a YidCal instance
+        configured for Israel. When omitted, the integration's
+        configured "Is in Israel" setting is used.
+      required: false
+      example: false
+      selector:
+        boolean:
+    candle_offset:
+      name: Candle lighting offset (minutes before sunset)
+      description: >
+        Minutes before sunset to light candles. Common values are 15
+        (most NY/NJ communities), 18 (Chabad), 20 (Yerushalayim), 40
+        (Yerushalayim minhag for some). Leave blank to use the
+        integration's configured default.
+      required: false
+      example: 15
+      selector:
+        number:
+          min: 0
+          max: 40
+          unit_of_measurement: min
+          mode: box
+    havdalah_offset:
+      name: Motzei (havdalah) offset (minutes after sunset)
+      description: >
+        Minutes after sunset for motzei shabbos / yom tov. 72 = שיטת
+        ר״ת (most chassidish minhag). Other common values: 50, 60, 42.
+        Leave blank to use the integration's configured default.
+      required: false
+      example: 72
+      selector:
+        number:
+          min: 30
+          max: 120
+          unit_of_measurement: min
+          mode: box
+    add_seconds:
+      name: Show seconds in the grid
+      description: >
+        Advanced. When enabled, daily-zmanim GRID columns (card layouts)
+        print the exact (un-rounded) time including seconds — e.g.
+        9:14:37 instead of 9:14. Candle lighting, motzei / havdalah and
+        the header time boxes are NOT affected — they keep their normal
+        rounded times. Has no effect on the yearly styles. Leave off
+        for the standard rounded display.
+      required: false
+      example: true
+      selector:
+        boolean:
+    output_path:
+      name: Output path (optional)
+      description: >
+        Custom filename or absolute path. Relative paths resolve under
+        /config/www/yidcal-data/. When omitted, a timestamped filename
+        is used automatically.
+      required: false
+      example: "my_luach.pdf"
+      selector:
+        text:
+    emit_json:
+      name: Also write a JSON data file (optional)
+      description: >
+        When enabled, a sidecar JSON file with the structured luach
+        data is written next to the PDF (same path, ".json"
+        extension) — e.g. a dashboard/Lovelace card can fetch and
+        parse it instead of embedding the PDF. Default: off. Tip:
+        combine with a fixed "output_path" (e.g. "luach_dashboard.pdf")
+        so the JSON is always at a predictable
+        /local/yidcal-data/luach_dashboard.json URL.
+      required: false
+      default: false
+      selector:
+        boolean:

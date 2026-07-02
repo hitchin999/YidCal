@@ -13,10 +13,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from zmanim.zmanim_calendar import ZmanimCalendar
-
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
+from .yidcal_lib.zman_compute import (
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,16 +70,6 @@ def _hebrew_day_label(i: int, diaspora: bool) -> str:
             return "הושענא רבה"
         return f"{('א','ב','ג','ד','ה')[i-1]}׳ דחול המועד"
 
-def _round_half_up(dt: datetime.datetime) -> datetime.datetime:
-    """Round to nearest minute: <30s → floor, ≥30s → ceil."""
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-def _round_ceil(dt: datetime.datetime) -> datetime.datetime:
-    """Always bump to the next minute (Motzi-style)."""
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
 # ------------------------------- Sensor --------------------------------------
 
 class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
@@ -109,7 +102,7 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
     def _sunset_on(self, d: date) -> datetime.datetime:
         """Zmanim sunset using shared geo."""
-        return ZmanimCalendar(geo_location=self._geo, date=d).sunset().astimezone(self._tz)
+        return sunset_for_date(geo=self._geo, tz=self._tz, base_date=d)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -124,7 +117,7 @@ class IshpizinSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
                     self._attr_extra_state_attributes[key] = last.attributes.get(key, "false")
 
         await self.async_update()
-        async_track_time_interval(self.hass, self.async_update, timedelta(minutes=1))
+        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         if not self._geo:

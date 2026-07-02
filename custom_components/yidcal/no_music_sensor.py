@@ -2,8 +2,6 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
-from astral import LocationInfo
-from astral.sun import sun
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -12,17 +10,14 @@ from pyluach.hebrewcal import HebrewDate
 
 from .const import DOMAIN
 from .device import YidCalSpecialDevice
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import (
+    chatzos_hayom_for_date,
+    round_ceil as _round_ceil,
+    round_half_up as _round_half_up,
+    sunset_for_date,
+)
 from .zman_sensors import get_geo
-from zmanim.zmanim_calendar import ZmanimCalendar
-
-def _round_half_up(dt: datetime) -> datetime:
-    if dt.second >= 30:
-        dt += timedelta(minutes=1)
-    return dt.replace(second=0, microsecond=0)
-
-def _round_ceil(dt: datetime) -> datetime:
-    # always round up to the next minute if any seconds/micros are present
-    return (dt + timedelta(minutes=1)).replace(second=0, microsecond=0) if (dt.second or dt.microsecond) else dt
 
 class NoMusicSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
     _attr_name = "No Music"
@@ -42,7 +37,7 @@ class NoMusicSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
         self._diaspora = cfg.get("diaspora", True)
-        self._geo = None  # for ZmanimCalendar (used for Chatzos like ChatzosHayomSensor)
+        self._geo = None  # for shared zmanim helpers (used for Chatzos like ChatzosHayomSensor)
 
         self._in_sefirah: bool = False
         self._in_three_weeks: bool = False
@@ -63,54 +58,41 @@ class NoMusicSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
-    def _loc(self) -> LocationInfo:
-        # astral helper for tzeis (sunset + havdalah offset)
-        return LocationInfo(
-            latitude=self.hass.config.latitude,
-            longitude=self.hass.config.longitude,
-            timezone=self._tz.key,
-        )
-
     def _dt_at_start_of_day(self, d) -> datetime:
         return datetime.combine(d, time(0, 0, 0), tzinfo=self._tz)
 
     def _omer_day(self, hd: HebrewDate) -> int:
-        if hd.month == 1 and hd.day >= 16:  # Nisan 16-30
-            return hd.day - 15
-        if hd.month == 2:                   # Iyar
-            return 15 + hd.day
-        # Sivan 1-5: 1→45, 2→46, 3→47, 4→48, 5→49.
-        # Was previously `45 + hd.day` with `day <= 4`, which mapped Sivan 1→46,
-        # Sivan 2→47 (treated as allowed הגבלה day, ending the sefirah window
-        # a full day early), and missed Sivan 5 entirely. Fixed to 44+day with
-        # day <= 5, matching yidcal_lib/sfirah_helper._get_raw_omer_day.
-        if hd.month == 3 and hd.day <= 5:
-            return 44 + hd.day
-        return 0
+        """Canonical omer count (halacha_events.omer_day_for).
+
+        BUG #16 FIX: the old local arithmetic used ``45 + day`` for Sivan
+        (should be ``44 + day``), so true omer 46 (2 Sivan) was treated as
+        47 → the sefirah no-music window ended one day before שלושת ימי
+        הגבלה. sfirah_helper (the public counter) always had the correct
+        ``44 + day``; no_music now matches it.
+        """
+        return he.omer_day_for(hd.to_pydate()) or 0
 
     def _is_omer_prohibited(self, day: int) -> bool:
         # Prohibited: 1–32 and 34–46; Allowed: 33 and 47–49
         return (1 <= day <= 32) or (34 <= day <= 46)
 
     def _tzeis_on(self, greg_date) -> datetime:
-        tz = self._tz
-        s = sun(self._loc().observer, date=greg_date, tzinfo=tz)
-        return s["sunset"] + timedelta(minutes=self._havdalah)
+        # Shared cached zmanim sunset (Grossman) + havdalah offset — was
+        # previously computed with a different astronomy library, so this
+        # sensor now agrees with the rest of YidCal (its sibling nine_days
+        # sensor already used the zmanim sunset).
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=greg_date)
+        return sunset + timedelta(minutes=self._havdalah)
 
     def _compute_chatzos_for_date(self, base_date) -> datetime:
-        """Match ChatzosHayomSensor exactly: MGA day (dawn=sr-72, nightfall=ss+72) with rounding."""
+        """Match ChatzosHayomSensor exactly: Grossman true solar transit, rounded half-up."""
         assert self._geo is not None
-        cal = ZmanimCalendar(geo_location=self._geo, date=base_date)
-        sunrise = cal.sunrise().astimezone(self._tz)
-        sunset = cal.sunset().astimezone(self._tz)
-
-        dawn = sunrise - timedelta(minutes=72)
-        nightfall = sunset + timedelta(minutes=72)
-
-        target = dawn + (nightfall - dawn) / 12 * 6  # 6 sha'os zmanios
-        if target.second >= 30:  # round-half-up to the minute
-            target += timedelta(minutes=1)
-        return target.replace(second=0, microsecond=0)
+        # Grossman transit from the shared helper — matches the dedicated
+        # chatzos sensor; replaces the old MGA midpoint (tiny value change,
+        # intentional).
+        return _round_half_up(
+            chatzos_hayom_for_date(geo=self._geo, tz=self._tz, base_date=base_date)
+        )
 
     def _build_sefirah_windows(self, hyear: int) -> list[tuple[datetime, datetime, str]]:
         """
@@ -159,23 +141,23 @@ class NoMusicSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
           • Normal year: tzeis that BEGINS 17 Tammuz (tzeis on the civil day before 17 Tammuz)
           • If 17 Tammuz is Shabbos (nidche): start at tzeis after Shabbos that begins 18 Tammuz
         End:
-          • Normal year: 10 Av at Chatzos Hayom (MGA 72/72, rounded like Chatzos sensor)
+          • Normal year: 10 Av at Chatzos Hayom (Grossman transit, rounded like Chatzos sensor)
           • Nidche year (9 Av is Shabbos; fast on 10 Av): tzeis on 10 Av
         """
-        # start
-        tammuz17 = HebrewDate(hyear, 4, 17).to_pydate()
-        if tammuz17.weekday() == 5:
-            start_dt = _round_half_up(self._tzeis_on(HebrewDate(hyear, 4, 18).to_pydate() - timedelta(days=1)))
-        else:
-            start_dt = _round_half_up(self._tzeis_on(tammuz17 - timedelta(days=1)))
-    
-        # end (depends on nidche)
-        av9  = HebrewDate(hyear, 5, 9).to_pydate()
+        # start — canonical observed 17 Tammuz (18th when 17 is Shabbos);
+        # tzeis of the evening BEFORE the observed fast day, same as before.
+        start_obs = he.shiva_asar_btamuz_observed(hyear)
+        start_dt = _round_half_up(self._tzeis_on(start_obs - timedelta(days=1)))
+
+        # end (depends on nidche — canonical rule)
         av10 = HebrewDate(hyear, 5, 10).to_pydate()
-        if av9.weekday() == 5:
+        if he.is_tisha_bav_nidche(hyear):
             end_dt = _round_ceil(self._tzeis_on(av10))
         else:
-            end_dt = _round_ceil(self._compute_chatzos_for_date(av10))
+            # _compute_chatzos_for_date already returns an exact minute
+            # (half-up). The old conditional ceil was a no-op on it; the
+            # shared always-bump round_ceil would wrongly add a minute.
+            end_dt = self._compute_chatzos_for_date(av10)
     
         return (start_dt, end_dt, "three_weeks")
 

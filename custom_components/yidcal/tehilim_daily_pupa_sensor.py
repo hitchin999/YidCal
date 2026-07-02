@@ -13,6 +13,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .device import YidCalDisplayDevice
+from .yidcal_lib import halacha_events as he
 from .yidcal_lib.helper import int_to_hebrew
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -173,13 +174,8 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
         # 8 days regardless of Kislev length. In Kislev=29 years day 8 = 3 Tevet,
         # which the old month/day-range check missed; the cycle would then
         # wrongly advance on day 8. (Same fix as longer_shachris_sensor.py.)
-        try:
-            chanukah_start = PHebrewDate(hd.year, 9, 25).to_pydate()
-            days_into_chanukah = (d - chanukah_start).days
-            if 0 <= days_into_chanukah <= 7:
-                return False
-        except Exception:
-            pass
+        if he.chanukah_day_for_date(d) is not None:
+            return False
 
         # Purim / Shushan Purim (Adar / Adar II)
         if hd.month in (12, 13) and hd.day in (14, 15):
@@ -221,9 +217,7 @@ class TehilimDailyPupaSensor(YidCalDisplayDevice, SensorEntity):
         # Chanukah — same days-from-25-Kislev arithmetic as above so day 8
         # (3 Tevet in Kislev=29 years) is correctly skipped on display.
         try:
-            chanukah_start = PHebrewDate(hd.year, 9, 25).to_pydate()
-            days_into_chanukah = (d - chanukah_start).days
-            if 0 <= days_into_chanukah <= 7:
+            if he.chanukah_day_for_date(d) is not None:
                 return True
         except Exception:
             pass
