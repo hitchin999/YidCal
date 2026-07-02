@@ -117,30 +117,18 @@ class YidCalHelper:
         
     def get_rosh_chodesh_days(self, today: datetime.date) -> RoshChodesh:
         """
-        Compute Rosh Chodesh for the Hebrew month containing 'today' using pyluach.
-        - If the current Hebrew month has 30 days: include the 30th of that month.
-        - Always include the 1st of the next Hebrew month.
-        Returns a RoshChodesh object with:
-          .month = English name (e.g. "Av")
-          .text = e.g. "Shabbos" or "Shabbos & Sunday"
-          .days = list of weekday names
-          .gdays = list of Python datetime.date for those RC days
+        Rosh Chodesh of the month FOLLOWING the one containing ``today``.
+
+        The civil RC dates now come from the canonical
+        ``halacha_events.rosh_chodesh_civil_days`` (single source of
+        truth, proven equal to the previous inline computation across
+        5779-5812); this method just wraps them in the RoshChodesh
+        display object (weekday names, "Shabbos & Sunday" text).
         """
-        # 1) Convert today → pyluach HebrewDate
+        from . import halacha_events as he
+
         hd = PHebrewDate.from_pydate(today)
         hy, hm = hd.year, hd.month
-
-        pm_cur = PMonth(hy, hm)
-        length_cur = sum(1 for _ in pm_cur.iterdates())
-
-        days: list[str] = []
-        gdays: list[datetime.date] = []
-
-        # 30th of current month (if it exists)
-        if length_cur == 30:
-            g30 = PHebrewDate(hy, hm, 30).to_pydate()
-            days.append(self.get_day_of_week(g30))
-            gdays.append(g30)
 
         # --- next month (handle Elul→Tishrei year rollover) ---
         if hm == 6:               # Elul → Tishrei bumps the Hebrew year
@@ -158,10 +146,8 @@ class YidCalHelper:
         if nm == 7:
             return RoshChodesh(hd1_next.month_name(), "", [], [])
 
-        # Always include day 1 of the next month
-        g1_next = hd1_next.to_pydate()
-        days.append(self.get_day_of_week(g1_next))
-        gdays.append(g1_next)
+        gdays = list(he.rosh_chodesh_civil_days(hy_next, nm))
+        days = [self.get_day_of_week(g) for g in gdays]
 
         month_name = hd1_next.month_name()  # upcoming month
         text = " & ".join(days) if len(days) == 2 else (days[0] if days else "")
@@ -192,39 +178,25 @@ class YidCalHelper:
 
     def is_shabbos_mevorchim(self, today: datetime.date) -> bool:
         """
-        Return True if 'today' is the actual Shabbos Mevorchim:
-          - Normally: the Shabbat on or before R”Ch.
-          - Special-case: if R”Ch is a one-day RC on Shabbat, or
-                          spans Shabbat & Sunday,
-            then it’s the *previous* Shabbat.
-        Always skip Rosh Chodesh Tishrei.
+        True if 'today' is the actual Shabbos Mevorchim.
+
+        Delegates to the canonical
+        ``halacha_events.mevorchim_shabbos_for_month`` (single source of
+        truth shared with the luach) — proven equal to the previous
+        inline special-case logic across 5779-5812. Rosh Chodesh Tishrei
+        is always skipped.
         """
-        # 1) Must be Shabbat
+        from . import halacha_events as he
+
         if not is_shabbat(today):
             return False
 
-        # 2) Compute the RC info for the *month containing* today
         rc = self.get_rosh_chodesh_days(today)
-        # Skip Rosh Chodesh Tishrei completely
-        if rc.month.upper() == "TISHREI":
+        if rc.month.upper() == "TISHREI" or not rc.gdays:
             return False
 
-        # 3) Special-case: first RC day falls on Shabbat
-        #    (covers both 1-day RC on Shabbat, and 2-day RC starting on Shabbat)
-        if rc.gdays and rc.gdays[0].weekday() == 5:  # Saturday=5
-            # Mevorchim is the *week before* that RC-Shabbat
-            target = rc.gdays[0] - timedelta(days=7)
-            return today == target
-
-        # 4) Default: back up from the *earliest* RC gday to the prior Saturday
-        #    (your existing get_shabbos_mevorchim_hebrew_day_of_month does this)
-        smd = self.get_shabbos_mevorchim_hebrew_day_of_month(today)
-        if smd is None:
-            return False
-
-        # Compare Hebrew‐day numbers
-        hd = PHebrewDate.from_pydate(today)
-        return hd.day == smd
+        nxt = PHebrewDate.from_pydate(rc.gdays[-1])
+        return today == he.mevorchim_shabbos_for_month(nxt.year, nxt.month)
 
         
     def is_upcoming_shabbos_mevorchim(self, today: datetime.date) -> bool:
@@ -240,28 +212,9 @@ class YidCalHelper:
         days_to_sat = 7 if wd == 5 else (5 - wd) % 7
         next_shabbat = today + timedelta(days=days_to_sat)
 
-        # 2) compute Rosh Chodesh for that Shabbat
-        rc = self.get_rosh_chodesh_days(next_shabbat)
-        # rc.days is e.g. ["Shabbos"] or ["Shabbos","Sunday"]
-        # rc.gdays is the matching python.date list
-
-        # ─── special case ───────────────────────────────────────
-        # if the *first* RC day is Shabbos (one-day RC) or
-        # the two-day RC runs Shabbos & Sunday,
-        # then the blessing is the week *before* that Shabbat
-        if rc.days and rc.days[0] == "Shabbos":
-            mevorchim_shabbat = rc.gdays[0] - timedelta(days=7)
-            if next_shabbat == mevorchim_shabbat:
-                return True
-
-        # ─── default case ───────────────────────────────────────
-        # otherwise only turn on if that Shabbat is actually Mevorchim by the usual rule
-        if self.is_shabbos_mevorchim(next_shabbat):
-            # but never for Tishrei
-            if rc.month.upper() != "TISHREI":
-                return True
-
-        return False
+        # Canonical predicate handles all special cases (RC on Shabbos /
+        # Shabbos+Sunday) and the Tishrei skip.
+        return self.is_shabbos_mevorchim(next_shabbat)
 
     def get_actual_molad(self, today: datetime.date) -> Molad:
         """
