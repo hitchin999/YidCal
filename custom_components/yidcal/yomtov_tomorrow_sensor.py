@@ -12,6 +12,7 @@ Attributes:
   Today_Is_Yom_Tov:   True when today itself is already Yom Tov
                       (distinguishes "prep day" from "day 1 of a 2-day YT")
   Tomorrow_Date:      ISO date being evaluated
+  Activation_Logic:   human-readable description
 """
 
 from __future__ import annotations
@@ -75,4 +76,9 @@ class YomTovTomorrowSensor(YidCalSpecialDevice, BinarySensorEntity):
         return {
             "Today_Is_Yom_Tov": self._today_is_yt,
             "Tomorrow_Date": self._tomorrow_iso or "",
+            "Activation_Logic": (
+                "ON from 12:00 AM when tomorrow's civil date is a Yom Tov day; "
+                "OFF at 12:00 AM once tomorrow is a regular day. "
+                "Stays ON through day 1 of a 2-day Yom Tov (tomorrow is day 2)."
+            ),
         }
