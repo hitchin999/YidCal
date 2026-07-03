@@ -65,6 +65,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
     """
     _attr_name = "Holiday"
     _attr_icon = "mdi:calendar-star"
+    # The two Yiddish countdown texts tick every minute during fast
+    # windows; excluding them from the recorder keeps the ticking live
+    # in the UI without writing a database row per minute (state and
+    # all other attributes still record normally).
+    _unrecorded_attributes = frozenset({"מען פאַסט אַן און", "מען פאַסט אויס און"})
     _attr_device_class = SensorDeviceClass.ENUM
     
     FAST_FLAGS = [
@@ -327,12 +332,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         attrs = {name: False for name in names}
         attrs["מען פאַסט אויס און"] = ""
         attrs["מען פאַסט אַן און"] = ""
+        # Machine-readable fast boundaries (ISO datetimes, stable per
+        # fast — they do NOT tick). These drive the timer.yidcal_fast_*
+        # entities (see fast_timers.py).
+        attrs["fast_starts_at"] = ""
+        attrs["fast_ends_at"] = ""
         return attrs
 
     def _prune_attrs_for_mode(self, attrs: dict[str, bool | str]) -> dict[str, bool | str]:
         allowed = set(self._empty_attrs_for_mode().keys())
         # keep special meta keys
-        keep_always = {"מען פאַסט אויס און", "מען פאַסט אַן און"}
+        keep_always = {"מען פאַסט אויס און", "מען פאַסט אַן און", "fast_starts_at", "fast_ends_at"}
         return {k: v for k, v in attrs.items() if (k in allowed or k in keep_always)}
     
     @staticmethod
@@ -341,6 +351,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         attrs = {name: False for name in HolidaySensor.ALL_HOLIDAYS}
         attrs["מען פאַסט אויס און"] = ""  # fast ends in
         attrs["מען פאַסט אַן און"] = ""   # fast starts in
+        attrs["fast_starts_at"] = ""      # ISO ts, stable (no ticking)
+        attrs["fast_ends_at"] = ""        # ISO ts, stable (no ticking)
         return attrs
 
     # Two-day chagim where we want "א׳ ד<שם>" instead of "<שם> א׳"
@@ -1018,6 +1030,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             h = minutes_remaining // 60
             m = minutes_remaining % 60
             attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+            attrs["fast_starts_at"] = next_dawn.isoformat() if minutes_remaining > 0 else ""
         
         # ─── MAJOR FASTS: Pre-fast countdown (Chatzos HaYom of Erev → fast start) ───
         # Erev Yom Kippur: countdown from Chatzos until candle lighting
@@ -1029,6 +1042,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 h = minutes_remaining // 60
                 m = minutes_remaining % 60
                 attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+                attrs["fast_starts_at"] = candle_cut.isoformat() if minutes_remaining > 0 else ""
             else:
                 attrs["מען פאַסט אַן און"] = ""
         
@@ -1045,6 +1059,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 h = minutes_remaining // 60
                 m = minutes_remaining % 60
                 attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+                attrs["fast_starts_at"] = actual_sunset_floor.isoformat() if minutes_remaining > 0 else ""
             else:
                 attrs["מען פאַסט אַן און"] = ""
         
@@ -1059,6 +1074,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 h = minutes_remaining // 60
                 m = minutes_remaining % 60
                 attrs["מען פאַסט אַן און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+                attrs["fast_starts_at"] = motzei_shabbos.isoformat() if minutes_remaining > 0 else ""
             else:
                 attrs["מען פאַסט אַן און"] = ""
         
@@ -1250,6 +1266,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 h = minutes_remaining // 60
                 m = minutes_remaining % 60
                 attrs["מען פאַסט אויס און"] = f"{h:02d}:{m:02d}" if minutes_remaining > 0 else ""
+                attrs["fast_ends_at"] = _round_ceil(end_time).isoformat() if minutes_remaining > 0 else ""
                 #_LOGGER.debug(f"Fast ends in set: now={now}, end_time={end_time}, "
                 #              f"countdown={attrs['מען פאַסט אויס און']}")
             # before fast: show total duration
@@ -1259,6 +1276,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 h = minutes_duration // 60
                 m = minutes_duration % 60
                 attrs["מען פאַסט אויס און"] = f"{h:02d}:{m:02d}"
+                attrs["fast_ends_at"] = _round_ceil(end_time).isoformat()
                 #_LOGGER.debug(f"Fast duration set: start_time_fast={start_time_fast}, "
                 #              f"end_time={end_time}, countdown={attrs['מען פאַסט אויס און']}")
             # after fast: clear countdown
