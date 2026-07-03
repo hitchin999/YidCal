@@ -52,6 +52,7 @@ from .date_sensor import DateSensor, ChodeshSensor, YomLChodeshSensor
 from .perek_avot_sensor import PerekAvotSensor
 from .holiday_sensor import HolidaySensor
 from .full_display_sensor import FullDisplaySensor
+from .fast_timer_sensors import FastStartCountdownSensor, FastEndCountdownSensor
 from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
 from .season_sensor import SeasonSensor
 from .daf_hayomi_sensor import DafHaYomiSensor
@@ -81,7 +82,6 @@ from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
 from .zman_tzeis import ZmanTziesSensor
 from .upcoming_holiday_sensor import UpcomingHolidaySensor
-from .fast_timer_sensors import FastStartCountdownSensor, FastEndCountdownSensor
 from .friday_is_rosh_chodesh_sensor import FridayIsRoshChodeshSensor
 from .early_shabbos_yt_start_time_sensor import EarlyShabbosYtStartTimeSensor
 from .haftorah_sensor import HaftorahSensor
@@ -226,6 +226,8 @@ async def async_setup_entry(
         PerekAvotSensor(hass),
         HolidaySensor(hass, candle_offset, havdalah_offset),
         FullDisplaySensor(hass),
+        FastStartCountdownSensor(hass),
+        FastEndCountdownSensor(hass),
         MoridGeshemSensor(hass, yidcal_helper),
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
         SeasonSensor(hass),
@@ -258,8 +260,6 @@ async def async_setup_entry(
         ZmanTziesSensor(hass, havdalah_offset),
         UpcomingShabbosZmanimSensor(hass, havdalah_offset),
         UpcomingYomTovZmanimSensor(hass, havdalah_offset),
-        FastStartCountdownSensor(hass),
-        FastEndCountdownSensor(hass),
         FridayIsRoshChodeshSensor(hass, yidcal_helper, havdalah_offset),
         HaftorahSensor(hass),
         KriasHaTorahSensor(hass, candle_offset, havdalah_offset),
