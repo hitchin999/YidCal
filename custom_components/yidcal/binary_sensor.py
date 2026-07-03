@@ -47,6 +47,7 @@ from .dst_sensor import DSTSensor
 from .erev_after_chatzos_sensor import ErevAfterChatzosSensor
 from .longer_shabbos_shachris_sensor import LongerShabbosSensor
 from .three_day_yomtov_sensor import ThreeDayYomTovSensor
+from .yomtov_tomorrow_sensor import YomTovTomorrowSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -917,6 +918,7 @@ async def async_setup_entry(
         LongerShabbosSensor(hass, candle, havdalah),
         ThreeDayYomTovSensor(hass, candle, havdalah),
         BeinHazmonimSensor(hass, candle, havdalah),
+        YomTovTomorrowSensor(hass),
     ]
     if include_attrs:
         # Filter the list so we don’t create sensors that will never be used
