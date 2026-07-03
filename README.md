@@ -252,6 +252,10 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   **ON for the entire Shabbos** (candle-lighting → havdalah) when the davening is longer due to: שבת שקלים/זכור/פרה/החודש, שבת הגדול, שבת ראש חודש, פורים משולש, שבת מברכים, שבת חנוכה, שבת חנוכה ראש חודש, שבת חול המועד סוכות/פסח. Always **OFF** on weekdays (use the existing **Longer Shachris** sensor for weekday scenarios).
   *Attributes:* `Now`, `Window_Start`, `Window_End`, `Reason`, `Activation_Logic`
 
+* **Yom Tov Tomorrow** (`binary_sensor.yidcal_yomtov_tomorrow`)
+  **ON** when tomorrow (the next civil calendar date) is a Yom Tov day, **OFF** otherwise. Flips at **12:00 AM**, so it's a simple all-day flag — perfect for morning prep automations (“is tomorrow Yom Tov?”) without any window logic. The halachic windows themselves are covered by **Erev**, **No Melucha**, and **Upcoming Yom Tov**. On day 1 of a two-day Yom Tov it stays **ON** (tomorrow is day 2); use the `Today_Is_Yom_Tov` attribute to tell a prep day apart from a day already inside Yom Tov.
+  *Attributes:* `Today_Is_Yom_Tov`, `Tomorrow_Date`, `Activation_Logic`
+
 * **Bein Hazmanim** (`binary_sensor.yidcal_bein_hazmanim`)
   **ON** during yeshiva vacation periods. Two spans: **Nissan** — from 12 AM on Rosh Chodesh Nissan until 12 AM on the 2nd day of Rosh Chodesh Iyar; **Elul/Tishrei** — from 12 AM on Friday before Alef Slichos until 12 AM on the 2nd day of Rosh Chodesh Cheshvan.
   *Attributes:* `Now`, `Next_Window_Start`, `Next_Window_End`, `Nissan_Span_Start`, `Nissan_Span_End`, `Tishrei_Span_Start`, `Tishrei_Span_End`, `בין_הזמנים_פסח`, `בין_הזמנים_סוכות`, `Activation_Logic`
