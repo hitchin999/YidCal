@@ -9,16 +9,18 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import aiohttp
-from astral import LocationInfo
-from astral.sun import sun
 
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.event import async_track_time_change
+from homeassistant.util import dt as dt_util
 
 from pyluach.hebrewcal import Year, HebrewDate as PHebrewDate
 
+from .zman_sensors import get_geo
+from .yidcal_lib.zman_compute import round_ceil as _round_ceil, sunset_for_date
 from .yidcal_lib.helper import int_to_hebrew
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
@@ -98,15 +100,11 @@ class YurtzeitSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         super().__init__()
         self.hass = hass
         self._database = database
-        self._tz = ZoneInfo(hass.config.time_zone)
-        self._loc = LocationInfo(
-            latitude=hass.config.latitude,
-            longitude=hass.config.longitude,
-            timezone=hass.config.time_zone,
-        )
-
         # Use global config if present; fallback to ctor value
         config = hass.data.get(DOMAIN, {}).get("config", {})
+        tzname = config.get("tzname", hass.config.time_zone)
+        self._tz = ZoneInfo(tzname)
+        self._geo = None  # shared zmanim GeoLocation, set in async_added_to_hass
         self._havdalah = int(config.get("havdalah_offset", havdalah_offset))
         self._havdalah_offset = timedelta(minutes=self._havdalah)
 
@@ -142,11 +140,23 @@ class YurtzeitSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         await self._fetch_yurtzeits()
         await self._load_custom_and_muted()
 
+        # Shared geo (same engine as Zman Motzi / date sensors)
+        self._geo = await get_geo(self.hass)
+
         # Initial compute
         await self._update_state()
 
         # Schedule sunset + offset update
         self._register_sunset(self.hass, self._schedule_update, offset=self._havdalah_offset)
+
+        # Top-of-minute tick so the flip lands exactly on the rounded minute
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self._schedule_update,
+                second=0,
+            )
+        )
 
         # Minute-by-minute updates for precise flip
         self._register_interval(self.hass, self._schedule_update, timedelta(minutes=1))
@@ -325,9 +335,15 @@ class YurtzeitSensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
     async def _update_state(self) -> None:
         """Recompute Yurtzeits based on current Hebrew date."""
-        now = datetime.now(self._tz)
-        s = sun(self._loc.observer, date=now.date(), tzinfo=self._tz)
-        switch_time = s["sunset"] + self._havdalah_offset
+        if not self._geo:
+            return
+
+        now = dt_util.now().astimezone(self._tz)
+
+        # Zmanim sunset (same engine as Zman Motzi / date sensors)
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=now.date())
+        # Match Motzi rounding: always bump to next full minute
+        switch_time = _round_ceil(sunset + self._havdalah_offset)
         py_date = now.date() + timedelta(days=1) if now >= switch_time else now.date()
 
         heb = PHebrewDate.from_pydate(py_date)
@@ -405,15 +421,11 @@ class YurtzeitWeeklySensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         super().__init__()
         self.hass = hass
         self._database = database
-        self._tz = ZoneInfo(hass.config.time_zone)
-        self._loc = LocationInfo(
-            latitude=hass.config.latitude,
-            longitude=hass.config.longitude,
-            timezone=hass.config.time_zone,
-        )
-
         # Use global config if present; fallback to ctor value
         config = hass.data.get(DOMAIN, {}).get("config", {})
+        tzname = config.get("tzname", hass.config.time_zone)
+        self._tz = ZoneInfo(tzname)
+        self._geo = None  # shared zmanim GeoLocation, set in async_added_to_hass
         self._havdalah = int(config.get("havdalah_offset", havdalah_offset))
         self._havdalah_offset = timedelta(minutes=self._havdalah)
 
@@ -443,9 +455,20 @@ class YurtzeitWeeklySensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
         await self._fetch_yurtzeits()
         await self._load_custom_and_muted()
 
+        # Shared geo (same engine as Zman Motzi / date sensors)
+        self._geo = await get_geo(self.hass)
+
         await self._update_state()
 
         self._register_sunset(self.hass, self._schedule_update, offset=self._havdalah_offset)
+        # Top-of-minute tick so the flip lands exactly on the rounded minute
+        self._register_listener(
+            async_track_time_change(
+                self.hass,
+                self._schedule_update,
+                second=0,
+            )
+        )
         self._register_interval(self.hass, self._schedule_update, timedelta(minutes=1))
 
         # Live reload when the yurtzeit-config-card writes new files.
@@ -614,9 +637,15 @@ class YurtzeitWeeklySensor(YidCalDisplayDevice, RestoreEntity, SensorEntity):
 
     async def _update_state(self) -> None:
         """Recompute weekly Yurtzeits based on current Hebrew date."""
-        now = datetime.now(self._tz)
-        s = sun(self._loc.observer, date=now.date(), tzinfo=self._tz)
-        switch_time = s["sunset"] + self._havdalah_offset
+        if not self._geo:
+            return
+
+        now = dt_util.now().astimezone(self._tz)
+
+        # Zmanim sunset (same engine as Zman Motzi / date sensors)
+        sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=now.date())
+        # Match Motzi rounding: always bump to next full minute
+        switch_time = _round_ceil(sunset + self._havdalah_offset)
         py_date = now.date() + timedelta(days=1) if now >= switch_time else now.date()
 
         # Calculate the start of the current week (Sunday)
