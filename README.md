@@ -153,6 +153,20 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * ערב יום טוב *(ON at Alos, OFF at candle-lighting)*
   * מוצאי שבת *(ON at Tzeis, OFF at 02:00)*
   * מוצאי יום טוב *(ON at Tzeis, OFF at 02:00)*
+  * **א׳ דיום טוב** *(Diaspora only)* — ON during the **first** day of any two-day Yom Tov. Each member turns **ON at candle-lighting** and **OFF at havdalah** (Tzeis + your havdalah offset). Exception: when the first day begins **Motzaei Shabbos** (Pesach or Shavuos, when their Erev is Shabbos), it turns ON at that havdalah instead of candle-lighting. An OR of these first-day flags:
+    * ראש השנה א׳
+    * סוכות א׳
+    * שמיני עצרת
+    * פסח א׳
+    * שביעי של פסח
+    * שבועות א׳
+  * **ב׳ דיום טוב** *(Diaspora only)* — ON during the **second** day of any two-day Yom Tov. Each member turns **ON at havdalah** of the first day (Tzeis + your havdalah offset) and **OFF at havdalah** of the second day. An OR of these second-day flags:
+    * ראש השנה ב׳
+    * סוכות ב׳
+    * שמחת תורה
+    * פסח ב׳
+    * אחרון של פסח
+    * שבועות ב׳
   * ערב שבת שחל ביום טוב *(ON at Alos, OFF at candle-lighting)*
   * ערב יום טוב שחל בשבת *(ON at Alos, OFF at candle-lighting (Tzeis))*
   * מוצאי שבת שחל ביום טוב *(ON at Tzeis, OFF at 02:00)*
