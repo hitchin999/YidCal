@@ -2,6 +2,7 @@
   "domain": "yidcal",
   "name": "YidCal",
   "after_dependencies": [
+    "http",
     "recorder"
   ],
   "codeowners": [
