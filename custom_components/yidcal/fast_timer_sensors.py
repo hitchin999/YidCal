@@ -19,8 +19,8 @@ What's new is that the ticking no longer floods anything:
     logbook/history pages are already covered by the recorder drop.
 
   • The ``target`` attribute holds the absolute fast boundary (ISO),
-    handy for cards/automations; the hidden timer entities
-    (fast_timers.py) remain the event surface (timer.finished etc.).
+    handy for cards/automations (e.g. triggering exactly at the
+    fast's start/end without template gymnastics).
 
 If the recorder guard ever fails on a future HA version, everything
 still works — the sensors just record like they did before 0.7.8.
