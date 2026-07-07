@@ -56,103 +56,103 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 * **Holiday Sensor** (`sensor.yidcal_holiday`) with boolean attributes for every holiday, including (all default `false`):
 
-  * א׳ סליחות *(ON at Tzeis (Motzei Shabbos), OFF at candle-lighting)*
-  * ערב ראש השנה *(ON at Tzeis (night before), OFF at candle-lighting)*
-  * ראש השנה א׳ *(ON at candle-lighting, OFF at Tzeis)*
-  * ראש השנה ב׳ *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
-  * ראש השנה א׳ וב׳ *(ON at candle-lighting, OFF at Tzeis (end of day 2))*
-  * מוצאי ראש השנה *(ON at Tzeis, OFF at Alos)*
-  * עשרת ימי תשובה *(ON at Tzeis (end of Rosh Hashana), OFF at candle-lighting (Erev Yom Kippur))*
-  * צום גדליה *(ON at Alos, OFF at Tzeis)*
-  * שלוש עשרה מדות *(ON at Alos, OFF at candle-lighting)*
-  * ערב יום כיפור *(ON at candle-lighting (night before), OFF at candle-lighting)*
-  * יום הכיפורים *(ON at candle-lighting, OFF at Tzeis)*
-  * מוצאי יום הכיפורים *(ON at Tzeis, OFF at Alos)*
-  * ערב סוכות *(ON at Tzeis (night before), OFF at candle-lighting)*
-  * סוכות (כל חג) *(ON at candle-lighting (day 1), OFF at candle-lighting (end of הושענא רבה))*
-  * סוכות א׳ *(ON at candle-lighting, OFF at Tzeis)*
-  * סוכות ב׳ *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
-  * סוכות א׳ וב׳ *(ON at candle-lighting, OFF at Tzeis (end of day 2))*
-  * א׳ דחול המועד סוכות *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ב׳ דחול המועד סוכות *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ג׳ דחול המועד סוכות *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ד׳ דחול המועד סוכות *(ON at Tzeis (prior), OFF at Tzeis)*
-  * חול המועד סוכות *(ON at Tzeis (end of day 2 YT), OFF at Tzeis (end of day 4 CH"M))*
-  * שבת חול המועד סוכות *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
-  * הושענא רבה *(ON at Tzeis (prior), OFF at candle-lighting (entering שמיני עצרת))*
-  * שמיני עצרת *(ON at candle-lighting, OFF at Tzeis)*
-  * שמחת תורה *(ON at Tzeis (end of שמיני עצרת), OFF at Tzeis)*
-  * שמיני עצרת/שמחת תורה *(ON at candle-lighting (entering שמיני עצרת), OFF at Tzeis (end of שמחת תורה))*
-  * מוצאי סוכות *(ON at Tzeis, OFF at Alos)*
-  * אסרו חג סוכות *(ON at Tzeis (end of שמחת תורה), OFF at Tzeis)*
-  * ערב חנוכה *(ON at Alos, OFF at Tzeis)*
-  * חנוכה *(ON at Tzeis (entering 25 Kislev), OFF at Tzeis (end of זאת חנוכה))*
-  * ערב שבת חנוכה *(ON at Alos, OFF at candle-lighting)*
-  * שבת חנוכה *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
-  * שבת חנוכה ראש חודש *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
-  * א׳ דחנוכה *(ON at Tzeis (entering 25 Kislev), OFF at Tzeis)*
-  * ב׳ דחנוכה *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ג׳ דחנוכה *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ד׳ דחנוכה *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ה׳ דחנוכה *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ו׳ דחנוכה *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ז׳ דחנוכה *(ON at Tzeis (prior), OFF at Tzeis)*
-  * זאת חנוכה *(ON at Tzeis (prior), OFF at Tzeis (end of day 8))*
-  * מוצאי חנוכה *(ON at Tzeis, OFF at Alos)*
-  * שובבים *(ON at Tzeis (Motzei Shabbos entering a Shovavim parsha week), OFF at Tzeis (Motzei Shabbos ending the last Shovavim week))*
-  * שובבים ת"ת *(ON at Tzeis (Motzei Shabbos entering a Shovavim TaT parsha week), OFF at Tzeis (Motzei Shabbos ending the last week))*
-  * צום עשרה בטבת *(ON at Alos, OFF at Tzeis)*
-  * חמשה עשר בשבט *(ON at Tzeis (prior), OFF at Tzeis)*
-  * תענית אסתר מוקדם *(ON at Alos (Thursday 11 Adar when 13 Adar is Shabbos), OFF at Tzeis)*
-  * שבת ערב פורים *(ON at Alos (Shabbos 13 Adar), OFF at Tzeis (Motzei Shabbos, when Megillah reading begins))*
-  * תענית אסתר *(ON at Alos, OFF at Tzeis)*
-  * פורים *(ON at Tzeis (entering 14 Adar), OFF at Tzeis — OR when Purim is on Friday: OFF at candle-lighting (entering Shabbos))*
-  * שושן פורים *(ON at Tzeis (entering 15 Adar), OFF at Tzeis — OR when 15 Adar is Shabbos (Purim Meshulash): ON at Tzeis (Motzei Shabbos), OFF at Tzeis (Motzei Sunday))*
-  * מוצאי שושן פורים *(ON at Tzeis, OFF at Alos)*
-  * ערב בדיקת חמץ *(ON at Alos, OFF at Tzeis)*
-  * ליל בדיקת חמץ *(ON at Tzeis, OFF at Alos)*
-  * ערב פסח מוקדם *(ON at Tzeis (night before), OFF at candle-lighting)*
-  * שבת ערב פסח *(ON at candle-lighting (Friday), OFF at candle-lighting (Motzei Shabbos/Tzeis))*
-  * ערב פסח *(ON at Tzeis (night before), OFF at candle-lighting)*
-  * פסח (כל חג) *(ON at candle-lighting (day 1), OFF at Tzeis (end of אחרון של פסח in diaspora / end of שביעי in Israel))*
-  * פסח א׳ *(ON at candle-lighting, OFF at Tzeis — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
-  * פסח ב׳ *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
-  * פסח א׳ וב׳ *(ON at candle-lighting, OFF at Tzeis (end of day 2) — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis (end of day 2))*
-  * א׳ דחול המועד פסח *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ב׳ דחול המועד פסח *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ג׳ דחול המועד פסח *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ד׳ דחול המועד פסח *(ON at Tzeis (prior), OFF at Tzeis)*
-  * חול המועד פסח *(ON at Tzeis (end of day 2 YT), OFF at candle-lighting (entering שביעי של פסח))*
-  * שבת חול המועד פסח *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
-  * שביעי של פסח *(ON at candle-lighting, OFF at Tzeis)*
-  * אחרון של פסח *(ON at Tzeis (end of שביעי), OFF at Tzeis)*
-  * שביעי/אחרון של פסח *(ON at candle-lighting (entering שביעי), OFF at Tzeis (end of אחרון))*
-  * מוצאי פסח *(ON at Tzeis, OFF at Alos)*
-  * אסרו חג פסח *(ON at Tzeis (prior), OFF at Tzeis)*
-  * פסח שני *(ON at Tzeis (prior), OFF at Tzeis)*
-  * ל"ג בעומר *(ON at Tzeis (prior), OFF at Tzeis)*
-  * מוצאי ל"ג בעומר *(ON at Tzeis, OFF at Alos)*
-  * ערב שבועות *(ON at Tzeis (night before), OFF at candle-lighting)*
-  * שבועות א׳ *(ON at candle-lighting, OFF at Tzeis — OR when Erev Shavuos is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
-  * שבועות ב׳ *(ON at Tzeis (end of day 1), OFF at Tzeis)*
-  * שבועות א׳ וב׳ *(ON at candle-lighting, OFF at Tzeis (end of day 2) — OR when Erev Shavuos is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
-  * מוצאי שבועות *(ON at Tzeis, OFF at Alos)*
-  * אסרו חג שבועות *(ON at Tzeis (prior), OFF at Tzeis)*
-  * צום שבעה עשר בתמוז *(ON at Alos, OFF at Tzeis)*
-  * מוצאי צום שבעה עשר בתמוז *(ON at Tzeis, OFF at Alos)*
-  * ערב תשעה באב *(ON at Alos, OFF at sunset (fast begins))*
-  * ערב תשעה באב שחל בשבת *(ON at Chatzos (Shabbos 9 Av in a Nidche year), OFF at sunset/shkiah)*
-  * תשעה באב *(ON at sunset (entering 9 Av), OFF at Tzeis (end of 9 Av) — OR in a Nidche year: ON at Shabbos sunset (entering 10 Av), OFF at Sunday Tzeis)*
-  * תשעה באב נדחה *(ON at sunset (Motzei Shabbos of 9 Av, fast begins), OFF at Tzeis (Sunday 10 Av))*
-  * מוצאי תשעה באב *(ON at Tzeis, OFF at Alos)*
-  * ט"ו באב *(ON at Tzeis (entering 15 Av), OFF at Tzeis)*
-  * יום כיפור קטן *(ON at Alos (29 Av, or Thursday 28/27 Av if RC Elul starts Shabbos/Sunday), OFF at Tzeis)*
-  * ראש חודש *(ON at Tzeis (entering day 30 or day 1), OFF at Tzeis)*
-  * שבת ראש חודש *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
-  * ערב שבת *(ON at Alos, OFF at candle-lighting)*
-  * ערב יום טוב *(ON at Alos, OFF at candle-lighting)*
-  * מוצאי שבת *(ON at Tzeis, OFF at 02:00)*
-  * מוצאי יום טוב *(ON at Tzeis, OFF at 02:00)*
+  * **א׳ סליחות** *(ON at Tzeis (Motzei Shabbos), OFF at candle-lighting)*
+  * **ערב ראש השנה** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **ראש השנה א׳** *(ON at candle-lighting, OFF at Tzeis)*
+  * **ראש השנה ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
+  * **ראש השנה א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2))*
+  * **מוצאי ראש השנה** *(ON at Tzeis, OFF at Alos)*
+  * **עשרת ימי תשובה** *(ON at Tzeis (end of Rosh Hashana), OFF at candle-lighting (Erev Yom Kippur))*
+  * **צום גדליה** *(ON at Alos, OFF at Tzeis)*
+  * **שלוש עשרה מדות** *(ON at Alos, OFF at candle-lighting)*
+  * **ערב יום כיפור** *(ON at candle-lighting (night before), OFF at candle-lighting)*
+  * **יום הכיפורים** *(ON at candle-lighting, OFF at Tzeis)*
+  * **מוצאי יום הכיפורים** *(ON at Tzeis, OFF at Alos)*
+  * **ערב סוכות** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **סוכות (כל חג)** *(ON at candle-lighting (day 1), OFF at candle-lighting (end of הושענא רבה))*
+  * **סוכות א׳** *(ON at candle-lighting, OFF at Tzeis)*
+  * **סוכות ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
+  * **סוכות א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2))*
+  * **א׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ב׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ג׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ד׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **חול המועד סוכות** *(ON at Tzeis (end of day 2 YT), OFF at Tzeis (end of day 4 CH"M))*
+  * **שבת חול המועד סוכות** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **הושענא רבה** *(ON at Tzeis (prior), OFF at candle-lighting (entering שמיני עצרת))*
+  * **שמיני עצרת** *(ON at candle-lighting, OFF at Tzeis)*
+  * **שמחת תורה** *(ON at Tzeis (end of שמיני עצרת), OFF at Tzeis)*
+  * **שמיני עצרת/שמחת תורה** *(ON at candle-lighting (entering שמיני עצרת), OFF at Tzeis (end of שמחת תורה))*
+  * **מוצאי סוכות** *(ON at Tzeis, OFF at Alos)*
+  * **אסרו חג סוכות** *(ON at Tzeis (end of שמחת תורה), OFF at Tzeis)*
+  * **ערב חנוכה** *(ON at Alos, OFF at Tzeis)*
+  * **חנוכה** *(ON at Tzeis (entering 25 Kislev), OFF at Tzeis (end of זאת חנוכה))*
+  * **ערב שבת חנוכה** *(ON at Alos, OFF at candle-lighting)*
+  * **שבת חנוכה** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **שבת חנוכה ראש חודש** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **א׳ דחנוכה** *(ON at Tzeis (entering 25 Kislev), OFF at Tzeis)*
+  * **ב׳ דחנוכה** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ג׳ דחנוכה** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ד׳ דחנוכה** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ה׳ דחנוכה** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ו׳ דחנוכה** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ז׳ דחנוכה** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **זאת חנוכה** *(ON at Tzeis (prior), OFF at Tzeis (end of day 8))*
+  * **מוצאי חנוכה** *(ON at Tzeis, OFF at Alos)*
+  * **שובבים** *(ON at Tzeis (Motzei Shabbos entering a Shovavim parsha week), OFF at Tzeis (Motzei Shabbos ending the last Shovavim week))*
+  * **שובבים ת"ת** *(ON at Tzeis (Motzei Shabbos entering a Shovavim TaT parsha week), OFF at Tzeis (Motzei Shabbos ending the last week))*
+  * **צום עשרה בטבת** *(ON at Alos, OFF at Tzeis)*
+  * **חמשה עשר בשבט** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **תענית אסתר מוקדם** *(ON at Alos (Thursday 11 Adar when 13 Adar is Shabbos), OFF at Tzeis)*
+  * **שבת ערב פורים** *(ON at Alos (Shabbos 13 Adar), OFF at Tzeis (Motzei Shabbos, when Megillah reading begins))*
+  * **תענית אסתר** *(ON at Alos, OFF at Tzeis)*
+  * **פורים** *(ON at Tzeis (entering 14 Adar), OFF at Tzeis — OR when Purim is on Friday: OFF at candle-lighting (entering Shabbos))*
+  * **שושן פורים** *(ON at Tzeis (entering 15 Adar), OFF at Tzeis — OR when 15 Adar is Shabbos (Purim Meshulash): ON at Tzeis (Motzei Shabbos), OFF at Tzeis (Motzei Sunday))*
+  * **מוצאי שושן פורים** *(ON at Tzeis, OFF at Alos)*
+  * **ערב בדיקת חמץ** *(ON at Alos, OFF at Tzeis)*
+  * **ליל בדיקת חמץ** *(ON at Tzeis, OFF at Alos)*
+  * **ערב פסח מוקדם** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **שבת ערב פסח** *(ON at candle-lighting (Friday), OFF at candle-lighting (Motzei Shabbos/Tzeis))*
+  * **ערב פסח** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **פסח (כל חג)** *(ON at candle-lighting (day 1), OFF at Tzeis (end of אחרון של פסח in diaspora / end of שביעי in Israel))*
+  * **פסח א׳** *(ON at candle-lighting, OFF at Tzeis — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
+  * **פסח ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
+  * **פסח א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2) — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis (end of day 2))*
+  * **א׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ב׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ג׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ד׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **חול המועד פסח** *(ON at Tzeis (end of day 2 YT), OFF at candle-lighting (entering שביעי של פסח))*
+  * **שבת חול המועד פסח** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **שביעי של פסח** *(ON at candle-lighting, OFF at Tzeis)*
+  * **אחרון של פסח** *(ON at Tzeis (end of שביעי), OFF at Tzeis)*
+  * **שביעי/אחרון של פסח** *(ON at candle-lighting (entering שביעי), OFF at Tzeis (end of אחרון))*
+  * **מוצאי פסח** *(ON at Tzeis, OFF at Alos)*
+  * **אסרו חג פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **פסח שני** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **ל"ג בעומר** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **מוצאי ל"ג בעומר** *(ON at Tzeis, OFF at Alos)*
+  * **ערב שבועות** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **שבועות א׳** *(ON at candle-lighting, OFF at Tzeis — OR when Erev Shavuos is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
+  * **שבועות ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis)*
+  * **שבועות א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2) — OR when Erev Shavuos is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
+  * **מוצאי שבועות** *(ON at Tzeis, OFF at Alos)*
+  * **אסרו חג שבועות** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **צום שבעה עשר בתמוז** *(ON at Alos, OFF at Tzeis)*
+  * **מוצאי צום שבעה עשר בתמוז** *(ON at Tzeis, OFF at Alos)*
+  * **ערב תשעה באב** *(ON at Alos, OFF at sunset (fast begins))*
+  * **ערב תשעה באב שחל בשבת** *(ON at Chatzos (Shabbos 9 Av in a Nidche year), OFF at sunset/shkiah)*
+  * **תשעה באב** *(ON at sunset (entering 9 Av), OFF at Tzeis (end of 9 Av) — OR in a Nidche year: ON at Shabbos sunset (entering 10 Av), OFF at Sunday Tzeis)*
+  * **תשעה באב נדחה** *(ON at sunset (Motzei Shabbos of 9 Av, fast begins), OFF at Tzeis (Sunday 10 Av))*
+  * **מוצאי תשעה באב** *(ON at Tzeis, OFF at Alos)*
+  * **ט"ו באב** *(ON at Tzeis (entering 15 Av), OFF at Tzeis)*
+  * **יום כיפור קטן** *(ON at Alos (29 Av, or Thursday 28/27 Av if RC Elul starts Shabbos/Sunday), OFF at Tzeis)*
+  * **ראש חודש** *(ON at Tzeis (entering day 30 or day 1), OFF at Tzeis)*
+  * **שבת ראש חודש** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **ערב שבת** *(ON at Alos, OFF at candle-lighting)*
+  * **ערב יום טוב** *(ON at Alos, OFF at candle-lighting)*
+  * **מוצאי שבת** *(ON at Tzeis, OFF at 02:00)*
+  * **מוצאי יום טוב** *(ON at Tzeis, OFF at 02:00)*
   * **א׳ דיום טוב** *(Diaspora only)* — ON during the **first** day of any two-day Yom Tov. Each member turns **ON at candle-lighting** and **OFF at havdalah** (Tzeis + your havdalah offset). Exception: when the first day begins **Motzaei Shabbos** (Pesach or Shavuos, when their Erev is Shabbos), it turns ON at that havdalah instead of candle-lighting. An OR of these first-day flags:
     * ראש השנה א׳
     * סוכות א׳
@@ -167,10 +167,10 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
     * פסח ב׳
     * אחרון של פסח
     * שבועות ב׳
-  * ערב שבת שחל ביום טוב *(ON at Alos, OFF at candle-lighting)*
-  * ערב יום טוב שחל בשבת *(ON at Alos, OFF at candle-lighting (Tzeis))*
-  * מוצאי שבת שחל ביום טוב *(ON at Tzeis, OFF at 02:00)*
-  * מוצאי יום טוב שחל בשבת *(ON at Tzeis, OFF at 02:00)*
+  * **ערב שבת שחל ביום טוב** *(ON at Alos, OFF at candle-lighting)*
+  * **ערב יום טוב שחל בשבת** *(ON at Alos, OFF at candle-lighting (Tzeis))*
+  * **מוצאי שבת שחל ביום טוב** *(ON at Tzeis, OFF at 02:00)*
+  * **מוצאי יום טוב שחל בשבת** *(ON at Tzeis, OFF at 02:00)*
 
 > If enabled in config flow options, many of these attributes can also be exposed as **separate binary sensors** under **YidCal — Holiday Attribute Sensors**.
 
