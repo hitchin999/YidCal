@@ -171,6 +171,8 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ערב יום טוב":            "erev_yom_tov",
     "מוצאי שבת":              "motzi_shabbos",
     "מוצאי יום טוב":          "motzi_yom_tov",
+    "א׳ דיום טוב":            "first_day_yom_tov",
+    "ב׳ דיום טוב":           "second_day_yom_tov",
     "ערב שבת שחל ביום טוב":   "erev_shabbos_shechal_byomtov",
     "ערב יום טוב שחל בשבת":   "erev_yomtov_shechal_beshabbos",
     "מוצאי שבת שחל ביום טוב": "motzi_shabbos_shechal_byomtov",
