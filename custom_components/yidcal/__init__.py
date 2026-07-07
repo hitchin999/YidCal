@@ -757,14 +757,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 
-    # Fast countdown TIMERS (timer.yidcal_fast_starts_in / _ends_in) —
-    # real timer-domain entities shipped by YidCal, driven off the
-    # holiday sensor. See fast_timers.py for the how and the guards.
-    from .fast_timers import async_setup_fast_timers
-    entry.async_on_unload(await async_setup_fast_timers(hass))
-
-
-
     # Keep the ticking countdown sensors out of the recorder/logbook
     # without any user configuration — see quiet_recorder.py.
     from .fast_timer_sensors import SILENCED_ENTITY_IDS
