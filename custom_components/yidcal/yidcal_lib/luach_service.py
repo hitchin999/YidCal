@@ -710,13 +710,10 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     # user is on when they CLICK (Cloudflare tunnel, DDNS, LAN IP),
     # so the link works from every access path. An absolute URL
     # frozen at generation time breaks whenever that one path is
-    # down — and ``get_url(require_current_request=True)`` can only
-    # ever return URLs HA knows about (Internal/External/Cloud), so
-    # unconfigured origins like a tunnel hostname never matched
-    # anyway. An absolute URL is still computed below, but ONLY for
+    # down. An absolute URL is still computed below, but ONLY for
     # the copy-paste line (useful for sharing to another device):
-    #   1. ``require_current_request=True`` — the origin the user
-    #      generated from, when a request context exists.
+    #   1. raw request headers — the exact origin the user generated
+    #      from (ANY hostname, configured in HA or not).
     #   2. ``prefer_external=True`` — the configured External URL.
     #   3. raw config attrs as a last resort on very old HA.
     #   4. falls back to the relative URL if nothing is configured.
@@ -724,25 +721,52 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
 
     rel = out_path.name
     rel_url = f"/local/yidcal-data/{rel}"
+    # 1) Origin the user GENERATED from — read straight off the
+    #    incoming request. Unlike ``get_url``, which only ever
+    #    returns URLs HA has been TOLD about (Internal / External /
+    #    Cloud), this works for any origin, including tunnel or
+    #    reverse-proxy hostnames. X-Forwarded-* wins so the public
+    #    hostname is used even when HA sits behind a proxy without
+    #    trusted_proxies configured. Stays empty when the service
+    #    runs without a request context (automation / script).
     base_url = ""
     try:
-        from homeassistant.helpers.network import (
-            get_url,
-            NoURLAvailableError,
-        )
+        from homeassistant.components.http import current_request
+
+        _req = current_request.get()
+        if _req is not None:
+            _scheme = (
+                _req.headers.get("X-Forwarded-Proto", _req.scheme)
+                .split(",")[0]
+                .strip()
+            )
+            _host = (
+                _req.headers.get("X-Forwarded-Host", _req.host)
+                .split(",")[0]
+                .strip()
+            )
+            if _scheme and _host:
+                base_url = f"{_scheme}://{_host}"
+    except (ImportError, LookupError):
+        base_url = ""
+
+    # 2) No request context — fall back to HA's configured URLs.
+    if not base_url:
         try:
-            base_url = get_url(hass, require_current_request=True)
-        except NoURLAvailableError:
+            from homeassistant.helpers.network import (
+                get_url,
+                NoURLAvailableError,
+            )
             try:
                 base_url = get_url(hass, prefer_external=True)
             except NoURLAvailableError:
                 base_url = ""
-    except ImportError:  # very old HA, get_url helper not available
-        base_url = (
-            getattr(hass.config, "external_url", None)
-            or getattr(hass.config, "internal_url", None)
-            or ""
-        )
+        except ImportError:  # very old HA, get_url helper not available
+            base_url = (
+                getattr(hass.config, "external_url", None)
+                or getattr(hass.config, "internal_url", None)
+                or ""
+            )
     full_url = f"{base_url.rstrip('/')}{rel_url}" if base_url else rel_url
 
     _json_note = ""
