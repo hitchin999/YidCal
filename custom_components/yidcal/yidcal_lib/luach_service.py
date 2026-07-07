@@ -705,15 +705,21 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         )
 
     # ── Notify the user with a download link ──
-    # Build an absolute URL using HA's URL helper. Resolution order:
-    #   1. ``require_current_request=True`` — the exact URL the user
-    #      is currently using (matches their browsing context, so a
-    #      DDNS user on mobile gets a DDNS link, not the auto-
-    #      detected local IP).
-    #   2. ``prefer_external=True`` — falls back to the configured
-    #      External URL so links keep working off-network.
+    # The clickable anchor uses the RELATIVE ``/local/...`` URL on
+    # purpose: the browser resolves it against whatever origin the
+    # user is on when they CLICK (Cloudflare tunnel, DDNS, LAN IP),
+    # so the link works from every access path. An absolute URL
+    # frozen at generation time breaks whenever that one path is
+    # down — and ``get_url(require_current_request=True)`` can only
+    # ever return URLs HA knows about (Internal/External/Cloud), so
+    # unconfigured origins like a tunnel hostname never matched
+    # anyway. An absolute URL is still computed below, but ONLY for
+    # the copy-paste line (useful for sharing to another device):
+    #   1. ``require_current_request=True`` — the origin the user
+    #      generated from, when a request context exists.
+    #   2. ``prefer_external=True`` — the configured External URL.
     #   3. raw config attrs as a last resort on very old HA.
-    #   4. relative ``/local/...`` if nothing else is available.
+    #   4. falls back to the relative URL if nothing is configured.
     from homeassistant.components import persistent_notification
 
     rel = out_path.name
@@ -742,10 +748,9 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     _json_note = ""
     if emit_json:
         _json_rel = _sidecar_json_path(out_path).name
-        _json_url = (
-            f"{base_url.rstrip('/')}/local/yidcal-data/{_json_rel}"
-            if base_url else f"/local/yidcal-data/{_json_rel}"
-        )
+        # Relative on purpose — card configs fetching ``/local/...``
+        # work from any origin the dashboard is opened on.
+        _json_url = f"/local/yidcal-data/{_json_rel}"
         _json_note = (
             f"\n\nData (JSON) for a dashboard/card:\n`{_json_url}`"
         )
@@ -761,7 +766,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             # ``/local/...`` isn't a panel). Setting target="_blank"
             # tells the router to let the browser handle the click
             # natively, so the PDF opens in a new tab.
-            f'<a href="{full_url}" target="_blank" rel="noopener noreferrer">'
+            f'<a href="{rel_url}" target="_blank" rel="noopener noreferrer">'
             f"Open the file</a> (opens in a new tab)\n\n"
             f"If the link above doesn't open, copy this URL:\n"
             f"`{full_url}`\n\n"
