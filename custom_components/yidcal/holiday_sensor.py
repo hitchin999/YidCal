@@ -183,6 +183,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ערב יום טוב",
         "מוצאי שבת",
         "מוצאי יום טוב",
+        "א׳ דיום טוב",
+        "ב׳ דיום טוב",
         "ערב שבת שחל ביום טוב",
         "ערב יום טוב שחל בשבת",
         "מוצאי שבת שחל ביום טוב",
@@ -278,6 +280,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שביעי/אחרון של פסח",
         "שמיני עצרת",
         "שמחת תורה",
+        "א׳ דיום טוב",
+        "ב׳ דיום טוב",
     }
 
     def _possible_states_for_mode(self) -> list[str]:
@@ -1423,6 +1427,25 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if picked in ("שמיני עצרת", "שמחת תורה"):
                 picked = "שמיני עצרת/שמחת תורה"
             picked = self._ey_collapse_day1_label(picked)
+
+        # ─── א׳/ב׳ דיום טוב aggregates (diaspora-only attrs) ───
+        # First/second day of ANY two-day Yom Tov pair. Derived AFTER
+        # the window filter and the Israel post-filter as a plain OR
+        # of the finalized per-day flags, so each aggregate flips at
+        # exactly the same moments as its source sensors. Not in
+        # ALLOWED_HOLIDAYS — attribute/binary-sensor only, never the
+        # state. Excluded in EY mode (DIASPORA_ONLY_ATTRS): the only
+        # two-day YT there is ראש השנה, and שמיני עצרת/שמחת תורה
+        # share one day, which would raise both flags at once.
+        if self._diaspora:
+            attrs["א׳ דיום טוב"] = any(attrs.get(n, False) for n in (
+                "ראש השנה א׳", "סוכות א׳", "שמיני עצרת",
+                "פסח א׳", "שביעי של פסח", "שבועות א׳",
+            ))
+            attrs["ב׳ דיום טוב"] = any(attrs.get(n, False) for n in (
+                "ראש השנה ב׳", "סוכות ב׳", "שמחת תורה",
+                "פסח ב׳", "אחרון של פסח", "שבועות ב׳",
+            ))
 
         # Prune to mode after all flags are computed
         attrs = self._prune_attrs_for_mode(attrs)
