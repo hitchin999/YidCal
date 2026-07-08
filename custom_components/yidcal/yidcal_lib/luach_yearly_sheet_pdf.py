@@ -153,6 +153,17 @@ class _YearlySheetPDF(FPDF):
     W_ALOS = 11          # alos hashachar
     # Sum = 95 mm ✓ (per column)
 
+    # Pull both body columns this many mm to the LEFT of the frame's
+    # right edge (the top/bottom rules themselves stay put). The
+    # right-hand boundary of every row is the right-aligned bold title
+    # ending flush at the rule, while the left-hand boundary is a
+    # centered time inside the W_ALOS field with ~3.3 mm of intrinsic
+    # air — anchored at the rule, the ink block therefore read as
+    # sitting to the RIGHT within the rules. 1.5 mm rebalances it:
+    # titles ~1.75 mm off the right rule end, alos digits ~1.8 mm off
+    # the left one.
+    COLUMN_SHIFT_LEFT = 1.5
+
     # ── Font sizes ─────────────────────────────────────────────────
     TITLE_SIZE = 18         # main banner Hebrew title
     SUBTITLE_SIZE = 13      # city line
@@ -537,14 +548,24 @@ class _YearlySheetPDF(FPDF):
         # Render main at right edge
         if main_bidi:
             self.set_font(FONT_FAMILY_SERIF, "B", self.TITLE_MAIN_SIZE)
-            self.set_xy(right_edge - main_w, y)
+            # fpdf2's cell() indents its text by self.c_margin (1 mm
+            # by default), so anchoring the cell at (right_edge - w)
+            # actually printed the title ~1 mm PAST right_edge — bold
+            # titles in the page-right column visibly bled past the end
+            # of the top/bottom rules. Pull the cell origin back by
+            # c_margin so the ink ends exactly at right_edge.
+            self.set_xy(right_edge - main_w - self.c_margin, y)
             self.cell(main_w, self.ROW_HEIGHT, main_bidi,
                       border=0, align="L", fill=False)
 
         # Render secondary to the LEFT of main
         if sec_bidi:
             self.set_font(FONT_FAMILY_SERIF, "", self.TITLE_SECONDARY_SIZE)
-            self.set_xy(right_edge - main_w - gap_main_secondary - sec_w, y)
+            # Same c_margin compensation as the main title above.
+            self.set_xy(
+                right_edge - main_w - gap_main_secondary - sec_w - self.c_margin,
+                y,
+            )
             self.cell(sec_w, self.ROW_HEIGHT, sec_bidi,
                       border=0, align="L", fill=False)
 
@@ -698,8 +719,16 @@ class _YearlySheetPDF(FPDF):
             self.set_font(FONT_FAMILY_SERIF, "", self.ANN_SIZE)
             line_h = self.ANN_HEIGHT
         for line in self._annotation_lines(ann):
-            self.set_xy(x, y)
-            self.cell(col_w, line_h, bidi(line), align="C")
+            line_bidi = bidi(line)
+            w = self.get_string_width(line_bidi)
+            # Center within the column, but never let a near-column-wide
+            # line (the two Tisha B'Av time lines are ~93 mm wide) start
+            # left of the body frame — with COLUMN_SHIFT_LEFT pulling the
+            # columns leftward, a plain column-centered cell would poke
+            # past the left end of the top/bottom rules.
+            line_x = max(x + (col_w - w) / 2, self.LEFT_MARGIN + 0.4)
+            self.set_xy(line_x, y)
+            self.cell(w, line_h, line_bidi, align="C")
             y += line_h
         return y
 
@@ -796,8 +825,12 @@ class _YearlySheetPDF(FPDF):
         # Body geometry
         usable_w = self.PAGE_WIDTH_MM - self.LEFT_MARGIN - self.RIGHT_MARGIN
         self._col_width = (usable_w - self.COL_GAP) / 2
-        # Right column right edge = page's right side minus right margin
-        right_col_right = self.PAGE_WIDTH_MM - self.RIGHT_MARGIN
+        # Right column right edge = page's right side minus right margin,
+        # pulled left by COLUMN_SHIFT_LEFT to optically center the ink
+        # between the rules (see the constant's comment).
+        right_col_right = (
+            self.PAGE_WIDTH_MM - self.RIGHT_MARGIN - self.COLUMN_SHIFT_LEFT
+        )
         # Left column right edge = right column left edge minus gap
         left_col_right = right_col_right - self._col_width - self.COL_GAP
         self._col1_x_right = right_col_right     # column 1 = right column
