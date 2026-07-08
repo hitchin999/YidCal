@@ -618,6 +618,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             compact_erev_yt_labels=is_sheet,
             compact_mevorchim_parsha=is_sheet,
             omit_chazak=is_sheet,
+            tisha_bav_single_line=is_sheet,
         )
         items = build_luach(
             start_date=start_d, end_date=end_d,
