@@ -274,6 +274,22 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   **ON** during yeshiva vacation periods. Two spans: **Nissan** — from 12 AM on Rosh Chodesh Nissan until 12 AM on the 2nd day of Rosh Chodesh Iyar; **Elul/Tishrei** — from 12 AM on Friday before Alef Slichos until 12 AM on the 2nd day of Rosh Chodesh Cheshvan.
   *Attributes:* `Now`, `Next_Window_Start`, `Next_Window_End`, `Nissan_Span_Start`, `Nissan_Span_End`, `Tishrei_Span_Start`, `Tishrei_Span_End`, `בין_הזמנים_פסח`, `בין_הזמנים_סוכות`, `Activation_Logic`
 
+* **Leap Year** (`binary_sensor.yidcal_leap_year`)
+  **ON** for the entire Hebrew year when the current year is a leap year (שנה מעוברת — 13 months), **OFF** in a regular year. Flips at nightfall of Erev Rosh Hashanah, in lock-step with the **Date** sensor.
+  *Attributes:* `Hebrew_Year`, `Year_In_Cycle` (position 1–19 in the machzor), `Months_In_Year`, `Next_Leap_Year`
+
+* **Leap Year Next Year** (`binary_sensor.yidcal_leap_year_next_year`)
+  **ON** when the *coming* Hebrew year is a leap year — know a full year ahead (e.g., for planning around Adar I/II).
+  *Attributes:* `Hebrew_Year`, `Next_Hebrew_Year`, `Next_Year_In_Cycle`, `Months_In_Next_Year`
+
+* **Shmita** (`binary_sensor.yidcal_shmita`)
+  **ON** during a Shmita year (e.g., 5782, 5789), **OFF** otherwise.
+  *Attributes:* `Hebrew_Year`, `Shmita_Cycle_Year` (1–7 — the ד׳ לשמיטה-style count shown in the kvius line), `Years_Until_Shmita`, `Next_Shmita_Year`
+
+* **Years Until Shmita** (`sensor.yidcal_years_until_shmita`)
+  Whole years remaining until the next Shmita — counts down 6 → 0, showing **0** during the Shmita year itself.
+  *Attributes:* `Hebrew_Year`, `Shmita_Cycle_Year`, `Next_Shmita_Year`, `Is_Shmita` (`"true"`/`"false"`)
+
 ---
 
 ## Day Type (timing notes)
