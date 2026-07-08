@@ -164,6 +164,16 @@ class _YearlySheetPDF(FPDF):
     # the left one.
     COLUMN_SHIFT_LEFT = 1.5
 
+    # Visible-ink left inset of a column: the leftmost row element is a
+    # time centered inside the W_ALOS field, so ink starts
+    # ~(W_ALOS - time_width)/2 ≈ 3.3 mm right of the column's nominal
+    # left edge, while titles end flush at its right edge. Annotations
+    # centered on the NOMINAL box therefore sat ~1.6 mm left of the
+    # visible block's midline. Centering them between the digit block's
+    # left edge and the column's right edge instead makes them read as
+    # centered within the rows around them.
+    ANN_OPTICAL_LEFT_INSET = 3.3
+
     # ── Font sizes ─────────────────────────────────────────────────
     TITLE_SIZE = 18         # main banner Hebrew title
     SUBTITLE_SIZE = 13      # city line
@@ -726,7 +736,11 @@ class _YearlySheetPDF(FPDF):
             # left of the body frame — with COLUMN_SHIFT_LEFT pulling the
             # columns leftward, a plain column-centered cell would poke
             # past the left end of the top/bottom rules.
-            line_x = max(x + (col_w - w) / 2, self.LEFT_MARGIN + 0.4)
+            line_x = max(
+                x + self.ANN_OPTICAL_LEFT_INSET
+                + (col_w - self.ANN_OPTICAL_LEFT_INSET - w) / 2,
+                self.LEFT_MARGIN + 0.4,
+            )
             self.set_xy(line_x, y)
             self.cell(w, line_h, line_bidi, align="C")
             y += line_h
