@@ -282,6 +282,14 @@ async def resolve_location_from_coordinates(
 
         city, state = await hass.async_add_executor_job(blocking_lookup)
 
+        if not city:
+            # Without a city name, the forward query below degrades to just
+            # ", <State>" — Nominatim can still "succeed" on that and hand
+            # back the STATE centroid, silently relocating the user's zmanim.
+            # Treat no-city as a failed snap instead so the except-branch
+            # below keeps the raw input coords.
+            raise ValueError("reverse geocode returned no city name")
+
         # 2) Forward-geocode "City, State" → official centroid.
         def blocking_forward():
             from geopy.geocoders import Nominatim
