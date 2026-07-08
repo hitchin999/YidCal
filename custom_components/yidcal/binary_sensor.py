@@ -48,6 +48,11 @@ from .erev_after_chatzos_sensor import ErevAfterChatzosSensor
 from .longer_shabbos_shachris_sensor import LongerShabbosSensor
 from .three_day_yomtov_sensor import ThreeDayYomTovSensor
 from .yomtov_tomorrow_sensor import YomTovTomorrowSensor
+from .hebrew_year_sensors import (
+    LeapYearSensor,
+    LeapYearNextYearSensor,
+    ShmitaSensor,
+)
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -921,6 +926,9 @@ async def async_setup_entry(
         ThreeDayYomTovSensor(hass, candle, havdalah),
         BeinHazmonimSensor(hass, candle, havdalah),
         YomTovTomorrowSensor(hass),
+        LeapYearSensor(hass, havdalah),
+        LeapYearNextYearSensor(hass, havdalah),
+        ShmitaSensor(hass, havdalah),
     ]
     if include_attrs:
         # Filter the list so we don’t create sensors that will never be used
