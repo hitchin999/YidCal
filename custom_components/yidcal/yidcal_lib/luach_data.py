@@ -402,6 +402,16 @@ class LuachConfig:
     # building step in the luach layout). Default False preserves the
     # existing weekly behavior.
     omit_chazak: bool = False
+    # Yearly-sheet-only Tisha B'Av format: one chronological block
+    # instead of the Monroe two-line form (avoids repeating the fast's
+    # name on consecutive lines). Rendered as two centered lines only
+    # because the fully merged text measures ~139 mm at the 8 pt
+    # annotation size vs the sheet's 95 mm column:
+    #     <label> <wd> <parsha> - התחלת זמן התענית ערב ת״ב H:MM
+    #     חצות H:MM • מנחה גדולה H:MM • מנחה קטנה H:MM • צאה״כ מוצאי ת״ב H:MM
+    # The default (Monroe multi-page / weekly) format is unchanged and
+    # keeps the printed-luach spelling ערב תשעה באב in full.
+    tisha_bav_single_line: bool = False
 
 
 def build_luach(
@@ -1472,26 +1482,50 @@ def _annotations_fasts(
             c_str = f"{chatzos.hour % 12 or 12}:{chatzos.minute:02d}"
             mg_str = f"{mincha_gd.hour % 12 or 12}:{mincha_gd.minute:02d}"
             mk_str = f"{mincha_ket.hour % 12 or 12}:{mincha_ket.minute:02d}"
-            out.append(AnnotationRow(
-                civil_date=actual,
-                kind="tisha_bav_a",
-                text_he=(
-                    f"{label_anchor} - התחלת זמן התענית ערב תשעה באב {s_str} {INFO_SEP} "
-                    f"צאה״כ מוצאי ת״ב {t_str}"
-                ),
-                position="before",
-            ))
-            # Line B: label only (no weekday/parsha anchor), and we
-            # keep חצות as a YidCal-specific addition (Monroe drops it).
-            out.append(AnnotationRow(
-                civil_date=actual,
-                kind="tisha_bav_b",
-                text_he=(
-                    f"{fast.label_he} {INFO_SEP} חצות {c_str} {INFO_SEP} "
-                    f"מנחה גדולה {mg_str} {INFO_SEP} מנחה קטנה {mk_str}"
-                ),
-                position="before",
-            ))
+            if config.tisha_bav_single_line:
+                # Yearly-sheet format: one chronological T"B block,
+                # wrapped at the חצות boundary purely for width (the
+                # merged line cannot fit the 95 mm column at 8 pt).
+                # No repeated fast label; erev abbreviated ת״ב to
+                # match the מוצאי ת״ב convention later in the block.
+                out.append(AnnotationRow(
+                    civil_date=actual,
+                    kind="tisha_bav_a",
+                    text_he=(
+                        f"{label_anchor} - התחלת זמן התענית ערב ת״ב {s_str}"
+                    ),
+                    position="before",
+                ))
+                out.append(AnnotationRow(
+                    civil_date=actual,
+                    kind="tisha_bav_b",
+                    text_he=(
+                        f"חצות {c_str} {INFO_SEP} מנחה גדולה {mg_str} {INFO_SEP} "
+                        f"מנחה קטנה {mk_str} {INFO_SEP} צאה״כ מוצאי ת״ב {t_str}"
+                    ),
+                    position="before",
+                ))
+            else:
+                out.append(AnnotationRow(
+                    civil_date=actual,
+                    kind="tisha_bav_a",
+                    text_he=(
+                        f"{label_anchor} - התחלת זמן התענית ערב תשעה באב {s_str} {INFO_SEP} "
+                        f"צאה״כ מוצאי ת״ב {t_str}"
+                    ),
+                    position="before",
+                ))
+                # Line B: label only (no weekday/parsha anchor), and we
+                # keep חצות as a YidCal-specific addition (Monroe drops it).
+                out.append(AnnotationRow(
+                    civil_date=actual,
+                    kind="tisha_bav_b",
+                    text_he=(
+                        f"{fast.label_he} {INFO_SEP} חצות {c_str} {INFO_SEP} "
+                        f"מנחה גדולה {mg_str} {INFO_SEP} מנחה קטנה {mk_str}"
+                    ),
+                    position="before",
+                ))
     return out
 
 
