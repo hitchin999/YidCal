@@ -1,3 +1,10 @@
+"""
+custom_components/yidcal/__init__.py
+
+YidCal integration setup: config-entry lifecycle (setup / options-update /
+unload), sample-file creation, home-location resolution and caching, and
+service registration.
+"""
 from __future__ import annotations
 
 import logging
@@ -20,7 +27,6 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.event import async_call_later
 import homeassistant.helpers.config_validation as cv
 from timezonefinder import TimezoneFinder
 
@@ -391,8 +397,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create sample files before anything else
     await create_sample_files(hass)
 
-    entry.add_update_listener(_async_update_options)
-
     initial = entry.data or {}
     opts = entry.options or {}
 
@@ -608,24 +612,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         city, state, lat, lon, tzname = await resolve_location_from_coordinates(
             hass, latitude, longitude
         )
-        
-        # Save to entry data for future loads
-        hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **initial,
-                "resolved_location": {
-                    "city": city,
-                    "state": state,
-                    "lat": lat,
-                    "lon": lon,
-                    "tzname": tzname,
-                    "source_lat": latitude,
-                    "source_lon": longitude,
+
+        if city:
+            # Save to entry data for future loads
+            hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **initial,
+                    "resolved_location": {
+                        "city": city,
+                        "state": state,
+                        "lat": lat,
+                        "lon": lon,
+                        "tzname": tzname,
+                        "source_lat": latitude,
+                        "source_lon": longitude,
+                    }
                 }
-            }
-        )
-        _LOGGER.info("YidCal: Cached resolved location: %s, %s", city, state)
+            )
+            _LOGGER.info("YidCal: Cached resolved location: %s, %s", city, state)
+        else:
+            # Resolution failed — most commonly Nominatim being unreachable
+            # because HA came up before the network did. Run this session on
+            # the raw HA coordinates but do NOT cache the failure: caching it
+            # would freeze the empty result forever, since the
+            # source_lat/source_lon check above would then treat it as a
+            # valid snap on every future boot. Leaving the cache untouched
+            # means the next reload or restart simply retries.
+            _LOGGER.warning(
+                "YidCal: location resolution failed; using raw HA coordinates "
+                "(%.5f, %.5f) for this session and retrying on next "
+                "reload/restart",
+                latitude,
+                longitude,
+            )
+
+    # Watch for Options saves. Two deliberate details here:
+    #   1) Registered only AFTER the resolved-location cache write above, so
+    #      the async_update_entry() call during first-time setup (or a
+    #      coordinate migration) can't re-trigger the setup that is still
+    #      running.
+    #   2) Wrapped in entry.async_on_unload() so the listener is removed on
+    #      every unload. Without this, each reload stacked one more copy of
+    #      the listener, and since every copy schedules a full reload, each
+    #      Options save doubled the number of back-to-back reloads for the
+    #      rest of the HA session (1 → 2 → 4 → 8 …), which looked like
+    #      YidCal re-initializing over and over until a host reboot.
+    entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
     # Store per-entry options
     hass.data.setdefault(DOMAIN, {})
@@ -766,218 +799,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Called when the user hits Submit on the Options page."""
-    initial = entry.data or {}
-    opts = entry.options or {}
+    """Called when the user hits Submit on the Options page.
 
-    strip = opts.get("strip_nikud", initial.get("strip_nikud", False))
-    candle = opts.get(
-        "candlelighting_offset",
-        initial.get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET),
-    )
-    havdala = opts.get(
-        "havdalah_offset",
-        initial.get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET),
-    )
-    tallis = opts.get(
-        "tallis_tefilin_offset",
-        initial.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
-    )
-    day_label = opts.get(
-        "day_label_language",
-        initial.get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
-    )
-    time_format = opts.get(
-        CONF_TIME_FORMAT,
-        initial.get(CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT),
-    )
-    haftorah_minhag = opts.get(
-        CONF_HAFTORAH_MINHAG,
-        initial.get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
-    )
-    parsha_metzora_display = opts.get(
-        CONF_PARSHA_METZORA_DISPLAY,
-        initial.get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
-    )
-    include_attrs = opts.get(
-        CONF_INCLUDE_ATTR_SENSORS,
-        initial.get(CONF_INCLUDE_ATTR_SENSORS, True),
-    )
-    include_date = opts.get(
-        CONF_INCLUDE_DATE,
-        initial.get(CONF_INCLUDE_DATE, False),
-    )
-    include_sefirah_short_in_full = opts.get(
-        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-        initial.get(
-            CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-            DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-        ),
-    )
-    enable_weekly = opts.get(
-        CONF_ENABLE_WEEKLY_YURTZEIT,
-        initial.get(CONF_ENABLE_WEEKLY_YURTZEIT, False),
-    )
-    is_in_israel = opts.get(
-        CONF_IS_IN_ISRAEL,
-        initial.get(CONF_IS_IN_ISRAEL, DEFAULT_IS_IN_ISRAEL),
-    )
-
-    # NEW: daily toggle + multi-DB list with legacy fallback
-    enable_daily = opts.get(
-        CONF_ENABLE_YURTZEIT_DAILY,
-        initial.get(CONF_ENABLE_YURTZEIT_DAILY, True),
-    )
-    databases = opts.get(
-        CONF_YURTZEIT_DATABASES,
-        initial.get(CONF_YURTZEIT_DATABASES, None),
-    )
-    if not databases:
-        legacy_db = opts.get(
-            CONF_YAHRTZEIT_DATABASE,
-            initial.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE),
-        )
-        databases = [legacy_db] if legacy_db else [DEFAULT_YAHRTZEIT_DATABASE]
-
-    slichos_label_rollover = opts.get(
-        CONF_SLICHOS_LABEL_ROLLOVER,
-        initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
-    )
-    upcoming_lookahead = opts.get(
-        CONF_UPCOMING_LOOKAHEAD_DAYS,
-        initial.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
-    )
-    
-    # ---------------- Early Entry options (NEW) ----------------
-    enable_early_shabbos = opts.get(
-        CONF_ENABLE_EARLY_SHABBOS,
-        initial.get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
-    )
-    early_shabbos_mode = opts.get(
-        CONF_EARLY_SHABBOS_MODE,
-        initial.get(CONF_EARLY_SHABBOS_MODE, DEFAULT_EARLY_SHABBOS_MODE),
-    )
-    early_shabbos_plag_method = opts.get(
-        CONF_EARLY_SHABBOS_PLAG_METHOD,
-        initial.get(CONF_EARLY_SHABBOS_PLAG_METHOD, DEFAULT_EARLY_SHABBOS_PLAG_METHOD),
-    )
-    early_shabbos_fixed_time = opts.get(
-        CONF_EARLY_SHABBOS_FIXED_TIME,
-        initial.get(CONF_EARLY_SHABBOS_FIXED_TIME, DEFAULT_EARLY_SHABBOS_FIXED_TIME),
-    )
-    early_shabbos_apply_rule = opts.get(
-        CONF_EARLY_SHABBOS_APPLY_RULE,
-        initial.get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE),
-    )
-    early_shabbos_sunset_after = opts.get(
-        CONF_EARLY_SHABBOS_SUNSET_AFTER,
-        initial.get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER),
-    )
-
-    enable_early_yomtov = opts.get(
-        CONF_ENABLE_EARLY_YOMTOV,
-        initial.get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
-    )
-    early_yomtov_mode = opts.get(
-        CONF_EARLY_YOMTOV_MODE,
-        initial.get(CONF_EARLY_YOMTOV_MODE, DEFAULT_EARLY_YOMTOV_MODE),
-    )
-    early_yomtov_plag_method = opts.get(
-        CONF_EARLY_YOMTOV_PLAG_METHOD,
-        initial.get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD),
-    )
-    early_yomtov_fixed_time = opts.get(
-        CONF_EARLY_YOMTOV_FIXED_TIME,
-        initial.get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME),
-    )
-    early_yomtov_include = opts.get(
-        CONF_EARLY_YOMTOV_INCLUDE,
-        initial.get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE),
-    )
-    early_yomtov_allow_second_days = opts.get(
-        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
-        initial.get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
-    )
-    korbanos_yud_gimmel_midos = opts.get(
-        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
-        initial.get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
-    )
-    mishne_torah_hoshana_rabba = opts.get(
-        CONF_MISHNE_TORAH_HOSHANA_RABBA,
-        initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
-    )
-
-    enable_daf_hayomi = opts.get(
-        CONF_ENABLE_DAF_HAYOMI,
-        initial.get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI),
-    )
-
-    enable_multiday_candles = opts.get(
-        CONF_ENABLE_MULTIDAY_CANDLES,
-        initial.get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES),
-    )
-
-    enable_zmanim_lookup = opts.get(
-        CONF_ENABLE_ZMANIM_LOOKUP,
-        initial.get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
-    )
-
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        CONF_IS_IN_ISRAEL: is_in_israel,
-        "strip_nikud": strip,
-        "candlelighting_offset": candle,
-        "havdalah_offset": havdala,
-        "tallis_tefilin_offset": tallis,
-        "day_label_language": day_label,
-        CONF_HAFTORAH_MINHAG: haftorah_minhag,
-        CONF_PARSHA_METZORA_DISPLAY: parsha_metzora_display,
-        CONF_INCLUDE_ATTR_SENSORS: include_attrs,
-        CONF_INCLUDE_DATE: include_date,
-        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL: include_sefirah_short_in_full,
-        # Yurtzeit new fields
-        CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
-        CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
-        CONF_YURTZEIT_DATABASES: databases,
-        # Misc
-        CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
-        CONF_UPCOMING_LOOKAHEAD_DAYS: upcoming_lookahead,
-        CONF_TIME_FORMAT: time_format,
-        # Early Entry (NEW)
-        CONF_ENABLE_EARLY_SHABBOS: enable_early_shabbos,
-        CONF_EARLY_SHABBOS_MODE: early_shabbos_mode,
-        CONF_EARLY_SHABBOS_PLAG_METHOD: early_shabbos_plag_method,
-        CONF_EARLY_SHABBOS_FIXED_TIME: early_shabbos_fixed_time,
-        CONF_EARLY_SHABBOS_APPLY_RULE: early_shabbos_apply_rule,
-        CONF_EARLY_SHABBOS_SUNSET_AFTER: early_shabbos_sunset_after,
-
-        CONF_ENABLE_EARLY_YOMTOV: enable_early_yomtov,
-        CONF_EARLY_YOMTOV_MODE: early_yomtov_mode,
-        CONF_EARLY_YOMTOV_PLAG_METHOD: early_yomtov_plag_method,
-        CONF_EARLY_YOMTOV_FIXED_TIME: early_yomtov_fixed_time,
-        CONF_EARLY_YOMTOV_INCLUDE: early_yomtov_include,
-        CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS: early_yomtov_allow_second_days,
-
-        CONF_KORBANOS_YUD_GIMMEL_MIDOS: korbanos_yud_gimmel_midos,
-        CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
-        CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
-        CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
-        CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
-    }
-
-    # Schedule the reload shortly after to apply new options
-    async_call_later(
-        hass,
-        1,
-        lambda now: _delayed_reload(hass, entry.entry_id),
-    )
-
-def _delayed_reload(hass: HomeAssistant, entry_id: str) -> None:
-    """Helper for async_call_later: switch back to the event loop and reload."""
-    _LOGGER.debug("YidCal: scheduling reload of entry %s", entry_id)
-    hass.loop.call_soon_threadsafe(
-        lambda: hass.async_create_task(hass.config_entries.async_reload(entry_id))
-    )
+    A reload re-runs async_setup_entry(), which re-reads entry.options and
+    rebuilds hass.data[DOMAIN] from scratch — so nothing needs to be parsed
+    or copied here. Reloading directly inside the update listener is the
+    standard HA pattern; the old 1-second async_call_later +
+    call_soon_threadsafe dance (a workaround for an options-flow reload race
+    in much older HA cores) scheduled timers that were never cancelled on
+    unload and is not needed on any core >= the 2023.7 minimum.
+    """
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
