@@ -36,6 +36,9 @@ What's in here:
   • Fast date resolution including נדחה (push from Shabbos to Sunday).
   • Civil-date lookups for Pesach Sheni / Lag BaOmer / 15 Av.
   • Molad short-form Hebrew formatter.
+  • Year-cycle helpers: leap year (19-year machzor position, next
+    leap year) and shmita cycle (position 1..7, years-until, next
+    shmita year).
 
 What's NOT in here (and why):
   • Daily clock-time zmanim → ``zman_compute.py``. Different shape
@@ -245,10 +248,9 @@ def kvius_components(hebrew_year: int) -> tuple[str, str, str, bool, int]:
     rh_letter = _WEEKDAY_LETTER.get(rh.weekday(), "")
     pesach_letter = _WEEKDAY_LETTER.get(pesach.weekday(), "")
     length_letter = _YEAR_LENGTH_LETTER.get(days, "")
-    # Calibration: 5782 mod 7 == 0 was a shmita year (year 7 of cycle).
-    #   ((5782 - 1) % 7) + 1 = (5781 % 7) + 1 = 6 + 1 = 7  ✓
-    #   ((5783 - 1) % 7) + 1 = 0 + 1 = 1  (first year after shmita)
-    shmita_year = ((hebrew_year - 1) % 7) + 1
+    # Shmita position via the single shared helper (calibration:
+    # 5782 mod 7 == 0 was a shmita year = year 7 of the cycle).
+    shmita_year = shmita_cycle_year(hebrew_year)
     return rh_letter, length_letter, pesach_letter, y.leap, shmita_year
 
 
@@ -1519,6 +1521,48 @@ def real_adar_month(hyear: int) -> int:
     years, Adar (12) otherwise.
     """
     return 13 if is_leap_hebrew_year(hyear) else 12
+
+
+def year_in_cycle(hyear: int) -> int:
+    """1-based position of *hyear* within the 19-year machzor.
+
+    Leap years fall on cycle years 3, 6, 8, 11, 14, 17 and 19.
+    """
+    return ((hyear - 1) % 19) + 1
+
+
+def next_leap_year(hyear: int) -> int:
+    """First leap (מעוברת) year strictly after *hyear*."""
+    y = hyear + 1
+    while not is_leap_hebrew_year(y):
+        y += 1
+    return y
+
+
+def shmita_cycle_year(hyear: int) -> int:
+    """Position of *hyear* within the 7-year shmita cycle (1..7).
+
+    Calibration: 5782 mod 7 == 0 was a shmita year, so shmita ==
+    cycle year 7. ``kvius_components`` delegates here.
+    """
+    return ((hyear - 1) % 7) + 1
+
+
+def is_shmita_year(hyear: int) -> bool:
+    """True when *hyear* is a Shmita year (year 7 of the cycle)."""
+    return shmita_cycle_year(hyear) == 7
+
+
+def years_until_shmita(hyear: int) -> int:
+    """Whole years from *hyear* until the next Shmita; 0 during
+    Shmita itself."""
+    return 7 - shmita_cycle_year(hyear)
+
+
+def next_shmita_year(hyear: int) -> int:
+    """The Shmita year being counted down to (== *hyear* during
+    Shmita)."""
+    return hyear + years_until_shmita(hyear)
 
 
 def _push_from_shabbos(d: date_cls) -> date_cls:
