@@ -290,6 +290,14 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   Whole years remaining until the next Shmita — counts down 6 → 0, showing **0** during the Shmita year itself.
   *Attributes:* `Hebrew_Year`, `Shmita_Cycle_Year`, `Next_Shmita_Year`, `Is_Shmita` (`"true"`/`"false"`)
 
+* **Pruzbol** (`binary_sensor.yidcal_pruzbol`)
+  **ON** from **Alos** until **candle-lighting** on the Erev Rosh Hashanah that *closes* a Shmita year (29 Elul — the last day of the שמיטה year), which is the window the פרוזבול still has to be made in. **OFF** for the rest of the seven-year cycle. Same Alos → candle-lighting window convention as the **Erev** sensor.
+  *Attributes:* `Now`, `Pruzbol_Date`, `Hebrew_Year` (the incoming year — the one named in the line), `Hebrew_Year_Letters`, `Shmita_Year` (the year being closed), `Days_Until`, `Next_Window_Start`, `Next_Window_End`, `Activation_Logic`
+
+* **Pruzbol Display** (`sensor.yidcal_pruzbol_display`)
+  Always populated with the **next** pruzbol as a printed-luach Hebrew line, e.g. `בער״ה תש״צ צריכין לעשות פרוזבול` — the year is derived from the calendar, never hard-coded. At candle-lighting on that Erev Rosh Hashanah it rolls forward to the following cycle, in lock-step with the binary sensor going OFF. *(Next occurrence: **Sunday, September 9, 2029** — ערב ראש השנה תש״צ.)*
+  *Attributes:* `Pruzbol_Date`, `Hebrew_Year`, `Hebrew_Year_Letters`, `Shmita_Year`, `Days_Until`, `Window_Start`, `Window_End`, `Is_Today`, `In_Window` (`"true"`/`"false"`), `Nusach` (the full נוסח הפרוזבול)
+
 * **Kiddush Levunah** (`binary_sensor.yidcal_kiddush_levana`)
   **ON** continuously from the configured start — **ג' שלימים** (3 complete days after the molad) or **ז' שלימים** (7 complete days, the default) — until **סוף זמן קידוש לבנה** (half the molad interval after the molad, שיטת הרמ״א). Pick the start in **Options**; both opinions are always exposed as attributes regardless of which one drives the state.
   *Boolean attributes:* `Gimmel_Shleimim`, `Zayin_Shleimim` (`"true"`/`"false"` — each turns true at its own start and false at the same sof zman)
