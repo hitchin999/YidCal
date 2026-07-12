@@ -39,6 +39,8 @@ from .config_flow import (
     DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
     CONF_ENABLE_WEEKLY_YURTZEIT,  # (keep existing key name & behavior)
     CONF_SLICHOS_LABEL_ROLLOVER,
+    CONF_KIDDUSH_LEVANA_START,
+    DEFAULT_KIDDUSH_LEVANA_START,
     CONF_UPCOMING_LOOKAHEAD_DAYS,
     DEFAULT_UPCOMING_LOOKAHEAD_DAYS,
     CONF_IS_IN_ISRAEL,
@@ -473,6 +475,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_SLICHOS_LABEL_ROLLOVER,
         initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
     )
+    kiddush_levana_start = opts.get(
+        CONF_KIDDUSH_LEVANA_START,
+        initial.get(CONF_KIDDUSH_LEVANA_START, DEFAULT_KIDDUSH_LEVANA_START),
+    )
     upcoming_lookahead = opts.get(
         CONF_UPCOMING_LOOKAHEAD_DAYS,
         initial.get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
@@ -680,6 +686,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_YURTZEIT_DATABASES: databases,
         # Misc
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
+        CONF_KIDDUSH_LEVANA_START: kiddush_levana_start,
         CONF_UPCOMING_LOOKAHEAD_DAYS: upcoming_lookahead,
         CONF_TIME_FORMAT: time_format,
         # Early Entry (NEW)
@@ -727,6 +734,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
         CONF_YURTZEIT_DATABASES: databases,
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
+        CONF_KIDDUSH_LEVANA_START: kiddush_levana_start,
         CONF_TIME_FORMAT: time_format,
         # Early Entry (NEW)
         CONF_ENABLE_EARLY_SHABBOS: enable_early_shabbos,
