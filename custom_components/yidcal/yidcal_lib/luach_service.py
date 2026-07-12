@@ -55,6 +55,10 @@ from .luach_yearly_multi_page_pdf import (
 )
 from .luach_yearly_sheet_pdf import render_yearly_sheet_pdf
 from .luach_weekly_pdf import render_weekly_pdf, render_weekly_pdf_multi
+from .luach_weekly_yidcal_pdf import (
+    render_weekly_yidcal_pdf_multi,
+    template_available as weekly_yidcal_assets_available,
+)
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,7 +83,11 @@ _KEEP_RECENT = 4
 _MAX_RANGE_DAYS = 800  # ~2.2 years
 
 
-_VALID_STYLES = ("yearly_multi_page", "yearly_sheet", "weekly")
+_VALID_STYLES = ("yearly_multi_page", "yearly_sheet", "weekly",
+                 "weekly_yidcal")
+# Both weekly card styles share the full weekly pipeline (data
+# build, strips, notes); only the PDF renderer differs.
+_WEEKLY_STYLES = ("weekly", "weekly_yidcal")
 
 # Legacy aliases from before the pre-beta rename (Run 7). These let
 # callers with stale automations or cached service-call form state
@@ -125,6 +133,7 @@ def _style_validator(v):
 
 _SCHEMA = vol.Schema({
     vol.Optional("style", default="yearly_multi_page"): _style_validator,
+    vol.Optional("time_format"): vol.Any(None, vol.In(("12", "24"))),
     vol.Optional("hebrew_year"): vol.All(vol.Coerce(int), vol.Range(min=5780, max=5900)),
     vol.Optional("start_date"): cv.date,
     vol.Optional("end_date"): cv.date,
@@ -287,9 +296,15 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     # The weekly card style ships disabled (const.WEEKLY_LUACH_ENABLED).
     # "weekly" stays in _VALID_STYLES so the schema accepts it and the
     # caller gets THIS clear message instead of a validator stack trace.
-    if style == "weekly" and not WEEKLY_LUACH_ENABLED:
+    if style in _WEEKLY_STYLES and not WEEKLY_LUACH_ENABLED:
         raise ServiceValidationError(
-            "The 'weekly' luach style is not available in this release."
+            f"The {style!r} luach style is not available in this release."
+        )
+    if style == "weekly_yidcal" and not weekly_yidcal_assets_available():
+        raise ServiceValidationError(
+            "The 'Weekly YidCal' style needs its template rasters and"
+            " fonts under yidcal_lib/assets and yidcal_lib/fonts —"
+            " one or more are missing."
         )
 
     # ── Yearly-sheet-specific input validation ──
@@ -338,7 +353,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     #   • end_date given (a range)   → that range of weeks (multi-page)
     #   • bare start_date / nothing  → the single current week
     weekly_multi = False
-    if style == "weekly":
+    if style in _WEEKLY_STYLES:
         weekly_multi = (
             call.data.get("hebrew_year") is not None
             or call.data.get("end_date") is not None
@@ -369,7 +384,8 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     lat, lon, tzname, loc_name = await _resolve_location(hass, call.data.get("location"))
 
     # ── Pull config-entry options for diaspora + offsets + display knobs ──
-    diaspora, candle_off, havdalah_off, metzora_disp = _read_config_options(hass)
+    (diaspora, candle_off, havdalah_off, metzora_disp,
+     time_fmt) = _read_config_options(hass)
     # Per-call overrides take precedence over the config-entry
     # defaults. Useful when generating luachs for a different minhag
     # or community without flipping integration settings.
@@ -377,6 +393,8 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         diaspora = not bool(call.data["is_in_israel"])
     if call.data.get("candle_offset") is not None:
         candle_off = int(call.data["candle_offset"])
+    if call.data.get("time_format") in ("12", "24"):
+        time_fmt = call.data["time_format"]
     if call.data.get("havdalah_offset") is not None:
         havdalah_off = int(call.data["havdalah_offset"])
 
@@ -438,7 +456,12 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         # hebrew_year / end_date. Data comes from build_weekly_data() —
         # the same build_luach + compute_zmanim_for_date pipeline the
         # yearly luachs use.
-        if style == "weekly":
+        if style in _WEEKLY_STYLES:
+            _render_weekly_multi = (
+                render_weekly_yidcal_pdf_multi
+                if style == "weekly_yidcal"
+                else render_weekly_pdf_multi
+            )
             from datetime import timedelta as _td
             from . import halacha_events as _he
             from pyluach.hebrewcal import HebrewDate as _PHD
@@ -447,6 +470,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
                 geo=geo, tz=ZoneInfo(tzname), diaspora=diaspora,
                 candle_offset=candle_off, havdalah_offset=havdalah_off,
                 metzora_display=metzora_disp,
+                time_format=time_fmt,
                 extra_zmanim_labels=extra_labels,
                 molad_style="monroe",
                 hebrew_date_rc_emphasis=True,
@@ -535,7 +559,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
                         "No Sun→Shabbos weeks fall in the requested "
                         "range."
                     )
-                render_weekly_pdf_multi(
+                _render_weekly_multi(
                     weeks=weeks_out, output_path=out_path,
                 )
                 _all_notes = sorted({
@@ -572,7 +596,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
                 add_seconds=bool(
                     call.data.get("add_seconds", False)),
             )
-            render_weekly_pdf_multi(
+            _render_weekly_multi(
                 weeks=[
                     (_wd, _strip_for(_wd.week_end), notes_he)
                     for _wd in _cards
@@ -980,11 +1004,14 @@ async def _resolve_location(
 
 # ── Config-entry option reads ─────────────────────────────────────────
 
-def _read_config_options(hass: HomeAssistant) -> tuple[bool, int, int, str]:
-    """Pull diaspora flag, candle offset, havdalah offset, and metzora
-    display preference from the YidCal config entry.
+def _read_config_options(
+    hass: HomeAssistant,
+) -> tuple[bool, int, int, str, str]:
+    """Pull diaspora flag, candle offset, havdalah offset, metzora
+    display preference, and clock format from the YidCal config entry.
 
-    Returns (diaspora, candle_offset_min, havdalah_offset_min, metzora_display).
+    Returns (diaspora, candle_offset_min, havdalah_offset_min,
+    metzora_display, time_format).
     """
     from homeassistant.config_entries import ConfigEntry
 
@@ -1003,7 +1030,10 @@ def _read_config_options(hass: HomeAssistant) -> tuple[bool, int, int, str]:
     candle = int(data.get("candle_offset", data.get("candlelighting_offset", 15)))
     havdalah = int(data.get("havdalah_offset", 72))
     metzora = str(data.get("parsha_metzora_display", "metzora"))
-    return diaspora, candle, havdalah, metzora
+    time_fmt = str(data.get("time_format", "12"))
+    if time_fmt not in ("12", "24"):
+        time_fmt = "12"
+    return diaspora, candle, havdalah, metzora, time_fmt
 
 
 # ── Molad provider ────────────────────────────────────────────────────
