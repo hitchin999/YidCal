@@ -123,9 +123,9 @@ class YidCalDisplayDevice(YidCalDevice):
 class YidCalSpecialDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
         identifiers={(DOMAIN, "yidcal_special_binaries")},
-        name="YidCal — Special Binary Sensors",
+        name="YidCal — Special Sensors",
         manufacturer="Yoel Goldstein/Vaayer LLC",
-        model="Special Binary Sensors",
+        model="Special Sensors",
         entry_type="service",
     )
 
