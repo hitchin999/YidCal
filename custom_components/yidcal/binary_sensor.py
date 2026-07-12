@@ -53,6 +53,8 @@ from .hebrew_year_sensors import (
     LeapYearNextYearSensor,
     ShmitaSensor,
 )
+from .kiddush_levana_sensors import KiddushLevanaSensor
+from .pruzbol_sensors import PruzbolSensor
 from .motzi_holiday_sensor import (
     MotzeiYomKippurSensor,
     MotzeiPesachSensor,
@@ -929,6 +931,8 @@ async def async_setup_entry(
         LeapYearSensor(hass, havdalah),
         LeapYearNextYearSensor(hass, havdalah),
         ShmitaSensor(hass, havdalah),
+        KiddushLevanaSensor(hass),
+        PruzbolSensor(hass, candle),
     ]
     if include_attrs:
         # Filter the list so we don’t create sensors that will never be used
