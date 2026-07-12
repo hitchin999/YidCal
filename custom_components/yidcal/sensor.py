@@ -56,6 +56,11 @@ from .fast_timer_sensors import FastStartCountdownSensor, FastEndCountdownSensor
 from .morid_tal_sensors import MoridGeshemSensor, TalUMatarSensor
 from .season_sensor import SeasonSensor
 from .hebrew_year_sensors import YearsUntilShmitaSensor
+from .kiddush_levana_sensors import (
+    SofZmanKiddushLevanaSensor,
+    SofKiddushLevanaDisplaySensor,
+)
+from .pruzbol_sensors import PruzbolDisplaySensor
 from .daf_hayomi_sensor import DafHaYomiSensor
 from .amud_hayomi_sensor import AmudHaYomiSensor
 from .special_prayer_sensor import SpecialPrayerSensor
@@ -233,6 +238,9 @@ async def async_setup_entry(
         TalUMatarSensor(hass, yidcal_helper, havdalah_offset),
         SeasonSensor(hass),
         YearsUntilShmitaSensor(hass, havdalah_offset),
+        SofZmanKiddushLevanaSensor(hass),
+        SofKiddushLevanaDisplaySensor(hass),
+        PruzbolDisplaySensor(hass, candle_offset),
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
         ZmanErevSensor(hass, candle_offset, havdalah_offset, static_mode=bool(enable_multiday_candles)),
         ZmanMotziSensor(hass, candle_offset, havdalah_offset),
