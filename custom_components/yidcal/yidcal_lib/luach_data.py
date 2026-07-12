@@ -138,6 +138,11 @@ class AnnotationRow:
     kind: str                      # 'mevorchim' / 'tekufah' / 'erev_pesach_chametz' / etc.
     text_he: str                   # the formatted Hebrew text line
     position: str = "before"       # 'before' or 'after' the row at civil_date
+    # Optional yearly-SHEET wording for the same annotation (the SF
+    # sheet abbreviates and breaks differently from the weekly card).
+    # '\n' separates visual lines. The weekly reads text_he ONLY, so
+    # anything that lives here never reaches the weekly card.
+    text_sheet_he: str = ""
 
 
 LuachItem = Union[LuachRow, AnnotationRow]
@@ -201,6 +206,56 @@ def _lighting_event_for_day(
 def _is_chol_hamoed(ph, *, diaspora: bool) -> bool:
     """Canonical Chol-HaMoed rule (halacha_events), Hoshana Rabbah included."""
     return he.chol_hamoed_day(ph.month, ph.day, diaspora=diaspora) is not None
+
+
+# The footnote the SF sheet prints at the very bottom whenever the
+# pruzbol note appears. Exact text supplied by Yoel.
+PRUZBOL_FOOTNOTE_HE = (
+    "*נוסח הפרוזבול: במותב תלתא כחדא הוינא ואתא פלוני המלוה ואמר "
+    "לפנינו: מוסרני לכם פלוני ופלוני הדיינים שבמקום פלוני שכל חוב "
+    "שיש לי שאגבנו כל זמן שארצה (הדיינים צריכים לחתום)"
+)
+
+
+def _build_pruzbol_annotations(
+    *, start: date_cls, end: date_cls,
+) -> list[AnnotationRow]:
+    """Erev-RH pruzbol note, when that Erev RH closes a shmita year.
+
+    Printed SF 5783: 'בער״ה תשפ״ג צריכין לעשות פרוזבול*' — with the
+    נוסח as a footnote at the foot of the sheet. The predicate lives
+    in halacha_events.needs_pruzbol() so a future
+    binary_sensor.yidcal_pruzbol reads the SAME rule.
+    """
+    out: list[AnnotationRow] = []
+    d = start
+    while d <= end:
+        if he.needs_pruzbol(d):
+            ph = PHebrewDate.from_pydate(d)
+            try:
+                yl = he.hebrew_year_letters(ph.year + 1)
+            except Exception:
+                yl = ""
+            out.append(AnnotationRow(
+                civil_date=d,
+                kind="pruzbol",
+                text_he=f"בער״ה {yl} צריכין לעשות פרוזבול*".strip(),
+                position="before",
+            ))
+        d += timedelta(days=1)
+    return out
+
+
+def _pesach_chatzos_str(erev_pesach, config) -> str:
+    """Chatzos halayla of the FIRST seder night.
+
+    Uses the same ``chatzos_halayla_for_night`` (MGA midpoint) as the
+    weekday Erev-Pesach branch and YidCal's ChatzosHaLaila sensor, so
+    the luach text and the sensor never disagree."""
+    ch = chatzos_halayla_for_night(
+        geo=config.geo, tz=config.tz, base_date=erev_pesach,
+    )
+    return _weekly_fmt_time(ch, config.time_format)
 
 
 def _build_row_title(
@@ -361,6 +416,11 @@ class LuachConfig:
     havdalah_offset: int
     tallis_offset: int = DEFAULT_TALLIS_TEFILIN_OFFSET
     metzora_display: str = "metzora"
+    # Clock format for the WEEKLY card's zmanim strings ("12"/"24").
+    # "12" (default) matches every printed luach; the annotation
+    # composers below also consult this, but only entry points that
+    # explicitly set "24" (the weekly service) change behaviour.
+    time_format: str = "12"
     extra_zmanim_labels: tuple[str, ...] = ("עלות השחר", "סוף זמן קריאת שמע מג״א")
     include_pirkei_avos: bool = True
     # Molad phrasing style: "monroe" (default — used by the yearly-multi-page luach,
@@ -473,6 +533,61 @@ def _build_rows(
             metzora_display=config.metzora_display,
             compact_erev_yt_labels=config.compact_erev_yt_labels,
         )
+        # ── Friday-is-a-YT-day: name the row for its SHABBOS ──
+        # (printed SF convention, verified 5783/5784/5785). The
+        # Friday's own YT becomes a parenthetical, appended below to
+        # the row's special-Shabbos list so the sheet prints it AFTER
+        # the Hebrew date.
+        _fri_yt_paren = ""
+        # Shabbos-is-Erev-Pesach: the printed sheet has NO row for that
+        # Saturday — it tags the Friday row instead (5785: 'צו שבת
+        # הגדול, י״ג ניסן (שבת ער״פ)').
+        if kind == "erev_before_sunset" and d.weekday() == 4:
+            try:
+                _sat_yt = he.erev_yt_name(
+                    d + timedelta(days=1), diaspora=config.diaspora)
+            except Exception:
+                _sat_yt = None
+            if not _sat_yt:
+                # erev_yt_name() excludes no-melacha days, so probe the
+                # Hebrew date directly (only פסח/שבועות can start Sun).
+                try:
+                    _tp = PHebrewDate.from_pydate(d + timedelta(days=2))
+                    if (_tp.month, _tp.day) == (1, 15):
+                        _sat_yt = "פסח"
+                    elif (_tp.month, _tp.day) == (3, 6):
+                        _sat_yt = "שבועות"
+                except Exception:
+                    _sat_yt = None
+            if _sat_yt:
+                _abbr = {"פסח": "ער״פ"}.get(_sat_yt, f"ערב {_sat_yt}")
+                _fri_yt_paren = f"(שבת {_abbr})"
+
+        if (not _fri_yt_paren
+                and kind == "erev_before_sunset" and d.weekday() == 4
+                and title_main.startswith("ערב שבת")):
+            try:
+                _sat = d + timedelta(days=1)
+                _ph_today = PHebrewDate.from_pydate(d)
+                _yt_lbl = he.intra_block_day_label(
+                    _ph_today, diaspora=config.diaspora) or ""
+                if _yt_lbl and HDateInfo(
+                        d, diaspora=config.diaspora).is_yom_tov:
+                    _p = he.parsha_name(
+                        _sat, diaspora=config.diaspora,
+                        metzora_display=config.metzora_display,
+                    )
+                    # ONLY when the Shabbos has a real parsha. A
+                    # חוה״מ Shabbos keeps the tight 5785 form
+                    # ('ערב שבת חוה״מ ב׳ דסוכות') — note the 5783
+                    # sheet parenthesises that one instead; the
+                    # newer 5785 sheet is the reference.
+                    if _p:
+                        title_main, title_suffix = _p, ""
+                        _fri_yt_paren = f"({_yt_lbl})"
+            except Exception:
+                _fri_yt_paren = ""
+
         title = f"{title_main} {title_suffix}".strip()
         hebrew_date = he.hebrew_date_str(d, rc_emphasis=config.hebrew_date_rc_emphasis)
 
@@ -612,7 +727,10 @@ def _build_rows(
             title_main_he=title_main,
             title_suffix_he=title_suffix,
             pirkei_avos_he=pirkei,
-            special_shabbos_he=special_he,
+            special_shabbos_he=(
+                special_he + [_fri_yt_paren] if _fri_yt_paren
+                else special_he
+            ),
             eruv_tavshilin=eruv_tav,
             candle_lighting=candle,
             candle_kind=kind,
@@ -692,6 +810,29 @@ def _attach_motzei(
         #     when this row is the block's ONLY motzei carrier (mid-
         #     week 2-day YT like last days of Pesach), print the
         #     block-end havdalah instead.
+        # Does the block END need its OWN row? The מוצאי-ש״ק column of
+        # a FRIDAY Erev row is committed to that Shabbos's tzeis, so it
+        # can never also carry a block end that falls later. Verified
+        # against the printed SF sheets 5783/5784/5785 — all 13 YT
+        # blocks:
+        #   • end falls on Shabbos    → the Friday Erev row carries it
+        #                               → no trailing row (ר״ה/סוכות/
+        #                                 שמח״ת 5785, פסח 5783)
+        #   • Tishrei block           → MSM always breaks the end out
+        #                               → trailing row (5783 mid-week
+        #                                 ר״ה, 5784 Sat+Sun blocks)
+        #   • Friday Erev row (else)  → it cannot carry the end
+        #                               → trailing row (פסח + שביעי
+        #                                 של פסח 5785)
+        #   • weekday Erev, non-Tishrei → the Erev row carries the end
+        #                               → no trailing row (פסח 5784)
+        _blk_needs_trailing = (
+            start_blk != end_blk
+            and end_blk.weekday() != 5
+            and (PHebrewDate.from_pydate(end_blk).month == 7
+                 or row.civil_date.weekday() == 4)
+        )
+
         if end_date is not None and end_blk > end_date:
             target_blk = None
         elif target_day == end_blk:
@@ -699,8 +840,7 @@ def _attach_motzei(
         elif target_day.weekday() == 4:
             target_blk = None
         else:
-            ph_end = PHebrewDate.from_pydate(end_blk)
-            has_trailing = ph_end.month == 7
+            has_trailing = _blk_needs_trailing
             has_friday_carrier = any(
                 (target_day + timedelta(days=i)).weekday() == 4
                 for i in range(1, (end_blk - target_day).days)
@@ -736,11 +876,9 @@ def _attach_motzei(
         #   • end_blk must be in Tishrei (Hebrew month 7)
         # ...plus the dedup check (end_blk not already covered by an
         # Erev row or the motzaei_sh_to_yt insert).
-        if start_blk == end_blk:
+        if not _blk_needs_trailing:
             continue
         ph_end = PHebrewDate.from_pydate(end_blk)
-        if ph_end.month != 7:
-            continue
         if end_blk in trailing_dates_emitted:
             continue
         if any(r.civil_date == end_blk for r in rows if r is not row):
@@ -938,6 +1076,7 @@ def _build_annotations(
     out.extend(_annotations_minor_days(start, end, config=config))
     out.extend(_annotations_dst(start, end, config=config))
     out.extend(_annotations_hashala(start, end, config=config))
+    out.extend(_build_pruzbol_annotations(start=start, end=end))
     return out
 
 
@@ -1280,9 +1419,9 @@ def _annotations_erev_pesach(
                 havdalah_offset=config.havdalah_offset,
                 sriefes_round="floor",
             )
-            fs_str = f"{fri_sriefes.hour % 12 or 12}:{fri_sriefes.minute:02d}"
-            sa_str = f"{sat_achilas.hour % 12 or 12}:{sat_achilas.minute:02d}"
-            ss_str = f"{sat_sriefes.hour % 12 or 12}:{sat_sriefes.minute:02d}"
+            fs_str = _weekly_fmt_time(fri_sriefes, config.time_format)
+            sa_str = _weekly_fmt_time(sat_achilas, config.time_format)
+            ss_str = _weekly_fmt_time(sat_sriefes, config.time_format)
             text = (
                 f"סוף זמן שריפת חמץ עש״ק {fs_str} - "
                 f"סוף זמן אכילת חמץ שב״ק {sa_str} - "
@@ -1290,10 +1429,26 @@ def _annotations_erev_pesach(
             )
             # Anchor BEFORE the Friday Tzav-Shabbos-Hagadol row so the
             # burning deadline is shown above its day.
+            # The SF SHEET prints this as TWO lines, abbreviated, with
+            # the seder-night chatzos folded onto line 2 (verified vs
+            # the printed 5785 sheet). It lives in text_sheet_he, so
+            # the weekly card still gets the plain single-line text_he.
+            try:
+                _ch = _pesach_chatzos_str(erev_pesach, config)
+            except Exception:
+                _ch = ""
+            _sheet = (
+                f"סו״ז שריפת ומכירת חמץ: ביום עש״ק בשעה {fs_str} - "
+                f"סו״ז אכילת חמץ: בש״ק בשעה {sa_str}\n"
+                f"סו״ז ביעור חמץ: ואמירת כל חמירא בש״ק בשעה {ss_str}"
+            )
+            if _ch:
+                _sheet += f" - זמן חצות: בלילי פסח {_ch}"
             out.append(AnnotationRow(
                 civil_date=friday,
                 kind="erev_pesach_chametz",
                 text_he=text,
+                text_sheet_he=_sheet,
                 position="before",
             ))
         else:
@@ -1339,14 +1494,12 @@ def _annotations_erev_pesach(
             szkl_he = _szkl_anchor_when(
                 szkl_nissan, geo=config.geo, tz=config.tz,
                 diaspora=config.diaspora,
+                time_fmt=config.time_format,
             )
 
-            a_str = f"{achilas.hour % 12 or 12}:{achilas.minute:02d}"
-            s_str = f"{sriefes.hour % 12 or 12}:{sriefes.minute:02d}"
-            c_str = (
-                f"{chatzos_night.hour % 12 or 12}:"
-                f"{chatzos_night.minute:02d}"
-            )
+            a_str = _weekly_fmt_time(achilas, config.time_format)
+            s_str = _weekly_fmt_time(sriefes, config.time_format)
+            c_str = _weekly_fmt_time(chatzos_night, config.time_format)
             line1 = (
                 f"סוף זמן אכילת חמץ {a_str} - "
                 f"סוף זמן שריפת חמץ {s_str}"
@@ -1627,12 +1780,20 @@ def _annotations_dst(
     for chg in he.dst_changes_in_range(start=start, end=end, tz=config.tz):
         if chg.kind == "dst_start":
             text = "פון די וואך איז די פארגערוקטע צייט (סעיווינגס טיים)"
+            sheet = ("פון די וואָך אָן איז די פאָרגעריקטע צייט\n"
+                     "(דעילייט סעיווינגס טיים)")
         else:
             text = "פון די וואך איז די נארמאלע צייט (סטענדערד טיים)"
+            sheet = ("פון די וואָך אָן איז די נאָרמאַלע צייט\n"
+                     "(איסטערן סטענדארד טיים)")
         out.append(AnnotationRow(
             civil_date=chg.civil_date,
             kind=chg.kind,
             text_he=text,
+            # Yearly SINGLE SHEET only — verbatim from the printed SF
+            # sheet (nikud included). text_he keeps the existing
+            # wording for every other consumer.
+            text_sheet_he=sheet,
             position="before",
         ))
     return out
@@ -1800,6 +1961,22 @@ class WeeklyData:
     # are unaffected (they keep their halachic rounding). Default
     # False — sensors, yearly luachs and normal calls are untouched.
     add_seconds: bool = False
+    # Clock format for renderer-side time strings (the 12 grid
+    # columns): "12" (default) or "24". Box/chametz/KL strings are
+    # already formatted by the builder; this lets the renderers
+    # match them in the grid.
+    time_format: str = "12"
+    # True iff title_main_he is the week's PARSHA name (the hero
+    # renderer prefixes 'פרשת' only then — YT titles like
+    # 'שביעי של פסח' must stay bare).
+    title_is_parsha: bool = False
+    # Parsha of the Shabbos that CLOSES this card's no-melacha block,
+    # when the hero doesn't already name it (הושענא רבה → בראשית,
+    # ער״ה Thu+Fri → האזינו). Empty when the block doesn't end on a
+    # Shabbos, or that Shabbos has no parsha (חוה״מ / YT). The Weekly
+    # YidCal renderer prints it above the מברכים/מולד panel lines;
+    # the legacy renderer ignores the field.
+    block_parsha_he: str = ""
 
 
 # Canonical zman labels (exactly as emitted by zman_compute) for the 12
@@ -1826,8 +2003,15 @@ WEEKLY_ZMAN_COLUMNS: tuple[tuple[str, str], ...] = (
 WEEKLY_BOXED_COLUMN = "סוף זמן קר״ש"
 
 
-def _weekly_fmt_time_12(dt: datetime) -> str:
-    """12-hour 'H:MM' (no AM/PM — the luachs leave it implicit)."""
+def _weekly_fmt_time(dt: datetime, fmt: str = "12") -> str:
+    """'H:MM' clock string for the weekly card.
+
+    fmt="12" (default) → 12-hour, no AM/PM (the printed luachs
+    leave it implicit). fmt="24" → zero-padded 24-hour 'HH:MM'
+    (the integration's time_format option).
+    """
+    if fmt == "24":
+        return f"{dt.hour:02d}:{dt.minute:02d}"
     h = dt.hour % 12 or 12
     return f"{h}:{dt.minute:02d}"
 
@@ -1845,6 +2029,7 @@ def _szkl_day_letter(dd: date_cls) -> str:
 
 def _szkl_anchor_when(
     sk: datetime, *, geo, tz: ZoneInfo, diaspora: bool,
+    time_fmt: str = "12",
 ) -> str:
     """Anchor + when for a ס״ז-קידוש-לבנה deadline, applying ZMAN's
     "show times at day" rule (verified vs the printed Williamsburg
@@ -1891,12 +2076,13 @@ def _szkl_anchor_when(
     anchor_d = d if pre_dawn else (d + timedelta(days=1))
     return (
         f"{_anchor(anchor_d, pre_dawn=pre_dawn)} "
-        f"{_weekly_fmt_time_12(sk)}"
+        f"{_weekly_fmt_time(sk, time_fmt)}"
     )
 
 
 def _zsh_anchor_when(
     zs: datetime, *, geo, tz: ZoneInfo, diaspora: bool,
+    time_fmt: str = "12",
 ) -> str:
     """Anchor + time for ז׳ שלמים, per the printed לכל-זמן booklet
     (verified EXACT on 5/5 sampled months):
@@ -1918,7 +2104,7 @@ def _zsh_anchor_when(
     except Exception:
         is_day = False
         pre_dawn = True
-    t = _weekly_fmt_time_12(zs)
+    t = _weekly_fmt_time(zs, time_fmt)
     try:
         _intra = he.intra_block_day_label(
             PHebrewDate.from_pydate(d), diaspora=diaspora)
@@ -2071,6 +2257,23 @@ def _weekly_dom_sublabel(
         _intra_chk = he.intra_block_day_label(ph, diaspora=diaspora)
         if not (_intra_chk and "דחוה״מ" in _intra_chk):
             return f"ערב {ey}"
+
+    # Erev-YT that falls on SHABBOS. he.erev_yt_name() returns None
+    # for ANY no-melacha day by design — it is the structural
+    # predicate shared with the yearly luach and the sensors — so
+    # ערב פסח / ערב שבועות on Shabbos come back empty. The printed
+    # weekly card still labels the day: on שבת הגדול 5785, יד ניסן
+    # reads ערב פסח. Weekly-only; halacha_events is left untouched.
+    # Only Pesach and Shavuos can start on a Sunday (לא בד״ו ראש
+    # keeps ר״ה/סוכות/יו״כ/שמ״ע off it), so only their Erev can
+    # land on Shabbos — and neither 14 Nisan nor 5 Sivan is ever
+    # itself a YT/חוה״מ day, so nothing else can be shadowed here.
+    if d.weekday() == 5:
+        _tph = PHebrewDate.from_pydate(d + timedelta(days=1))
+        if (_tph.month, _tph.day) == (1, 15):
+            return "ערב פסח"
+        if (_tph.month, _tph.day) == (3, 6):
+            return "ערב שבועות"
 
     # YT day / Chol HaMoed (intra-block label, e.g. 'א׳ דפסח',
     # 'ב׳ דחוה״מ פסח', 'שמיני עצרת')
@@ -2356,16 +2559,21 @@ def build_weekly_data(
         # (YT-day-2 on Shabbos) and the attached ערב שבת חוה״מ.
         if r.civil_date.weekday() != 4:
             return False
-        t = r.title_main_he or ""
-        if not t.startswith("ערב שבת "):
-            return False
+        # NB: NO title test. The row's title is now the PARSHA when the
+        # Friday is itself a YT day (printed-sheet convention), so any
+        # 'ערב שבת' pre-filter would miss exactly the case this rule
+        # exists for. The no-melacha adjacency below IS the rule.
         try:
             return (
                 he.is_no_melacha(
                     r.civil_date, diaspora=config.diaspora)
-                or he.is_no_melacha(
-                    r.civil_date - timedelta(days=1),
-                    diaspora=config.diaspora)
+                or (
+                    he.is_no_melacha(
+                        r.civil_date - timedelta(days=1),
+                        diaspora=config.diaspora)
+                    and he.is_chol_hamoed(
+                        r.civil_date, diaspora=config.diaspora)
+                )
             )
         except Exception:
             return False
@@ -2757,7 +2965,7 @@ def build_weekly_data(
         # RIGHT = this block's Erev candle.
         boxes.append(WeeklyBox(
             label_he="הדלקת הנרות",
-            time_str=_weekly_fmt_time_12(hero_row.candle_lighting),
+            time_str=_weekly_fmt_time(hero_row.candle_lighting, config.time_format),
             big=True,
         ))
 
@@ -2771,6 +2979,24 @@ def build_weekly_data(
                     motzei_label = r.motzei_label_he
         if is_block_yt:
             motzei_label = "מוצאי יו״ט"
+            # ...unless the block RUNS INTO Shabbos (ר״ה Thu+Fri →
+            # שבת שובה, שמע״צ+שמח״ת → שבת בראשית, פסח → שבת חוה״מ,
+            # 2nd-day-שבועות on Shabbos). There is no havdalah until
+            # Motzei Shabbos, and that single one closes BOTH — so
+            # the card names both (Yoel).
+            try:
+                _mfy = next(
+                    (dd.civil_date for dd in days
+                     if dd.is_yomtov and _in_block(dd.civil_date)),
+                    None,
+                )
+                if _mfy is not None:
+                    _mse = he.no_melacha_block(
+                        _mfy, diaspora=config.diaspora)
+                    if _mse is not None and _mse[1].weekday() == 5:
+                        motzei_label = "מוצאי יו״ט ושב״ק"
+            except Exception:
+                pass
         motzei_label = motzei_label.replace(
             "מוצאי יום טוב", "מוצאי יו״ט")
         # Trailing 2-day-YT case (the ערב ר״ה 5787 trailing page, and
@@ -2811,7 +3037,7 @@ def build_weekly_data(
         if motzei_dt is not None:
             boxes.append(WeeklyBox(
                 label_he=motzei_label,
-                time_str=_weekly_fmt_time_12(motzei_dt),
+                time_str=_weekly_fmt_time(motzei_dt, config.time_format),
                 big=True,
             ))
 
@@ -2830,26 +3056,40 @@ def build_weekly_data(
                      "between_yt", "motzaei_sh_to_yt")),
                 None,
             )
+            # First YT day of THIS block — decides what a Friday
+            # candle MEANS. Friday = the block's 1st YT day → its
+            # before-sunset candle IS ליל ב׳ (the 2nd YT night falls
+            # on Shabbos: ערב שבת שבועות / ערב שבת פסח). Friday =
+            # the block's 2nd YT day (ר״ה Thu+Fri, שמח״ת Fri) → that
+            # candle is the SHABBOS lighting and ליל ב׳ is the 1st YT
+            # day's tzeis (lit from a flame) — see the עש״ק box below.
+            _blk_yt_dates = [
+                dd.civil_date for dd in days
+                if dd.is_yomtov and _in_block(dd.civil_date)
+            ]
+            _first_yt_date = _blk_yt_dates[0] if _blk_yt_dates else None
             erev_shabbos_yt = next(
                 (r for r in blk_candle_rows
                  if r is not hero_row
-                 and r.title_main_he.startswith("ערב שבת")
+                 and r.civil_date.weekday() == 4
                  and "חוה" not in r.title_main_he
-                 and "חול" not in r.title_main_he),
+                 and "חול" not in r.title_main_he
+                 and _first_yt_date is not None
+                 and r.civil_date == _first_yt_date),
                 None,
             )
             if erev_shabbos_yt is not None:
                 smalls.append(WeeklyBox(
                     label_he="הדלה״נ (עש״ק) ליל ב׳ דיו״ט",
-                    time_str=_weekly_fmt_time_12(
-                        erev_shabbos_yt.candle_lighting),
+                    time_str=_weekly_fmt_time(
+                        erev_shabbos_yt.candle_lighting, config.time_format),
                     big=False,
                 ))
             elif second_night_row is not None:
                 smalls.append(WeeklyBox(
                     label_he="הדלה״נ ליל ב׳ דיו״ט",
-                    time_str=_weekly_fmt_time_12(
-                        second_night_row.candle_lighting),
+                    time_str=_weekly_fmt_time(
+                        second_night_row.candle_lighting, config.time_format),
                     big=False,
                 ))
             else:
@@ -2897,7 +3137,7 @@ def build_weekly_data(
                     if tz_dt is not None:
                         smalls.append(WeeklyBox(
                             label_he="הדלה״נ ליל ב׳ דיו״ט",
-                            time_str=_weekly_fmt_time_12(tz_dt),
+                            time_str=_weekly_fmt_time(tz_dt, config.time_format),
                             big=False,
                         ))
                         open_notes.append(
@@ -2925,8 +3165,44 @@ def build_weekly_data(
             if esc_row is not None:
                 smalls.append(WeeklyBox(
                     label_he="הדלה״נ עש״ק חוה״מ",
-                    time_str=_weekly_fmt_time_12(
-                        esc_row.candle_lighting),
+                    time_str=_weekly_fmt_time(
+                        esc_row.candle_lighting, config.time_format),
+                    big=False,
+                ))
+
+            # A 2-day YT whose SECOND day is Friday, running into a
+            # plain Shabbos (ר״ה Thu+Fri → שבת שובה; שמיני עצרת +
+            # שמח״ת Thu+Fri → שבת בראשית). ליל ב׳ is already boxed
+            # above (1st YT day's tzeis); the Friday candle is the
+            # SHABBOS lighting and gets its own box, labelled with the
+            # coming Shabbos's parsha when it has one.
+            esp_row = next(
+                (r for r in block_rows
+                 if r is not hero_row
+                 and r.candle_lighting is not None
+                 and r.civil_date.weekday() == 4
+                 and "חוה" not in (r.title_main_he or "")
+                 and "חול" not in (r.title_main_he or "")
+                 and _first_yt_date is not None
+                 and r.civil_date != _first_yt_date),
+                None,
+            )
+            if esp_row is not None:
+                _esp_lbl = "הדלה״נ עש״ק"
+                try:
+                    _esp_parsha = he.parsha_name(
+                        esp_row.civil_date + timedelta(days=1),
+                        diaspora=config.diaspora,
+                        metzora_display=config.metzora_display,
+                    )
+                except Exception:
+                    _esp_parsha = None
+                if _esp_parsha:
+                    _esp_lbl = f"{_esp_lbl} {_esp_parsha}"
+                smalls.append(WeeklyBox(
+                    label_he=_esp_lbl,
+                    time_str=_weekly_fmt_time(
+                        esp_row.candle_lighting, config.time_format),
                     big=False,
                 ))
         # ── 3-day rest-block: Shabbos + 2-day YT (Sun-Mon) ──
@@ -2984,7 +3260,7 @@ def build_weekly_data(
                     )
                     smalls.append(WeeklyBox(
                         label_he="הדלה״נ במוצש״ק ליל א׳ דיו״ט",
-                        time_str=_weekly_fmt_time_12(_shab_tzeis),
+                        time_str=_weekly_fmt_time(_shab_tzeis, config.time_format),
                         big=False,
                     ))
                     # Sun-night candle = tzeis day-1 YT.
@@ -2997,7 +3273,7 @@ def build_weekly_data(
                     )
                     smalls.append(WeeklyBox(
                         label_he="הדלה״נ ליל ב׳ דיו״ט",
-                        time_str=_weekly_fmt_time_12(_yt1_tzeis),
+                        time_str=_weekly_fmt_time(_yt1_tzeis, config.time_format),
                         big=False,
                     ))
                     open_notes.append(
@@ -3126,6 +3402,7 @@ def build_weekly_data(
             + _szkl_anchor_when(
                 sk, geo=config.geo, tz=config.tz,
                 diaspora=config.diaspora,
+                time_fmt=config.time_format,
             )
         )
     seen_hm: set[tuple[int, int]] = set()
@@ -3144,6 +3421,7 @@ def build_weekly_data(
                     + _zsh_anchor_when(
                         zs, geo=config.geo, tz=config.tz,
                         diaspora=config.diaspora,
+                        time_fmt=config.time_format,
                     )
                 )
         except Exception:
@@ -3224,6 +3502,36 @@ def build_weekly_data(
             "handling of עשרה בטבת / תענית אסתר as well."
         )
 
+    _title_is_parsha = False
+    try:
+        _title_is_parsha = bool(title_main) and title_main == \
+            he.parsha_name(
+                week_end, diaspora=config.diaspora,
+                metzora_display=config.metzora_display)
+    except Exception:
+        _title_is_parsha = False
+
+    # Parsha of the Shabbos that CLOSES a YT block (see the field's
+    # doc above). Skipped when the hero already names the parsha.
+    _block_parsha = ""
+    try:
+        if is_block_yt and not _title_is_parsha:
+            _bfy = next(
+                (dd.civil_date for dd in days
+                 if dd.is_yomtov and _in_block(dd.civil_date)),
+                None,
+            )
+            if _bfy is not None:
+                _bse = he.no_melacha_block(
+                    _bfy, diaspora=config.diaspora)
+                if _bse is not None and _bse[1].weekday() == 5:
+                    _block_parsha = he.parsha_name(
+                        _bse[1], diaspora=config.diaspora,
+                        metzora_display=config.metzora_display,
+                    ) or ""
+    except Exception:
+        _block_parsha = ""
+
     return WeeklyData(
         week_start=week_start,
         week_end=week_end,
@@ -3238,6 +3546,9 @@ def build_weekly_data(
         diaspora=config.diaspora,
         open_notes=open_notes,
         add_seconds=add_seconds,
+        time_format=config.time_format,
+        title_is_parsha=_title_is_parsha,
+        block_parsha_he=_block_parsha,
     )
 
 
@@ -3300,9 +3611,10 @@ def build_weekly_cards(
         # (no YT adjacency) is unaffected → still its own card.
         if r.civil_date.weekday() != 4:           # must be Friday
             return False
-        t = r.title_main_he or ""
-        if not t.startswith("ערב שבת "):
-            return False
+        # NB: NO title test. The row's title is now the PARSHA when the
+        # Friday is itself a YT day (printed-sheet convention), so any
+        # 'ערב שבת' pre-filter would miss exactly the case this rule
+        # exists for. The no-melacha adjacency below IS the rule.
         # Fold when the Shabbos is itself a Yom-Tov day (the Friday
         # row is itself a no-melacha YT day — 2nd-day-Shavuos /
         # 2nd-day-Pesach on Shabbos), OR is directly attached to the
@@ -3314,9 +3626,13 @@ def build_weekly_cards(
             return (
                 he.is_no_melacha(
                     r.civil_date, diaspora=config.diaspora)
-                or he.is_no_melacha(
-                    r.civil_date - timedelta(days=1),
-                    diaspora=config.diaspora)
+                or (
+                    he.is_no_melacha(
+                        r.civil_date - timedelta(days=1),
+                        diaspora=config.diaspora)
+                    and he.is_chol_hamoed(
+                        r.civil_date, diaspora=config.diaspora)
+                )
             )
         except Exception:
             return False
