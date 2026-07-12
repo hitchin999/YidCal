@@ -1539,6 +1539,26 @@ def next_leap_year(hyear: int) -> int:
     return y
 
 
+def needs_pruzbol(d: date_cls, *, diaspora: bool = True) -> bool:
+    """True on EREV ROSH HASHANA that closes a shmita year.
+
+    Pruzbol is written at the END of the shevi'is year — i.e. on
+    29 Elul of the shmita year, which is Erev RH of the NEXT year.
+    (Printed SF 5783 sheet: "בער״ה תשפ״ג צריכין לעשות פרוזבול" —
+    5782 was shmita.)
+
+    Central predicate: the yearly luach's note/footnote and any
+    future binary_sensor.yidcal_pruzbol both read from HERE.
+    """
+    try:
+        ph = PHebrewDate.from_pydate(d)
+        if not (ph.month == 6 and ph.day == 29):   # 29 Elul
+            return False
+        return shmita_cycle_year(ph.year) == 7
+    except Exception:
+        return False
+
+
 def shmita_cycle_year(hyear: int) -> int:
     """Position of *hyear* within the 7-year shmita cycle (1..7).
 
