@@ -427,6 +427,31 @@ def _molad_clock_local_dst(naive_dt: datetime, tz: ZoneInfo) -> datetime:
     return naive_dt + dst
 
 
+def gimmel_shleimim_local(
+    year: int, month: int, tz: ZoneInfo,
+) -> datetime:
+    """Compute ג׳ שלמים — exactly 3 days (72 hours) after the molad
+    announcement. The 72-hour arithmetic is the universal convention
+    (e.g. KosherJava's getTchilasZmanKidushLevana3Days: "adding 3 days
+    ... to the molad time" — identical arithmetic to the 7-day zman,
+    just 3 days instead of 7).
+
+    Clock convention: the printed לכל-זמן booklet carries no ג׳-שלמים
+    column, so there is no independent printed reference to verify
+    against. This deliberately follows the in-house ז׳-שלמים family
+    convention (``_molad_clock_local_dst`` — molad digits read as
+    local clock + DST on the ג׳-שלמים result date) so ג׳ and ז׳ are
+    internally consistent: exactly 4 × 24h apart on the announcement
+    clock (they can differ by the DST hour only when the two result
+    dates straddle a clock change, which is correct method-C
+    behavior).
+
+    Returns a naive ``datetime`` in local clock time.
+    """
+    naive = _molad_announcement_naive(year, month) + timedelta(days=3)
+    return _molad_clock_local_dst(naive, tz)
+
+
 def zayin_shleimim_local(
     year: int, month: int, tz: ZoneInfo,
 ) -> datetime:
