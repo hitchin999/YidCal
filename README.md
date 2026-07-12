@@ -25,7 +25,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **YidCal** — regular daily/weekly sensors
 * **YidCal — Display** — sensors mainly used for dashboards
 * **YidCal — Holiday Attribute Sensors** — sensors created from Holiday sensor attributes (only if enabled)
-* **YidCal — Special Binary Sensors** — binary sensors such as Slichos, Eruv Tavshilin, etc.
+* **YidCal — Special Sensors** — special sensors such as Slichos, Eruv Tavshilin, Kiddush Levunah, etc.
 * **YidCal — Zmanim** — all zmanim sensors
 
 *(Existing entity IDs stay the same; grouping is for organization.)*
@@ -240,7 +240,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 ---
 
-## Special Binary Sensors
+## Special Sensors
 
 * **Slichos** (`binary_sensor.yidcal_slichos`)
 
@@ -289,6 +289,18 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Years Until Shmita** (`sensor.yidcal_years_until_shmita`)
   Whole years remaining until the next Shmita — counts down 6 → 0, showing **0** during the Shmita year itself.
   *Attributes:* `Hebrew_Year`, `Shmita_Cycle_Year`, `Next_Shmita_Year`, `Is_Shmita` (`"true"`/`"false"`)
+
+* **Kiddush Levunah** (`binary_sensor.yidcal_kiddush_levana`)
+  **ON** continuously from the configured start — **ג' שלימים** (3 complete days after the molad) or **ז' שלימים** (7 complete days, the default) — until **סוף זמן קידוש לבנה** (half the molad interval after the molad, שיטת הרמ״א). Pick the start in **Options**; both opinions are always exposed as attributes regardless of which one drives the state.
+  *Boolean attributes:* `Gimmel_Shleimim`, `Zayin_Shleimim` (`"true"`/`"false"` — each turns true at its own start and false at the same sof zman)
+
+* **Sof Zman Kiddush Levunah** (`sensor.yidcal_sof_zman_kiddush_levana`)
+  Timestamp of **סוף זמן קידוש לבנה** for the current lunar month, at full precision (seconds incl. chalakim). Once the deadline passes, it rolls to the next month's cycle at the following **Alos** — so it always shows the next relevant deadline.
+  *Attributes:* `Month_Name`, `Molad`, `Gimmel_Shleimim`, `Zayin_Shleimim` (ISO timestamps of this cycle's molad and both start opinions)
+
+* **Sof Kiddush Levunah Display** (`sensor.yidcal_sof_kiddush_levana_display`)
+  The deadline as a printed-luach Hebrew line, e.g. `ס״ז קידוש לבנה: ליל ב׳ 2:07` or `ס״ז קידוש לבנה: ליל ג׳ כל הלילה` — same day/night display rule as the weekly luach PDF (a deadline that falls during the day rolls back to the preceding night as "כל הלילה"; Yom-Tov nights get their YT name, e.g. ליל א׳ דפסח). Rolls to the next month together with the timestamp sensor.
+  *Attribute:* `Zayin_Shleimim` — the ז׳ שלמים line in the same style (e.g. `ז׳ שלמים: יום ב׳ 1:10`)
 
 ---
 
@@ -587,13 +599,28 @@ If you enable **any** Yurtzeit sensor, you must select a **database**. You can r
 
 ---
 
-## Translations (config-flow only)
+## Language (setup & options screens)
 
-* `he.json` – עברית
-* `en.json` – Yiddish
-* `en-GB.json` – English
+YidCal's setup and Options screens can be shown in **אידיש**, **עברית**, or **English** — and you pick the language **inside YidCal**, not in Home Assistant.
 
-*(Currently only for config flow options.)*
+* The **first card** of setup is a one-tap language picker.
+* To change it later: **Settings → Devices & Services → YidCal → gear icon → שפראך / שפה / Language**.
+
+Because the choice lives in YidCal, it's independent of your Home Assistant profile language. You don't have to switch your whole HA to Hebrew just to read YidCal's settings in Hebrew, and two people sharing one HA instance don't have to agree.
+
+**Which language you start in.** YidCal guesses once from your Home Assistant language, then remembers whatever you pick:
+
+| Your Home Assistant language | YidCal starts in |
+| ---------------------------- | ---------------- |
+| Hebrew                       | עברית            |
+| English (UK)                 | English          |
+| anything else                | אידיש            |
+
+Existing installs keep exactly what they were already showing — nothing changes until you pick something.
+
+> **Note:** Choosing a language **saves and closes** the Options dialog. Reopen it to see the new language.
+
+**Not covered yet:** service descriptions and entity names still follow your Home Assistant language rather than this setting.
 
 ---
 
@@ -611,6 +638,8 @@ To ensure you calculate sunrise/sunset on the correct center of your municipalit
 
 After adding the integration via UI, go to **Settings → Devices & Services → YidCal → Options**:
 
+> The labels below are the **אידיש** ones. If you chose עברית or English in the **Language** picker (see above), you'll see those instead — the options, defaults, and behavior are identical either way. The **Description** column explains each one in English regardless.
+
 | Option                                                     | Default     | Description                                                                                                                             |
 | ---------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `אויב איר זענט אין ארץ ישראל, צייכנט דאס`                  | `false`     | Enable **Israel** rules (experimental / not fully tested).                                                                              |
@@ -624,6 +653,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די` | `yiddish`   | Choose Yiddish (`זונטאג, מאנטאג`) or Hebrew (`יום א׳, יום ב׳`) day labels.                                                              |
 | `צייט־פארמאט (נאר פאר Simple Zmanim)`                      | `12-hour`   | Format for **Simple** Zmanim attributes only: **12-hour (AM/PM)** or **24-hour**.                                                       |
 | `ווען זאל זיך די סליחות טאג טוישן`                         | `זמן הבדלה` | When the Selichos label advances: `havdalah` (after sunset + offset) or `midnight` (12 AM).                                             |
+| `ווען הייבט זיך אן קידוש לבנה - ג' אדער ז' שלימים`         | `ז' שלימים` | Which start drives the **Kiddush Levunah** binary sensor: `ג' שלימים` (molad + 3 days) or `ז' שלימים` (molad + 7 days). Both opinions stay available as attributes either way. |
 | `Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די`   | `2`         | How many **halachic days** ahead Upcoming Holiday pre-activates (range **1–14**). Updates nightly at **12:02 AM** and respects offsets. |
 | `הפטרה סענסאר מנהג`                                        | `אשכנזי`    | Choose the minhag used for the Haftorah sensor: `אשכנזי` or `ספרדי`.                                                                   |
 | `פרשת מצורע אדער פרשת טהרה`                                | `מצורע`     | How parshas **מצורע** is displayed in the Parsha sensor: `מצורע` (default) or `טהרה`. Applies both standalone and in `תזריע-מצורע`. `אחרי מות` is always shortened to `אחרי`. |
@@ -776,6 +806,7 @@ Upon installation or restart, the integration automatically creates a `/config/w
 3. Install **YidCal**.
 4. Restart Home Assistant.
 5. **Settings → Devices & Services → Add Integration → YidCal**
+6. Pick your language on the first card — **אידיש**, **עברית**, or **English** — then work through the setup screens.
 
 ---
 
