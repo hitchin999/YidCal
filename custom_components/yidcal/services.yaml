@@ -162,6 +162,22 @@ generate_luach:
               label: "Yearly (Multi Sheet)"
             - value: "yearly_sheet"
               label: "Yearly (Single Sheet)"
+            - value: "weekly_yidcal"
+              label: "Weekly YidCal"
+    time_format:
+      name: Time format
+      description: >-
+        Clock format for the zmanim strings on the generated luach.
+        "12" (default, per the printed luachs — AM/PM implicit) or
+        "24" (zero-padded HH:MM). Overrides the integration's
+        time_format option for this call only.
+      required: false
+      example: "12"
+      selector:
+        select:
+          options:
+            - "12"
+            - "24"
     hebrew_year:
       name: Hebrew year (full-year shortcut)
       description: >-
