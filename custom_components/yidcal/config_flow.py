@@ -4,6 +4,8 @@ from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 
 from .const import DOMAIN
+from . import ui_strings as S
+from .ui_strings import CONF_UI_LANGUAGE
 
 # ============ Existing/general keys (unchanged) ============
 DEFAULT_CANDLELIGHT_OFFSET = 15
@@ -17,6 +19,8 @@ DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL = False
 CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"  # keep key name as-is
 CONF_SLICHOS_LABEL_ROLLOVER = "slichos_label_rollover"
 DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
+CONF_KIDDUSH_LEVANA_START = "kiddush_levana_start"
+DEFAULT_KIDDUSH_LEVANA_START = "zayin"
 CONF_UPCOMING_LOOKAHEAD_DAYS = "upcoming_lookahead_days"
 DEFAULT_UPCOMING_LOOKAHEAD_DAYS = 2
 CONF_IS_IN_ISRAEL = "is_in_israel"
@@ -46,16 +50,16 @@ DEFAULT_ENABLE_ZMANIM_LOOKUP = False
 CONF_ENABLE_LUACH_PDF = "enable_luach_pdf"
 DEFAULT_ENABLE_LUACH_PDF = False
 
-# ============ Haftorah Minhag (NEW) ============
+# ============ Haftorah Minhag ============
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
 DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
 
-# ============ Parsha Metzora display (NEW) ============
+# ============ Parsha Metzora display ============
 # "metzora" (default) shows "מצורע"; "tahara" shows "טהרה".
 CONF_PARSHA_METZORA_DISPLAY = "parsha_metzora_display"
 DEFAULT_PARSHA_METZORA_DISPLAY = "metzora"
 
-# ============ New Yurtzeit keys ============
+# ============ Yurtzeit keys ============
 CONF_ENABLE_YURTZEIT_DAILY = "enable_yurtzeit_daily"
 CONF_YURTZEIT_DATABASES = "yurtzeit_databases"
 DEFAULT_YURTZEIT_DATABASES = ["standard"]
@@ -64,8 +68,7 @@ DEFAULT_YURTZEIT_DATABASES = ["standard"]
 CONF_YAHRTZEIT_DATABASE = "yahrtzeit_database"  # old single-select spelling
 DEFAULT_YAHRTZEIT_DATABASE = "standard"
 
-# ============ Early Entry keys (NEW) ============
-
+# ============ Early Entry keys ============
 CONF_ENABLE_EARLY_SHABBOS = "enable_early_shabbos"
 CONF_EARLY_SHABBOS_MODE = "early_shabbos_mode"  # default behavior
 CONF_EARLY_SHABBOS_PLAG_METHOD = "early_shabbos_plag_method"
@@ -92,7 +95,7 @@ DEFAULT_EARLY_YOMTOV_MODE = "plag"  # plag | fixed | disabled
 DEFAULT_EARLY_YOMTOV_PLAG_METHOD = "gra"
 DEFAULT_EARLY_YOMTOV_FIXED_TIME = "19:00:00"
 
-# ============ Krias HaTorah extras (NEW) ============
+# ============ Krias HaTorah extras ============
 CONF_KORBANOS_YUD_GIMMEL_MIDOS = "korbanos_yud_gimmel_midos"
 DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS = False
 
@@ -113,144 +116,247 @@ DEFAULT_EARLY_YOMTOV_INCLUDE = [
 ]
 DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS = False
 
-class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+
+# ===========================================================================
+# Language-aware form/menu plumbing
+#
+# Every visible string in the flow now comes from ui_strings.py at render
+# time, via description_placeholders. strings.json is only a template of
+# "{token}" markers. See the ui_strings module docstring for why.
+#
+# THE ONE RULE: never call async_show_form()/async_show_menu() directly.
+# Go through _form()/_menu() below, which always attach the complete
+# placeholder set. A single missing placeholder makes the HA frontend
+# print "Translation Error …" in place of every label on that step.
+# ===========================================================================
+class _LangFlowMixin:
+    """Shared render helpers. `_ns` selects the strings.json section."""
+
+    _ns: str = "config"
+    _lang: str = S.DEFAULT_UI_LANGUAGE
+
+    def _form(self, step_id, schema, errors=None):
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=schema,
+            errors=errors,
+            description_placeholders=S.placeholders(f"{self._ns}.{step_id}", self._lang),
+        )
+
+    def _menu(self, step_id, menu_options):
+        # Dict menu_options are rendered verbatim by the frontend — no
+        # translation keys involved. Menu steps carry no title in
+        # strings.json (renderMenuHeader does not pass placeholders), so
+        # the header falls back to "YidCal".
+        return self.async_show_menu(
+            step_id=step_id,
+            menu_options=menu_options,
+            description_placeholders=S.placeholders(f"{self._ns}.{step_id}", self._lang),
+        )
+
+    def _language_menu(self, step_id, prefix, current):
+        """Language picker. The current/guessed language is listed first."""
+        order = [current] + [l for l in S.UI_LANGUAGES if l != current]
+        return self._menu(
+            step_id,
+            {f"{prefix}{l}": S.LANGUAGE_NAMES[l] for l in order},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Schema builders — shared by the config flow and the options flow so the
+# two can never drift. `get(key, default)` supplies the current value.
+# ---------------------------------------------------------------------------
+def _general_schema(lang, get, *, include_luach_pdf: bool):
+    fields = {
+        vol.Optional(CONF_IS_IN_ISRAEL, default=get(CONF_IS_IN_ISRAEL, DEFAULT_IS_IN_ISRAEL)): bool,
+        vol.Optional("strip_nikud", default=get("strip_nikud", False)): bool,
+        vol.Optional("candlelighting_offset", default=get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET)): int,
+        vol.Optional("havdalah_offset", default=get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)): int,
+        vol.Optional("tallis_tefilin_offset", default=get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)): int,
+        vol.Optional(
+            CONF_KORBANOS_YUD_GIMMEL_MIDOS,
+            default=get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
+        ): bool,
+        vol.Optional(
+            CONF_MISHNE_TORAH_HOSHANA_RABBA,
+            default=get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
+        ): bool,
+        vol.Optional(
+            "day_label_language",
+            default=get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
+        ): selector({"select": {"options": S.sel("day_label_language", lang)}}),
+        vol.Optional(
+            CONF_HAFTORAH_MINHAG,
+            default=get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
+        ): selector({"select": {"options": S.sel("haftorah_minhag", lang)}}),
+        vol.Optional(
+            CONF_PARSHA_METZORA_DISPLAY,
+            default=get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
+        ): selector({"select": {"options": S.sel("parsha_metzora_display", lang)}}),
+        vol.Optional(
+            CONF_TIME_FORMAT,
+            default=get(CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT),
+        ): selector({"select": {"options": S.sel("time_format", lang)}}),
+        vol.Optional(CONF_INCLUDE_DATE, default=get(CONF_INCLUDE_DATE, False)): bool,
+        vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=get(CONF_INCLUDE_ATTR_SENSORS, True)): bool,
+        vol.Optional(
+            CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
+            default=get(CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL, DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL),
+        ): bool,
+        vol.Optional(
+            CONF_ENABLE_MULTIDAY_CANDLES,
+            default=get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES),
+        ): bool,
+        vol.Optional(
+            CONF_ENABLE_DAF_HAYOMI,
+            default=get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI),
+        ): bool,
+        vol.Optional(
+            CONF_SLICHOS_LABEL_ROLLOVER,
+            default=get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
+        ): selector({"select": {"options": S.sel("slichos_label_rollover", lang)}}),
+        vol.Optional(
+            CONF_KIDDUSH_LEVANA_START,
+            default=get(CONF_KIDDUSH_LEVANA_START, DEFAULT_KIDDUSH_LEVANA_START),
+        ): selector({"select": {"options": S.sel("kiddush_levana_start", lang)}}),
+        vol.Optional(
+            CONF_UPCOMING_LOOKAHEAD_DAYS,
+            default=get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
+        ): selector({
+            "number": {
+                "min": 1,
+                "max": 14,
+                "step": 1,
+                "mode": "slider",
+                "unit_of_measurement": S.unit_days(lang),
+            }
+        }),
+        # Zmanim Lookup — exposes sensor.yidcal_zmanim_lookup +
+        # the yidcal.check_zmanim service.
+        vol.Optional(
+            CONF_ENABLE_ZMANIM_LOOKUP,
+            default=get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
+        ): bool,
+    }
+    if include_luach_pdf:
+        # Options-only (advanced). Exposes the yidcal.generate_luach
+        # service. No sensor is added; the service produces files under
+        # /config/www/yidcal-data/.
+        fields[
+            vol.Optional(
+                CONF_ENABLE_LUACH_PDF,
+                default=get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
+            )
+        ] = bool
+    return vol.Schema(fields)
+
+
+def _yurtzeit_schema(lang, daily, weekly, dbs):
+    return vol.Schema({
+        vol.Optional(CONF_ENABLE_YURTZEIT_DAILY, default=daily): bool,
+        vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=weekly): bool,
+        vol.Optional(CONF_YURTZEIT_DATABASES, default=dbs): selector({
+            "select": {"multiple": True, "options": S.sel("yurtzeit_databases", lang)}
+        }),
+    })
+
+
+def _early_shabbos_schema(lang, get):
+    return vol.Schema({
+        vol.Optional(
+            CONF_ENABLE_EARLY_SHABBOS,
+            default=get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
+        ): bool,
+        vol.Optional(
+            CONF_EARLY_SHABBOS_MODE,
+            default=get(CONF_EARLY_SHABBOS_MODE, DEFAULT_EARLY_SHABBOS_MODE),
+        ): selector({"select": {"options": S.sel("early_mode", lang)}}),
+        vol.Optional(
+            CONF_EARLY_SHABBOS_PLAG_METHOD,
+            default=get(CONF_EARLY_SHABBOS_PLAG_METHOD, DEFAULT_EARLY_SHABBOS_PLAG_METHOD),
+        ): selector({"select": {"options": S.sel("early_plag_method", lang)}}),
+        vol.Optional(
+            CONF_EARLY_SHABBOS_FIXED_TIME,
+            default=get(CONF_EARLY_SHABBOS_FIXED_TIME, DEFAULT_EARLY_SHABBOS_FIXED_TIME),
+        ): selector({"time": {}}),
+        vol.Optional(
+            CONF_EARLY_SHABBOS_APPLY_RULE,
+            default=get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE),
+        ): selector({"select": {"options": S.sel("early_shabbos_apply_rule", lang)}}),
+        vol.Optional(
+            CONF_EARLY_SHABBOS_SUNSET_AFTER,
+            default=get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER),
+        ): selector({"time": {}}),
+    })
+
+
+def _early_yomtov_schema(lang, get):
+    return vol.Schema({
+        vol.Optional(
+            CONF_ENABLE_EARLY_YOMTOV,
+            default=get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
+        ): bool,
+        vol.Optional(
+            CONF_EARLY_YOMTOV_MODE,
+            default=get(CONF_EARLY_YOMTOV_MODE, DEFAULT_EARLY_YOMTOV_MODE),
+        ): selector({"select": {"options": S.sel("early_mode", lang)}}),
+        vol.Optional(
+            CONF_EARLY_YOMTOV_PLAG_METHOD,
+            default=get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD),
+        ): selector({"select": {"options": S.sel("early_plag_method", lang)}}),
+        vol.Optional(
+            CONF_EARLY_YOMTOV_FIXED_TIME,
+            default=get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME),
+        ): selector({"time": {}}),
+        vol.Optional(
+            CONF_EARLY_YOMTOV_INCLUDE,
+            default=get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE),
+        ): selector({
+            "select": {"multiple": True, "options": S.sel("early_yomtov_include", lang)}
+        }),
+        vol.Optional(
+            CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
+            default=get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
+        ): bool,
+    })
+
+
+class YidCalConfigFlow(_LangFlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for YidCal."""
+
     VERSION = 1  # no explicit migration necessary
+    _ns = "config"
 
     async def async_step_user(self, user_input=None):
-        """Step 1: General settings (first card)."""
+        """Step 1: pick the language for the rest of the setup (one tap)."""
         # Only one instance
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
 
-        if user_input is None:
-            schema = vol.Schema(
-                {
-                    vol.Optional(CONF_IS_IN_ISRAEL, default=DEFAULT_IS_IN_ISRAEL): bool,
-                    vol.Optional("strip_nikud", default=False): bool,
-                    vol.Optional("candlelighting_offset", default=DEFAULT_CANDLELIGHT_OFFSET): int,
-                    vol.Optional("havdalah_offset", default=DEFAULT_HAVDALAH_OFFSET): int,
-                    vol.Optional("tallis_tefilin_offset", default=DEFAULT_TALLIS_TEFILIN_OFFSET): int,
-                    vol.Optional(
-                        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
-                        default=DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS,
-                    ): bool,
+        # Pre-select from the HA language; the user's tap is what counts.
+        self._lang = S.guess_ui_language(self.hass)
+        return self._language_menu("user", "lang_", self._lang)
 
-                    vol.Optional(
-                        CONF_MISHNE_TORAH_HOSHANA_RABBA,
-                        default=DEFAULT_MISHNE_TORAH_HOSHANA_RABBA,
-                    ): bool,
-                    vol.Optional(
-                        "day_label_language",
-                        default=DEFAULT_DAY_LABEL_LANGUAGE,
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "yiddish", "label": "זונטאג, מאנטאג"},
-                                {"value": "hebrew",  "label": "יום א', יום ב"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_HAFTORAH_MINHAG,
-                        default=DEFAULT_HAFTORAH_MINHAG,
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "ashkenazi", "label": "אשכנזי"},
-                                {"value": "sephardi",  "label": "ספרדי"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_PARSHA_METZORA_DISPLAY,
-                        default=DEFAULT_PARSHA_METZORA_DISPLAY,
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "metzora", "label": "מצורע"},
-                                {"value": "tahara",  "label": "טהרה"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_TIME_FORMAT,
-                        default=DEFAULT_TIME_FORMAT,
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "12", "label": "12-hour (AM/PM)"},
-                                {"value": "24", "label": "24-hour"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(CONF_INCLUDE_DATE, default=False): bool,
-                    vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=True): bool,
-                    vol.Optional(
-                        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-                        default=DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-                    ): bool,
-                    vol.Optional(CONF_ENABLE_MULTIDAY_CANDLES, default=DEFAULT_ENABLE_MULTIDAY_CANDLES): bool,
-                    vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=DEFAULT_ENABLE_DAF_HAYOMI): bool,
-                    vol.Optional(
-                        CONF_SLICHOS_LABEL_ROLLOVER,
-                        default=DEFAULT_SLICHOS_LABEL_ROLLOVER,
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "havdalah", "label": "זמן הבדלה"},
-                                {"value": "midnight", "label": "12 AM"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_UPCOMING_LOOKAHEAD_DAYS,
-                        default=DEFAULT_UPCOMING_LOOKAHEAD_DAYS,
-                    ): selector({
-                        "number": {
-                            "min": 1,
-                            "max": 14,
-                            "step": 1,
-                            "mode": "slider",
-                            "unit_of_measurement": "days",
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_ENABLE_ZMANIM_LOOKUP,
-                        default=DEFAULT_ENABLE_ZMANIM_LOOKUP,
-                    ): bool,
-                }
+    async def async_step_general(self, user_input=None):
+        """Step 2: General settings."""
+        if user_input is None:
+            return self._form(
+                "general",
+                _general_schema(self._lang, lambda k, d: d, include_luach_pdf=False),
             )
-            return self.async_show_form(step_id="user", data_schema=schema)
 
         # Stash general config for the final entry
         self._general_data = dict(user_input)
         return await self.async_step_yurtzeit()
 
     async def async_step_yurtzeit(self, user_input=None):
-        """Step 2: Yurtzeit settings (its own card)."""
-        errors = {}
-
-        # Defaults for first-time setup
-        default_daily = True
-        default_weekly = False
-        default_dbs = DEFAULT_YURTZEIT_DATABASES
-
+        """Step 3: Yurtzeit settings."""
         if user_input is None:
-            schema = vol.Schema({
-                vol.Optional(CONF_ENABLE_YURTZEIT_DAILY, default=default_daily): bool,
-                vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=default_weekly): bool,
-                vol.Optional(CONF_YURTZEIT_DATABASES, default=default_dbs): selector({
-                    "select": {
-                        "multiple": True,
-                        "options": [
-                            {"value": "standard", "label": "Standard"},
-                            {"value": "satmar",   "label": "Satmar"},
-                        ]
-                    }
-                }),
-            })
-            return self.async_show_form(step_id="yurtzeit", data_schema=schema)
+            return self._form(
+                "yurtzeit",
+                _yurtzeit_schema(self._lang, True, False, DEFAULT_YURTZEIT_DATABASES),
+            )
 
         # Validation: if either toggle is on, must choose >=1 DB
         enable_daily = user_input.get(CONF_ENABLE_YURTZEIT_DAILY, False)
@@ -258,21 +364,13 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         dbs = user_input.get(CONF_YURTZEIT_DATABASES, [])
 
         if (enable_daily or enable_weekly) and not dbs:
-            errors["base"] = "select_db_required"
-            schema = vol.Schema({
-                vol.Optional(CONF_ENABLE_YURTZEIT_DAILY, default=enable_daily): bool,
-                vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=enable_weekly): bool,
-                vol.Optional(CONF_YURTZEIT_DATABASES, default=(dbs or DEFAULT_YURTZEIT_DATABASES)): selector({
-                    "select": {
-                        "multiple": True,
-                        "options": [
-                            {"value": "standard", "label": "Standard"},
-                            {"value": "satmar",   "label": "Satmar"},
-                        ]
-                    }
-                }),
-            })
-            return self.async_show_form(step_id="yurtzeit", data_schema=schema, errors=errors)
+            return self._form(
+                "yurtzeit",
+                _yurtzeit_schema(
+                    self._lang, enable_daily, enable_weekly, dbs or DEFAULT_YURTZEIT_DATABASES
+                ),
+                errors={"base": "select_db_required"},
+            )
 
         # Merge and create entry
         data = {
@@ -280,6 +378,7 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
             CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
             CONF_YURTZEIT_DATABASES: dbs,
+            CONF_UI_LANGUAGE: self._lang,
         }
         return self.async_create_entry(title="YidCal", data=data)
 
@@ -288,348 +387,161 @@ class YidCalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         return OptionsFlowHandler(config_entry)
 
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Options flow with a simple menu to split General vs. Yurtzeit vs Early Entry."""
+
+class OptionsFlowHandler(_LangFlowMixin, config_entries.OptionsFlow):
+    """Options flow: Language / General / Yurtzeit / Early Entry."""
+
+    _ns = "options"
 
     def __init__(self, config_entry):
         self._config_entry = config_entry
 
-    async def async_step_init(self, user_input=None):
-        # Add "early_shabbos_yt" to the main options menu
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=["general", "yurtzeit", "early_shabbos_yt"],
-        )
-
-    async def async_step_general(self, user_input=None):
-        """Edit general settings."""
-        data = self._config_entry.data or {}
+    # -- helpers ---------------------------------------------------------
+    def _get(self, key, default):
         opts = self._config_entry.options or {}
+        data = self._config_entry.data or {}
+        return opts.get(key, data.get(key, default))
 
-        def get(k, default):
-            return opts.get(k, data.get(k, default))
+    def _resolve_lang(self):
+        """Stored language, else a guess from the HA language."""
+        self._lang = self._get(CONF_UI_LANGUAGE, None) or S.guess_ui_language(self.hass)
+        return self._lang
 
-        if user_input is None:
-            schema = vol.Schema(
-                {
-                    vol.Optional(CONF_IS_IN_ISRAEL, default=get(CONF_IS_IN_ISRAEL, DEFAULT_IS_IN_ISRAEL)): bool,
-                    vol.Optional("strip_nikud", default=get("strip_nikud", False)): bool,
-                    vol.Optional("candlelighting_offset", default=get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET)): int,
-                    vol.Optional("havdalah_offset", default=get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)): int,
-                    vol.Optional("tallis_tefilin_offset", default=get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)): int,
-                    vol.Optional(
-                        CONF_KORBANOS_YUD_GIMMEL_MIDOS,
-                        default=get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
-                    ): bool,
-
-                    vol.Optional(
-                        CONF_MISHNE_TORAH_HOSHANA_RABBA,
-                        default=get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
-                    ): bool,
-                    vol.Optional(
-                        "day_label_language",
-                        default=get("day_label_language", DEFAULT_DAY_LABEL_LANGUAGE),
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "yiddish", "label": "זונטאג, מאנטאג"},
-                                {"value": "hebrew",  "label": "יום א', יום ב"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_HAFTORAH_MINHAG,
-                        default=get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "ashkenazi", "label": "אשכנזי"},
-                                {"value": "sephardi",  "label": "ספרדי"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_PARSHA_METZORA_DISPLAY,
-                        default=get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "metzora", "label": "מצורע"},
-                                {"value": "tahara",  "label": "טהרה"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_TIME_FORMAT,
-                        default=get(CONF_TIME_FORMAT, DEFAULT_TIME_FORMAT),
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "12", "label": "12-hour (AM/PM)"},
-                                {"value": "24", "label": "24-hour"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(CONF_INCLUDE_DATE, default=get(CONF_INCLUDE_DATE, False)): bool,
-                    vol.Optional(CONF_INCLUDE_ATTR_SENSORS, default=get(CONF_INCLUDE_ATTR_SENSORS, True)): bool,
-                    vol.Optional(
-                        CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-                        default=get(
-                            CONF_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-                            DEFAULT_INCLUDE_SEFIRAH_SHORT_IN_FULL,
-                        ),
-                    ): bool,
-                    vol.Optional(CONF_ENABLE_MULTIDAY_CANDLES, default=get(CONF_ENABLE_MULTIDAY_CANDLES, DEFAULT_ENABLE_MULTIDAY_CANDLES)): bool,
-                    vol.Optional(CONF_ENABLE_DAF_HAYOMI, default=get(CONF_ENABLE_DAF_HAYOMI, DEFAULT_ENABLE_DAF_HAYOMI)): bool,
-                    vol.Optional(
-                        CONF_SLICHOS_LABEL_ROLLOVER,
-                        default=get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
-                    ): selector({
-                        "select": {
-                            "options": [
-                                {"value": "havdalah", "label": "זמן הבדלה"},
-                                {"value": "midnight", "label": "12 AM"},
-                            ]
-                        }
-                    }),
-                    vol.Optional(
-                        CONF_UPCOMING_LOOKAHEAD_DAYS,
-                        default=get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
-                    ): selector({
-                        "number": {
-                            "min": 1,
-                            "max": 14,
-                            "step": 1,
-                            "mode": "slider",
-                            "unit_of_measurement": "days",
-                        }
-                    }),
-                    # Zmanim Lookup — options-only (advanced). Exposes
-                    # sensor.yidcal_zmanim_lookup + yidcal.check_zmanim
-                    # service. Kept out of the initial setup because
-                    # the sensor is empty until the service is called.
-                    vol.Optional(
-                        CONF_ENABLE_ZMANIM_LOOKUP,
-                        default=get(CONF_ENABLE_ZMANIM_LOOKUP, DEFAULT_ENABLE_ZMANIM_LOOKUP),
-                    ): bool,
-                    # Luach PDF generator — options-only (advanced).
-                    # Exposes the yidcal.generate_luach service. No
-                    # sensor is added; the service produces files
-                    # under /config/www/yidcal-data/.
-                    vol.Optional(
-                        CONF_ENABLE_LUACH_PDF,
-                        default=get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
-                    ): bool,
-                }
-            )
-            return self.async_show_form(step_id="general", data_schema=schema)
-
-        new_opts = {**self._config_entry.options, **user_input}
+    def _save(self, new_opts):
+        # Force-set, never setdefault: new_opts is built from the existing
+        # options, which already carry the OLD ui_language — setdefault would
+        # be a no-op and silently discard the user's new choice.
+        new_opts[CONF_UI_LANGUAGE] = self._lang
         return self.async_create_entry(title="", data=new_opts)
 
-    async def async_step_yurtzeit(self, user_input=None):
-        """Edit Yurtzeit-specific settings."""
-        data = self._config_entry.data or {}
-        opts = self._config_entry.options or {}
-
-        legacy_db = opts.get(CONF_YAHRTZEIT_DATABASE, data.get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE))
-        default_dbs = opts.get(
-            CONF_YURTZEIT_DATABASES,
-            data.get(CONF_YURTZEIT_DATABASES, [legacy_db] if legacy_db else DEFAULT_YURTZEIT_DATABASES),
+    # -- main menu -------------------------------------------------------
+    async def async_step_init(self, user_input=None):
+        self._resolve_lang()
+        menu = S.menu_labels(
+            {
+                "general": "menu_general",
+                "yurtzeit": "menu_yurtzeit",
+                "early_shabbos_yt": "menu_early",
+            },
+            self._lang,
         )
-        default_daily = opts.get(CONF_ENABLE_YURTZEIT_DAILY, data.get(CONF_ENABLE_YURTZEIT_DAILY, True))
-        default_weekly = opts.get(CONF_ENABLE_WEEKLY_YURTZEIT, data.get(CONF_ENABLE_WEEKLY_YURTZEIT, False))
+        # Language row shows the language it will switch away from, so it
+        # is recognisable even to someone who cannot read the current one.
+        menu["language"] = f"{S.menu_language(self._lang)} · {S.LANGUAGE_NAMES[self._lang]}"
+        return self._menu("init", menu)
 
-        errors = {}
+    # -- language --------------------------------------------------------
+    async def async_step_language(self, user_input=None):
+        self._resolve_lang()
+        return self._language_menu("language", "set_lang_", self._lang)
+
+    # -- general ---------------------------------------------------------
+    async def async_step_general(self, user_input=None):
+        self._resolve_lang()
         if user_input is None:
-            schema = vol.Schema({
-                vol.Optional(CONF_ENABLE_YURTZEIT_DAILY, default=default_daily): bool,
-                vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=default_weekly): bool,
-                vol.Optional(CONF_YURTZEIT_DATABASES, default=default_dbs): selector({
-                    "select": {
-                        "multiple": True,
-                        "options": [
-                            {"value": "standard", "label": "Standard"},
-                            {"value": "satmar",   "label": "Satmar"},
-                        ]
-                    }
-                }),
-            })
-            return self.async_show_form(step_id="yurtzeit", data_schema=schema)
+            return self._form(
+                "general",
+                _general_schema(self._lang, self._get, include_luach_pdf=True),
+            )
+        return self._save({**(self._config_entry.options or {}), **user_input})
+
+    # -- yurtzeit --------------------------------------------------------
+    async def async_step_yurtzeit(self, user_input=None):
+        self._resolve_lang()
+        legacy_db = self._get(CONF_YAHRTZEIT_DATABASE, DEFAULT_YAHRTZEIT_DATABASE)
+        default_dbs = self._get(
+            CONF_YURTZEIT_DATABASES,
+            [legacy_db] if legacy_db else DEFAULT_YURTZEIT_DATABASES,
+        )
+        default_daily = self._get(CONF_ENABLE_YURTZEIT_DAILY, True)
+        default_weekly = self._get(CONF_ENABLE_WEEKLY_YURTZEIT, False)
+
+        if user_input is None:
+            return self._form(
+                "yurtzeit",
+                _yurtzeit_schema(self._lang, default_daily, default_weekly, default_dbs),
+            )
 
         enable_daily = user_input.get(CONF_ENABLE_YURTZEIT_DAILY, False)
         enable_weekly = user_input.get(CONF_ENABLE_WEEKLY_YURTZEIT, False)
         dbs = user_input.get(CONF_YURTZEIT_DATABASES, [])
 
         if (enable_daily or enable_weekly) and not dbs:
-            errors["base"] = "select_db_required"
-            schema = vol.Schema({
-                vol.Optional(CONF_ENABLE_YURTZEIT_DAILY, default=enable_daily): bool,
-                vol.Optional(CONF_ENABLE_WEEKLY_YURTZEIT, default=enable_weekly): bool,
-                vol.Optional(CONF_YURTZEIT_DATABASES, default=(dbs or DEFAULT_YURTZEIT_DATABASES)): selector({
-                    "select": {
-                        "multiple": True,
-                        "options": [
-                            {"value": "standard", "label": "Standard"},
-                            {"value": "satmar",   "label": "Satmar"},
-                        ]
-                    }
-                }),
-            })
-            return self.async_show_form(step_id="yurtzeit", data_schema=schema, errors=errors)
+            return self._form(
+                "yurtzeit",
+                _yurtzeit_schema(
+                    self._lang, enable_daily, enable_weekly, dbs or DEFAULT_YURTZEIT_DATABASES
+                ),
+                errors={"base": "select_db_required"},
+            )
 
-        new_opts = {**self._config_entry.options}
+        new_opts = {**(self._config_entry.options or {})}
         new_opts[CONF_ENABLE_YURTZEIT_DAILY] = enable_daily
         new_opts[CONF_ENABLE_WEEKLY_YURTZEIT] = enable_weekly
         new_opts[CONF_YURTZEIT_DATABASES] = dbs
+        return self._save(new_opts)
 
-        return self.async_create_entry(title="", data=new_opts)
-
-    # -------------------- NEW: Early Entry sub-menu --------------------
-
+    # -- early entry -----------------------------------------------------
     async def async_step_early_shabbos_yt(self, user_input=None):
-        """Sub-menu for Early Entry."""
-        return self.async_show_menu(
-            step_id="early_shabbos_yt",
-            menu_options=["early_shabbos", "early_yomtov"],
-        )
+        self._resolve_lang()
+        return self._menu("early_shabbos_yt", S.menu_labels(
+            {"early_shabbos": "menu_early_shabbos", "early_yomtov": "menu_early_yomtov"},
+            self._lang,
+        ))
 
     async def async_step_early_shabbos(self, user_input=None):
-        """Edit Early Shabbos settings."""
-        data = self._config_entry.data or {}
-        opts = self._config_entry.options or {}
-
-        def get(k, default):
-            return opts.get(k, data.get(k, default))
-
+        self._resolve_lang()
         if user_input is None:
-            schema = vol.Schema({
-                vol.Optional(
-                    CONF_ENABLE_EARLY_SHABBOS,
-                    default=get(CONF_ENABLE_EARLY_SHABBOS, DEFAULT_ENABLE_EARLY_SHABBOS),
-                ): bool,
-
-                vol.Optional(
-                    CONF_EARLY_SHABBOS_MODE,
-                    default=get(CONF_EARLY_SHABBOS_MODE, DEFAULT_EARLY_SHABBOS_MODE),
-                ): selector({
-                    "select": {
-                        "options": [
-                            {"value": "plag", "label": "By Plag Hamincha (weekly)"},
-                            {"value": "fixed", "label": "Fixed time (clock)"},
-                            {"value": "disabled", "label": "Disabled (manual only)"},
-                        ]
-                    }
-                }),
-
-                vol.Optional(
-                    CONF_EARLY_SHABBOS_PLAG_METHOD,
-                    default=get(CONF_EARLY_SHABBOS_PLAG_METHOD, DEFAULT_EARLY_SHABBOS_PLAG_METHOD),
-                ): selector({
-                    "select": {
-                        "options": [
-                            {"value": "gra", "label": "GRA (default)"},
-                            {"value": "ma", "label": "Magen Avraham (advanced)"},
-                        ]
-                    }
-                }),
-
-                vol.Optional(
-                    CONF_EARLY_SHABBOS_FIXED_TIME,
-                    default=get(CONF_EARLY_SHABBOS_FIXED_TIME, DEFAULT_EARLY_SHABBOS_FIXED_TIME),
-                ): selector({"time": {}}),
-
-                vol.Optional(
-                    CONF_EARLY_SHABBOS_APPLY_RULE,
-                    default=get(CONF_EARLY_SHABBOS_APPLY_RULE, DEFAULT_EARLY_SHABBOS_APPLY_RULE),
-                ): selector({
-                    "select": {
-                        "options": [
-                            {"value": "every_friday", "label": "Every Friday"},
-                            {"value": "sunset_after", "label": "Only when sunset is after…"},
-                        ]
-                    }
-                }),
-
-                vol.Optional(
-                    CONF_EARLY_SHABBOS_SUNSET_AFTER,
-                    default=get(CONF_EARLY_SHABBOS_SUNSET_AFTER, DEFAULT_EARLY_SHABBOS_SUNSET_AFTER),
-                ): selector({"time": {}}),
-            })
-            return self.async_show_form(step_id="early_shabbos", data_schema=schema)
-
-        new_opts = {**self._config_entry.options, **user_input}
-        return self.async_create_entry(title="", data=new_opts)
+            return self._form("early_shabbos", _early_shabbos_schema(self._lang, self._get))
+        return self._save({**(self._config_entry.options or {}), **user_input})
 
     async def async_step_early_yomtov(self, user_input=None):
-        """Edit Early Yom Tov settings."""
-        data = self._config_entry.data or {}
-        opts = self._config_entry.options or {}
-
-        def get(k, default):
-            return opts.get(k, data.get(k, default))
-
+        self._resolve_lang()
         if user_input is None:
-            schema = vol.Schema({
-                vol.Optional(
-                    CONF_ENABLE_EARLY_YOMTOV,
-                    default=get(CONF_ENABLE_EARLY_YOMTOV, DEFAULT_ENABLE_EARLY_YOMTOV),
-                ): bool,
+            return self._form("early_yomtov", _early_yomtov_schema(self._lang, self._get))
+        return self._save({**(self._config_entry.options or {}), **user_input})
 
-                vol.Optional(
-                    CONF_EARLY_YOMTOV_MODE,
-                    default=get(CONF_EARLY_YOMTOV_MODE, DEFAULT_EARLY_YOMTOV_MODE),
-                ): selector({
-                    "select": {
-                        "options": [
-                            {"value": "plag", "label": "By Plag Hamincha (weekly)"},
-                            {"value": "fixed", "label": "Fixed time (clock)"},
-                            {"value": "disabled", "label": "Disabled (manual only)"},
-                        ]
-                    }
-                }),
 
-                vol.Optional(
-                    CONF_EARLY_YOMTOV_PLAG_METHOD,
-                    default=get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD),
-                ): selector({
-                    "select": {
-                        "options": [
-                            {"value": "gra", "label": "GRA (default)"},
-                            {"value": "ma", "label": "Magen Avraham (advanced)"},
-                        ]
-                    }
-                }),
+# ---------------------------------------------------------------------------
+# Language picker step handlers.
+#
+# A dict menu routes to async_step_<key>, so every language needs a real
+# method. They are generated from S.UI_LANGUAGES so that adding a language
+# means touching ui_strings.py only.
+# ---------------------------------------------------------------------------
+def _make_config_lang_step(lang):
+    async def _step(self, user_input=None):
+        self._lang = lang
+        return await self.async_step_general()
 
-                vol.Optional(
-                    CONF_EARLY_YOMTOV_FIXED_TIME,
-                    default=get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME),
-                ): selector({"time": {}}),
+    _step.__name__ = f"async_step_lang_{lang}"
+    return _step
 
-                vol.Optional(
-                    CONF_EARLY_YOMTOV_INCLUDE,
-                    default=get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE),
-                ): selector({
-                    "select": {
-                        "multiple": True,
-                        "options": [
-                            {"value": "rosh_hashana", "label": "Rosh Hashana (Day 1 only)"},
-                            {"value": "yom_kippur", "label": "Yom Kippur"},
-                            {"value": "sukkos", "label": "Sukkos (Day 1 only)"},
-                            {"value": "shemini_atzeres", "label": "Shemini Atzeres (first day only)"},
-                            {"value": "pesach_last_days", "label": "Last days of Pesach (Shvi'i only)"},
-                            {"value": "pesach_first_day", "label": "Pesach Day 1 (accept early; seder at night)"},
-                            {"value": "shavuos", "label": "Shavuos (advanced)"},
-                        ]
-                    }
-                }),
 
-                vol.Optional(
-                    CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
-                    default=get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS),
-                ): bool,
-            })
-            return self.async_show_form(step_id="early_yomtov", data_schema=schema)
+def _make_options_lang_step(lang):
+    async def _step(self, user_input=None):
+        # Save and close, exactly like every other options sub-step.
+        #
+        # Do NOT call async_update_entry() here and then keep the flow open.
+        # That writes the entry while the flow is still alive and expected to
+        # serve further steps, so the update listener's reload (191 entities)
+        # runs *concurrently* with the flow — and a second language switch in
+        # the same dialog session raced it, closing the options dialog with an
+        # empty "Error" alert (frontend does `text: err?.body?.message`, which
+        # is undefined when the request never completes; nothing is logged
+        # server-side).
+        #
+        # Ending the flow hands the write to OptionsFlowManager.async_finish_flow
+        # instead, which is the path every HA integration uses: the flow is torn
+        # down and no further step is expected, so the reload cannot overlap it.
+        self._lang = lang
+        return self._save({**(self._config_entry.options or {})})
 
-        new_opts = {**self._config_entry.options, **user_input}
-        return self.async_create_entry(title="", data=new_opts)
+    _step.__name__ = f"async_step_set_lang_{lang}"
+    return _step
+
+
+for _l in S.UI_LANGUAGES:
+    setattr(YidCalConfigFlow, f"async_step_lang_{_l}", _make_config_lang_step(_l))
+    setattr(OptionsFlowHandler, f"async_step_set_lang_{_l}", _make_options_lang_step(_l))
+del _l
