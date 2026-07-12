@@ -163,7 +163,7 @@ generate_luach:
             - value: "yearly_sheet"
               label: "Yearly (Single Sheet)"
             - value: "weekly_yidcal"
-              label: "Weekly YidCal"
+              label: "Weekly YidCal (Single Card)"
     time_format:
       name: Time format
       description: >-
