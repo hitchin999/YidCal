@@ -7,90 +7,74 @@
 
 check_zmanim:
   name: Check Zmanim
-  description: >
-    Look up the zmanim for up to 10 Gregorian dates and publish them to
-    sensor.yidcal_zmanim_lookup. The sensor state becomes a Hebrew
-    label for the primary date (e.g. 'לשבת פרשת פנחס', 'לפסח א׳',
-    'לפורים'), and the attributes contain all daily zmanim for each
-    date. Useful for planning across a Yom Tov plus the following
-    Shabbos. All dates must be within ±100 years of today.
+  description: Look up zmanim for up to 10 dates and publish them to sensor.yidcal_zmanim_lookup.
   fields:
     date:
       name: Date
-      description: >
-        The primary Gregorian date to look up. Its label becomes the
-        sensor's state, and its zmanim appear as un-suffixed attributes.
+      description: Primary date. Its label becomes the sensor state.
       required: true
       example: "2026-05-22"
       selector:
         date:
     date_2:
       name: Date 2 (optional)
-      description: >
-        A second date. Its zmanim appear as attributes suffixed with
-        "_2", along with a Label_2 showing its Hebrew day label.
+      description: Second date (attributes suffixed "_2").
       required: false
       example: "2026-05-23"
       selector:
         date:
     date_3:
       name: Date 3 (optional)
-      description: A third date (suffix "_3").
+      description: Third date (suffix "_3").
       required: false
       example: "2026-05-30"
       selector:
         date:
     date_4:
       name: Date 4 (optional)
-      description: A fourth date (suffix "_4").
+      description: Fourth date (suffix "_4").
       required: false
       selector:
         date:
     date_5:
       name: Date 5 (optional)
-      description: A fifth date (suffix "_5").
+      description: Fifth date (suffix "_5").
       required: false
       selector:
         date:
     date_6:
       name: Date 6 (optional)
-      description: A sixth date (suffix "_6").
+      description: Sixth date (suffix "_6").
       required: false
       selector:
         date:
     date_7:
       name: Date 7 (optional)
-      description: A seventh date (suffix "_7").
+      description: Seventh date (suffix "_7").
       required: false
       selector:
         date:
     date_8:
       name: Date 8 (optional)
-      description: An eighth date (suffix "_8").
+      description: Eighth date (suffix "_8").
       required: false
       selector:
         date:
     date_9:
       name: Date 9 (optional)
-      description: A ninth date (suffix "_9").
+      description: Ninth date (suffix "_9").
       required: false
       selector:
         date:
     date_10:
       name: Date 10 (optional)
-      description: A tenth date (suffix "_10").
+      description: Tenth date (suffix "_10").
       required: false
       selector:
         date:
     location:
       name: Location (optional)
-      description: >
-        Override the integration's configured location with a free-form
-        string — ZIP/postal code, city, neighborhood, landmark, etc.
-        Examples: "Lakewood, NJ", "11211", "Jerusalem", "London SW1A 1AA".
-        When provided, all zmanim in this lookup are computed for the
-        resolved location and timezone. Leave blank to use the location
-        you configured in the integration settings.
+      description: Zip code, place name, or "lat,lon". Defaults to the integration location.
       required: false
       example: "Lakewood, NJ"
       selector:
@@ -98,17 +82,11 @@ check_zmanim:
 
 set_yurtzeit_muted:
   name: Set Muted Yurtzeits
-  description: >
-    Overwrite the list of muted yurtzeits in
-    www/yidcal-data/muted_yahrtzeits.txt and refresh the live yurtzeit
-    sensors. Used by the yidcal-yurtzeit-config-card.
+  description: Mute or unmute yurtzeit names.
   fields:
     names:
       name: Names
-      description: >
-        Full list of yurtzeit names to mute (one entry per name, exactly
-        as it appears in the cached database). Send the FULL list — any
-        names not in the list will be un-muted.
+      description: Names to mute, or a name → true/false map.
       required: true
       example:
         - 'רבי פלוני בן רבי אלמוני זי״ע [מחבר ספר דוגמא] תש״א'
@@ -117,16 +95,11 @@ set_yurtzeit_muted:
 
 set_yurtzeit_custom:
   name: Set Custom Yurtzeits
-  description: >
-    Overwrite the list of custom yurtzeits in
-    www/yidcal-data/custom_yahrtzeits.txt and refresh the live yurtzeit
-    sensors. Used by the yidcal-yurtzeit-config-card.
+  description: Add or replace custom yurtzeit entries.
   fields:
     entries:
       name: Entries
-      description: >
-        Full list of {date, name} objects. The date must be a Hebrew date
-        string (e.g. 'ט״ו תמוז'); the name is the display text.
+      description: Custom yurtzeit entries to add or replace.
       required: true
       example:
         - date: 'ט״ו תמוז'
@@ -136,22 +109,11 @@ set_yurtzeit_custom:
 
 generate_luach:
   name: Generate Luach (PDF)
-  description: >
-    Generate a printable luach (Jewish calendar) PDF for a given date
-    range. The PDF is written to /config/www/yidcal-data/ and a
-    persistent notification is fired with a direct download link.
-    Requires "Generate Luach PDF" to be enabled in Settings → Devices
-    & Services → YidCal → Configure → General.
+  description: Generate a luach PDF — yearly sheet, yearly multi-page, or Weekly YidCal card.
   fields:
     style:
       name: Style
-      description: >
-        Layout style. "Yearly (Multi Sheet)" (default) produces a
-        multi-page table with one row per candle-lighting event.
-        "Yearly (Single Sheet)" produces a single-page two-column
-        layout covering the entire Hebrew year (the "hebrew_year"
-        field is optional — leave it blank to use the current Hebrew
-        year; rejects start_date / end_date).
+      description: Which luach to produce.
       required: false
       default: yearly_multi_page
       selector:
@@ -164,13 +126,16 @@ generate_luach:
               label: "Yearly (Single Sheet)"
             - value: "weekly_yidcal"
               label: "Weekly YidCal (Single Card)"
+    shehecheyanu:
+      name: Shehecheyanu marker
+      description: Weekly YidCal only — print שהחיינו / א״א שהחיינו under each candle box.
+      required: false
+      default: false
+      selector:
+        boolean:
     time_format:
       name: Time format
-      description: >-
-        Clock format for the zmanim strings on the generated luach.
-        "12" (default, per the printed luachs — AM/PM implicit) or
-        "24" (zero-padded HH:MM). Overrides the integration's
-        time_format option for this call only.
+      description: 12-hour (default) or 24-hour clock.
       required: false
       example: "12"
       selector:
@@ -180,70 +145,42 @@ generate_luach:
             - "24"
     hebrew_year:
       name: Hebrew year (full-year shortcut)
-      description: >-
-        For the yearly styles this generates the whole Hebrew year.
-        Enter the Hebrew year as a number (e.g. 5787 for תשפ״ז, 5788
-        for תשפ״ח). Generates a full year of luach — from Tishrei 1 of
-        the given year through Tishrei 2 of the following year (matching
-        the printed-luach convention). When provided, overrides
-        start_date and end_date. Leave blank for the default: for the
-        "Yearly (Single Sheet)" style this is the CURRENT Hebrew year;
-        for the other styles it is today → ב׳ תשרי of the next Hebrew
-        year.
+      description: Hebrew year — 5786 or תשפ״ו. Defaults to the current year.
       required: false
-      example: 5787
+      example: "תשפ״ז"
       selector:
-        number:
-          min: 5780
-          max: 5900
-          mode: box
+        text:
     start_date:
       name: Start date
-      description: >
-        First civil date to include. Defaults to today.
+      description: Weekly YidCal only — first week to render. Defaults to this week.
       required: false
       example: "2026-05-08"
       selector:
         date:
     end_date:
       name: End date
-      description: >
-        Last civil date to include. Defaults to ב׳ תשרי of the next
-        Hebrew year (matches the standard printed-luach end-point).
+      description: Weekly YidCal only — last week to render. Defaults to start_date.
       required: false
       example: "2026-09-20"
       selector:
         date:
     location:
       name: Location (optional)
-      description: >
-        Free-form location override (ZIP code, city, landmark). Geocoded
-        via Nominatim. When omitted, the integration uses Home Assistant's
-        configured home location.
+      description: Zip code, place name, or "lat,lon". Defaults to the integration location.
       required: false
       example: "Monsey, NY"
       selector:
         text:
     is_in_israel:
       name: Generate for Israel (optional)
-      description: >
-        Override the diaspora setting for this single PDF. Set to true
-        when generating a luach for a location in Eretz Yisroel (one-day
-        yom tov, different parsha around Pesach in some years) or to
-        false when generating a diaspora luach from a YidCal instance
-        configured for Israel. When omitted, the integration's
-        configured "Is in Israel" setting is used.
+      description: Override the integration Israel/Diaspora setting. Leave unchecked to use it.
       required: false
       example: false
       selector:
         boolean:
     candle_offset:
       name: Candle lighting offset (minutes before sunset)
-      description: >
-        Minutes before sunset to light candles. Common values are 15
-        (most NY/NJ communities), 18 (Chabad), 20 (Yerushalayim), 40
-        (Yerushalayim minhag for some). Leave blank to use the
-        integration's configured default.
+      description: Minutes before sunset for candle-lighting. Defaults to the integration value.
       required: false
       example: 15
       selector:
@@ -254,10 +191,7 @@ generate_luach:
           mode: box
     havdalah_offset:
       name: Motzei (havdalah) offset (minutes after sunset)
-      description: >
-        Minutes after sunset for motzei shabbos / yom tov. 72 = שיטת
-        ר״ת (most chassidish minhag). Other common values: 50, 60, 42.
-        Leave blank to use the integration's configured default.
+      description: Minutes after sunset for havdalah. Defaults to the integration value.
       required: false
       example: 72
       selector:
@@ -267,38 +201,23 @@ generate_luach:
           unit_of_measurement: min
           mode: box
     add_seconds:
-      name: Show seconds in the grid
-      description: >
-        Advanced. When enabled, daily-zmanim GRID columns (card layouts)
-        print the exact (un-rounded) time including seconds — e.g.
-        9:14:37 instead of 9:14. Candle lighting, motzei / havdalah and
-        the header time boxes are NOT affected — they keep their normal
-        rounded times. Has no effect on the yearly styles. Leave off
-        for the standard rounded display.
+      name: Add seconds
+      description: Show seconds on the zmanim.
       required: false
+      default: false
       example: true
       selector:
         boolean:
     output_path:
       name: Output path (optional)
-      description: >
-        Custom filename or absolute path. Relative paths resolve under
-        /config/www/yidcal-data/. When omitted, a timestamped filename
-        is used automatically.
+      description: Where to write the PDF. Defaults to /config/www/yidcal/.
       required: false
       example: "my_luach.pdf"
       selector:
         text:
     emit_json:
-      name: Also write a JSON data file (optional)
-      description: >
-        When enabled, a sidecar JSON file with the structured luach
-        data is written next to the PDF (same path, ".json"
-        extension) — e.g. a dashboard/Lovelace card can fetch and
-        parse it instead of embedding the PDF. Default: off. Tip:
-        combine with a fixed "output_path" (e.g. "luach_dashboard.pdf")
-        so the JSON is always at a predictable
-        /local/yidcal-data/luach_dashboard.json URL.
+      name: Also write a JSON data file
+      description: Also write a JSON dump of the luach data.
       required: false
       default: false
       selector:
