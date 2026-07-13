@@ -228,26 +228,38 @@ PRUZBOL_FOOTNOTE_HE = (
 def _build_pruzbol_annotations(
     *, start: date_cls, end: date_cls,
 ) -> list[AnnotationRow]:
-    """Erev-RH pruzbol note, when that Erev RH closes a shmita year.
+    """Erev-RH pruzbol notes.
 
-    Printed SF 5783: 'בער״ה תשפ״ג צריכין לעשות פרוזבול*' — with the
-    נוסח as a footnote at the foot of the sheet. The predicate lives
-    in halacha_events.needs_pruzbol() so a future
-    binary_sensor.yidcal_pruzbol reads the SAME rule.
+    TWO different notes, per halacha_events.pruzbol_kind():
+      • entering shmita → 'יש מחמירים לעשות פרוזבול (לכתחלה)'
+      • leaving  shmita → 'צריכין לעשות פרוזבול'
+    A shmita-year sheet carries BOTH (top + bottom) — verified
+    against the printed SF 5782 sheet.
+
+    The footnote marker '*' goes on the FIRST note in the range only
+    (standard footnote-reference practice, and what the printed 5782
+    sheet does: its top note is starred, its bottom one is not).
     """
     out: list[AnnotationRow] = []
     d = start
     while d <= end:
-        if he.needs_pruzbol(d):
+        kind = he.pruzbol_kind(d)
+        if kind:
             ph = PHebrewDate.from_pydate(d)
             try:
                 yl = he.hebrew_year_letters(ph.year + 1)
             except Exception:
                 yl = ""
+            body = (
+                "יש מחמירים לעשות פרוזבול (לכתחלה)"
+                if kind == "chumra"
+                else "צריכין לעשות פרוזבול"
+            )
+            star = "*" if not out else ""
             out.append(AnnotationRow(
                 civil_date=d,
                 kind="pruzbol",
-                text_he=f"בער״ה {yl} צריכין לעשות פרוזבול*".strip(),
+                text_he=f"בער״ה {yl} {body}{star}".strip(),
                 position="before",
             ))
         d += timedelta(days=1)
