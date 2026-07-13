@@ -1810,11 +1810,11 @@ def _annotations_dst(
     for chg in he.dst_changes_in_range(start=start, end=end, tz=config.tz):
         if chg.kind == "dst_start":
             text = "פון די וואך איז די פארגערוקטע צייט (סעיווינגס טיים)"
-            sheet = ("פון די וואָך אָן איז די פאָרגעריקטע צייט\n"
+            sheet = ("פון די וואך אן איז די פארגעריקטע צייט\n"
                      "(דעילייט סעיווינגס טיים)")
         else:
             text = "פון די וואך איז די נארמאלע צייט (סטענדערד טיים)"
-            sheet = ("פון די וואָך אָן איז די נאָרמאַלע צייט\n"
+            sheet = ("פון די וואך אן איז די נארמאלע צייט\n"
                      "(איסטערן סטענדארד טיים)")
         out.append(AnnotationRow(
             civil_date=chg.civil_date,
