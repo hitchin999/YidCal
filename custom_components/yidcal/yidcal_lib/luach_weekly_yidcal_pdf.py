@@ -149,6 +149,26 @@ _SM_LABEL_BASE0 = 305.9          # mock baselines 305.9 / 324.9
 _SM_LABEL_SIZE = 22.0            # mock-exact
 _SM_LABEL_PITCH = 19.0
 _SM_LABEL_MW = 126.0
+
+# ── שהחיינו marker (service option; Weekly-YidCal only) ──
+# Printed small UNDER a candle box's label. The design leaves the label
+# sitting low in its panel (23.5 pt of air above, 9.4 pt below), so when
+# a marker is present the label group is LIFTED and the marker drops into
+# the freed space. Un-marked boxes keep the mock's baselines EXACTLY.
+_SHE_SIZE_BIG, _SHE_LIFT_BIG, _SHE_GAP_BIG = 13.0, 7.0, 18.0
+_SHE_SIZE_SM = 9.0
+_SHE_CLEAR = 2.0          # min clear air between label ink and marker ink
+# A small box's PANEL is only 45.6 pt tall (mock: 284.9→330.5, and the
+# second slot 52.1 lower), and the design's 22-pt two-line label already
+# fills 35.5 of that. So a marked small box SHRINKS its label until label
+# + marker fit the panel, then centres the pair inside it — rather than
+# lifting, which pushed the marker out through the panel floor.
+_SM_PANEL_TOP, _SM_PANEL_H, _SM_PANEL_DY = 285.0, 45.6, 52.1
+_SM_PANEL_PAD = 2.2
+# BAFranknatan's TALLEST letter is ל at 0.832 em — and every candle label
+# ('הדלה״נ …') has one. _P2_ASC_EM (0.57) is the typical-letter value and
+# badly under-measures these, so the containment fit uses the real max.
+_HEB_ASC_MAX, _HEB_DESC_MAX = 0.832, 0.185
 _PANEL_CX, _PANEL_MID = 482.2, 334.05
 _PANEL_MW = 178.0
 _PANEL_SIZE = 16.0               # mock announcement: 21 pt over 3 lines
@@ -280,6 +300,44 @@ _WATERMARK_X = 19.0   # ≥5.5 mm in from the paper edge — x=7 pt
 # Hero titles that are NOT a plain parsha and must not get the
 # 'פרשת' pre-line (the ערב-prefixed ones are split on the prefix
 # instead). Flagged as an open item — Yoel confirms the rule.
+
+
+# ── folded ל ─────────────────────────────────────────────────────────
+# BAFranknatan ships 348 glyphs the subsetter left UNREACHABLE (no cmap
+# entry, and no GSUB to select them). It holds exactly THREE lameds:
+#   uni05DC          adv  844  yMax 1703   plain
+#   uni05DC_less     adv  718  yMax 1354   upper stroke FOLDED over
+#   uni05DC_greater  adv 1700  yMax 1703   wide swash (too big for these
+#                                          labels — it sweeps sideways)
+# All are exposed at U+E000–E004 in the shipped TTF. EVERY ל in a
+# candle-lighting label is folded ('ליל' included); motzei labels and
+# everything else keep the plain form. Folding is safe width-wise — the
+# folded glyph is NARROWER than the plain one (718 vs 844), so a label
+# only ever gets shorter.
+_FOLDED_LAMED = "\ue004"       # uni05DC_less
+_CANDLE_TOKENS = ("הדלקת", "הדלה״נ")
+
+
+def _fold_lameds(text: str) -> str:
+    """Fold EVERY ל in a candle-lighting label.
+
+    Gated on the label actually being a candle box ('הדלקת' / 'הדלה״נ')
+    — the check runs BEFORE the substitution, since the token itself
+    contains a ל."""
+    if not text or not any(tok in text for tok in _CANDLE_TOKENS):
+        return text
+    return text.replace("ל", _FOLDED_LAMED)
+
+
+def _shecheyanu(w, box) -> str:
+    """The שהחיינו / א״א שהחיינו marker to print under ``box``.
+
+    Empty unless the service option is on AND the data layer put a marker
+    on this box (candle boxes that bring in a Yom Tov). Motzei boxes and
+    plain-Shabbos lightings never carry one."""
+    if not getattr(w, "show_shehecheyanu", False):
+        return ""
+    return (getattr(box, "shehecheyanu_he", "") or "").strip()
 
 
 def _col_center(idx_from_right: int) -> tuple[float, float]:
@@ -692,12 +750,19 @@ class _Weekly2PDF(FPDF):
             self._t(_BIG_TIME_CX, cy + t_dy, b.time_str, size=_BIG_TIME_SIZE,
                     rtl=False, max_w=_BIG_TIME_MW, track=_tk,
                     font=FONT_FAMILY_MONO, bold=True)
-            l1, l2 = self._two_line_split(b.label_he)
+            l1, l2 = self._two_line_split(_fold_lameds(b.label_he))
             _lb0 = _BIG_LABEL_BASE0 + (_BIG_MOTZEI_CY - _BIG_CANDLE_CY) * i
+            _she = _shecheyanu(w, b)
+            if _she:
+                _lb0 -= _SHE_LIFT_BIG
             self._stacked(_BIG_LABEL_CX, 0, [l1, l2],
                           size=_BIG_LABEL_SIZE, pitch=_BIG_LABEL_PITCH,
                           max_w=_BIG_LABEL_MW, base0=_lb0,
                           condense=True, floor=58)
+            if _she:
+                self._t(_BIG_LABEL_CX, 0, _she, size=_SHE_SIZE_BIG,
+                        max_w=_BIG_LABEL_MW,
+                        baseline=_lb0 + _BIG_LABEL_PITCH + _SHE_GAP_BIG)
 
         # hero panel — title line(s) + sub line(s), one centred group
         title, subs = self._hero_lines(w)
@@ -766,13 +831,28 @@ class _Weekly2PDF(FPDF):
                         b.time_str, size=_SM_TIME_SIZE, rtl=False,
                         max_w=_SM_TIME_MW, font=FONT_GRID,
                         baseline=320.0 + _SM2_DY_TIME * i)
-                l1, l2 = self._two_line_split(_lbl)
-                self._stacked(_SM_LABEL_CX, 0,
-                              [l1, l2], size=_SM_LABEL_SIZE,
-                              pitch=_SM_LABEL_PITCH,
-                              max_w=_SM_LABEL_MW,
-                              base0=_SM_LABEL_BASE0 + _SM2_DY_LABEL * i,
-                              condense=True, floor=58)
+                l1, l2 = self._two_line_split(_fold_lameds(_lbl))
+                _she = _shecheyanu(w, b)
+                if not _she:
+                    # unmarked → the mock's exact baselines
+                    self._stacked(_SM_LABEL_CX, 0,
+                                  [l1, l2], size=_SM_LABEL_SIZE,
+                                  pitch=_SM_LABEL_PITCH,
+                                  max_w=_SM_LABEL_MW,
+                                  base0=_SM_LABEL_BASE0 + _SM2_DY_LABEL * i,
+                                  condense=True, floor=58)
+                else:
+                    _L, _P, _M, _G, _H = self._sm_marked_layout()
+                    _ptop = _SM_PANEL_TOP + _SM_PANEL_DY * i
+                    _top = _ptop + (_SM_PANEL_H - _H) / 2.0
+                    _b0 = _top + _HEB_ASC_MAX * _L
+                    self._stacked(_SM_LABEL_CX, 0, [l1, l2],
+                                  size=_L, pitch=_P,
+                                  max_w=_SM_LABEL_MW, base0=_b0,
+                                  condense=True, floor=58)
+                    self._t(_SM_LABEL_CX, 0, _she, size=_M,
+                            max_w=_SM_LABEL_MW,
+                            baseline=_b0 + _P + _G)
             # any small box beyond the template's slots degrades to a
             # panel text line (only possible on the yt1 fallback)
             overflow = [f"{b.label_he}: {b.time_str}"
@@ -881,6 +961,30 @@ class _Weekly2PDF(FPDF):
                 else:
                     out.append(part)
         return out
+
+    def _sm_marked_layout(self) -> tuple:
+        """(label_size, pitch, marker_size, gap, group_height) for a small
+        box that carries a שהחיינו marker — shrunk to fit its 45.6 pt
+        panel. The label keeps the design's size:pitch ratio."""
+        ratio = _SM_LABEL_PITCH / _SM_LABEL_SIZE
+        avail = _SM_PANEL_H - 2 * _SM_PANEL_PAD
+        L, M = _SM_LABEL_SIZE, _SHE_SIZE_SM
+
+        def _m(L):
+            pitch = L * ratio
+            # marker ('שהחיינו' — no ל) uses the typical ascent; the LABEL
+            # uses the true max, or a ל pokes out through the panel roof.
+            gap = _P2_ASC_EM * M + _HEB_DESC_MAX * L + _SHE_CLEAR
+            h = _HEB_ASC_MAX * L + pitch + gap + _P2_DESC_EM * M
+            return pitch, gap, h
+
+        pitch, gap, h = _m(L)
+        for _ in range(80):
+            if h <= avail or L <= 9.0:
+                break
+            L *= 0.97
+            pitch, gap, h = _m(L)
+        return L, pitch, M, gap, h
 
     # ── table ──
     def _table(self, w: WeeklyData) -> None:
