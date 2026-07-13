@@ -255,6 +255,27 @@ def _build_pruzbol_annotations(
     return out
 
 
+def _shehecheyanu_note(day_in: date_cls, *, diaspora: bool) -> str:
+    """Marker for a candle-lighting that brings IN ``day_in``.
+
+    '' for a plain Shabbos (שהחיינו is never a question there);
+    'שהחיינו' / 'א״א שהחיינו' for a Yom Tov night. The א״א case is
+    exactly the printed luach's own marker and is decided SOLELY by
+    halacha_events.is_yt_without_shehecheyanu() — the same predicate
+    sensor.yidcal_shehecheyanu_display reads, so the card and the
+    sensor can never disagree."""
+    try:
+        if not HDateInfo(day_in, diaspora=diaspora).is_yom_tov:
+            return ""
+        return (
+            "א״א שהחיינו"
+            if he.is_yt_without_shehecheyanu(day_in, diaspora=diaspora)
+            else "שהחיינו"
+        )
+    except Exception:
+        return ""
+
+
 def _pesach_chatzos_str(erev_pesach, config) -> str:
     """Chatzos halayla of the FIRST seder night.
 
@@ -431,6 +452,9 @@ class LuachConfig:
     havdalah_offset: int
     tallis_offset: int = DEFAULT_TALLIS_TEFILIN_OFFSET
     metzora_display: str = "metzora"
+    # Weekly-YidCal card: print שהחיינו / א״א שהחיינו under each candle
+    # box. Off by default; driven by the generate-luach service option.
+    show_shehecheyanu: bool = False
     # Clock format for the WEEKLY card's zmanim strings ("12"/"24").
     # "12" (default) matches every printed luach; the annotation
     # composers below also consult this, but only entry points that
@@ -1951,6 +1975,11 @@ class WeeklyBox:
     label_he: str              # 'הדלקת הנרות' / 'מוצאי שב״ק' / 'הדלה״נ ליל ב׳ דיו״ט' …
     time_str: str              # 'H:MM' (12-hour, AM/PM implicit)
     big: bool = False          # True for the two primary boxes
+    # For a CANDLE box: 'שהחיינו' / 'א״א שהחיינו' when the lighting
+    # brings in a Yom Tov, '' for a plain Shabbos (or a motzei box).
+    # Always computed; the Weekly-YidCal renderer prints it only when
+    # WeeklyData.show_shehecheyanu is on.
+    shehecheyanu_he: str = ""
 
 
 @dataclass
@@ -1997,6 +2026,9 @@ class WeeklyData:
     # already formatted by the builder; this lets the renderers
     # match them in the grid.
     time_format: str = "12"
+    # Print the שהחיינו / א״א שהחיינו marker under each candle box
+    # (Weekly-YidCal only — service option).
+    show_shehecheyanu: bool = False
     # True iff title_main_he is the week's PARSHA name (the hero
     # renderer prefixes 'פרשת' only then — YT titles like
     # 'שביעי של פסח' must stay bare).
@@ -2998,6 +3030,8 @@ def build_weekly_data(
             label_he="הדלקת הנרות",
             time_str=_weekly_fmt_time(hero_row.candle_lighting, config.time_format),
             big=True,
+            shehecheyanu_he=_shehecheyanu_note(
+                hero_row.civil_date + timedelta(days=1), diaspora=config.diaspora),
         ))
 
         # LEFT = this block's final motzei (last motzei within block).
@@ -3115,6 +3149,9 @@ def build_weekly_data(
                     time_str=_weekly_fmt_time(
                         erev_shabbos_yt.candle_lighting, config.time_format),
                     big=False,
+                    shehecheyanu_he=_shehecheyanu_note(
+                        erev_shabbos_yt.civil_date + timedelta(days=1),
+                        diaspora=config.diaspora),
                 ))
             elif second_night_row is not None:
                 smalls.append(WeeklyBox(
@@ -3122,6 +3159,9 @@ def build_weekly_data(
                     time_str=_weekly_fmt_time(
                         second_night_row.candle_lighting, config.time_format),
                     big=False,
+                    shehecheyanu_he=_shehecheyanu_note(
+                        second_night_row.civil_date + timedelta(days=1),
+                        diaspora=config.diaspora),
                 ))
             else:
                 # 2nd night is a weeknight with no explicit candle row
@@ -3170,6 +3210,9 @@ def build_weekly_data(
                             label_he="הדלה״נ ליל ב׳ דיו״ט",
                             time_str=_weekly_fmt_time(tz_dt, config.time_format),
                             big=False,
+                            shehecheyanu_he=_shehecheyanu_note(
+                                _first_yt.civil_date + timedelta(days=1),
+                                diaspora=config.diaspora),
                         ))
                         open_notes.append(
                             "2nd-night YT candle taken as צאת "
@@ -3293,6 +3336,8 @@ def build_weekly_data(
                         label_he="הדלה״נ במוצש״ק ליל א׳ דיו״ט",
                         time_str=_weekly_fmt_time(_shab_tzeis, config.time_format),
                         big=False,
+                        shehecheyanu_he=_shehecheyanu_note(
+                            _yt1, diaspora=config.diaspora),
                     ))
                     # Sun-night candle = tzeis day-1 YT.
                     _yt1_sunset = sunset_for_date(
@@ -3306,6 +3351,8 @@ def build_weekly_data(
                         label_he="הדלה״נ ליל ב׳ דיו״ט",
                         time_str=_weekly_fmt_time(_yt1_tzeis, config.time_format),
                         big=False,
+                        shehecheyanu_he=_shehecheyanu_note(
+                            _yt2, diaspora=config.diaspora),
                     ))
                     open_notes.append(
                         "3-day rest-block (Shabbos+2-day YT): two "
@@ -3578,6 +3625,7 @@ def build_weekly_data(
         open_notes=open_notes,
         add_seconds=add_seconds,
         time_format=config.time_format,
+        show_shehecheyanu=config.show_shehecheyanu,
         title_is_parsha=_title_is_parsha,
         block_parsha_he=_block_parsha,
     )
