@@ -18,6 +18,20 @@ A custom Home Assistant integration that provides a full Yiddish/Hebrew Jewish c
 
 ---
 
+## Quick links
+
+**Setup** — [Requirements](#requirements) · [Installation](#installation) · [Configuration Options](#configuration-options) · [Language](#language-setup--options-screens) · [Location Resolution](#location-resolution) · [Early Shabbos & Yom Tov](#early-shabbos--early-yom-tov)
+
+**Sensors** — [Devices / Services layout](#devices--services-layout) · [Core binary sensors](#core-binary-sensors) · [Holiday attributes](#holiday-sensor-attributes-list-updated) · [Key daily sensors](#key-daily-sensors) · [Special Sensors](#special-sensors) · [Upcoming sensors](#upcoming-sensors) · [Display device extras](#display-device-extras) · [Yurtzeit sensors](#yurtzeit-sensors)
+
+**Zmanim** — [Overview & algorithm](#zmanim) · [Zman Erev / candle lighting](#zman-erev-candle-lighting) · [Night 2 / Night 3](#night-2--night-3-candle-lighting-optional) · [Zman Motzi / havdalah](#zman-motzi-havdalah) · [Upcoming Shabbos](#upcoming-shabbos-zmanim) · [Upcoming Yom Tov](#upcoming-yom-tov-zmanim) · [Zmanim Lookup](#zmanim-lookup-optional) · [Time format](#simple-zmanim-time-format)
+
+**Timing notes** — [Erev / Motzi](#erev--motzi-sensors-timing-notes) · [Day Type](#day-type-timing-notes)
+
+**More** — [Yurtzeit Customization](#yurtzeit-customization) · [Lovelace countdown example](#lovelace-example-for-fast-startsends-in-countdown-timers) · [Releases](https://github.com/hitchin999/YidCal/releases) · [Report an issue](https://github.com/hitchin999/YidCal/issues)
+
+---
+
 ## Devices / Services layout
 
 Entities are grouped into these Devices/Services for clarity in Home Assistant’s “by device/service” views:
