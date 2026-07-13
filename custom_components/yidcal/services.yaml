@@ -130,9 +130,10 @@ generate_luach:
       name: Shehecheyanu marker
       description: Weekly YidCal only — print שהחיינו / א״א שהחיינו under each candle box.
       required: false
-      default: false
       selector:
-        boolean:
+        constant:
+          value: true
+          label: Print the marker
     time_format:
       name: Time format
       description: 12-hour (default) or 24-hour clock.
@@ -172,10 +173,10 @@ generate_luach:
       selector:
         text:
     is_in_israel:
-      name: Generate for Israel (optional)
-      description: Override the integration Israel/Diaspora setting. Leave unchecked to use it.
+      name: Generate for Israel
+      description: Override the integration setting. On = Israel, off = Diaspora. Leave unchecked to use it.
       required: false
-      example: false
+      example: true
       selector:
         boolean:
     candle_offset:
@@ -204,10 +205,10 @@ generate_luach:
       name: Add seconds
       description: Show seconds on the zmanim.
       required: false
-      default: false
-      example: true
       selector:
-        boolean:
+        constant:
+          value: true
+          label: Show seconds
     output_path:
       name: Output path (optional)
       description: Where to write the PDF. Defaults to /config/www/yidcal/.
@@ -219,6 +220,7 @@ generate_luach:
       name: Also write a JSON data file
       description: Also write a JSON dump of the luach data.
       required: false
-      default: false
       selector:
-        boolean:
+        constant:
+          value: true
+          label: Write the JSON file
