@@ -272,8 +272,9 @@ def format_kvius_line(hebrew_year: int) -> str:
     kvius_3 = f"{rh_l}{len_l}\u05F4{pes_l}"
     leap_word = "מעוברת" if is_leap else "פשוטה"
     if shmita == 7:
-        # The actual shmita year itself
-        shmita_part = "שמיטה"
+        # The actual shmita year itself — the printed SF sheet writes
+        # 'שנת השמיטה' (5782: 'גכ״ז - מעוברת - שנת השמיטה').
+        shmita_part = "שנת השמיטה"
     else:
         shmita_part = f"{int_to_hebrew_letters(shmita)} לשמיטה"
     return f"קביעת השנה: {kvius_3} - {leap_word} - {shmita_part}"
@@ -1539,24 +1540,51 @@ def next_leap_year(hyear: int) -> int:
     return y
 
 
+def pruzbol_kind(d: date_cls) -> str | None:
+    """Which pruzbol note (if any) belongs on ``d`` — 29 Elul.
+
+    The printed SF sheets carry TWO different notes, because the two
+    Erev-RH days that bracket a shmita year are not the same halacha:
+
+      * ``"chumra"``  — Erev RH ENTERING shmita (29 Elul of cycle
+        year 6). 'יש מחמירים לעשות פרוזבול (לכתחלה)'.
+      * ``"required"`` — Erev RH LEAVING shmita (29 Elul of the
+        shmita year itself, cycle year 7): shevi'is has just ended
+        and the debts are about to be cancelled.
+        'צריכין לעשות פרוזבול'.
+
+    A shmita-year sheet therefore shows BOTH — one at the top, one
+    near the bottom (verified against the printed SF 5782 sheet).
+
+    SINGLE SOURCE OF TRUTH: the yearly luach's notes/footnote and any
+    future binary_sensor.yidcal_pruzbol both read from HERE.
+    """
+    try:
+        ph = PHebrewDate.from_pydate(d)
+        if not (ph.month == 6 and ph.day == 29):   # 29 Elul
+            return None
+        cyc = shmita_cycle_year(ph.year)
+        if cyc == 7:
+            return "required"
+        if cyc == 6:
+            return "chumra"
+        return None
+    except Exception:
+        return None
+
+
 def needs_pruzbol(d: date_cls, *, diaspora: bool = True) -> bool:
-    """True on EREV ROSH HASHANA that closes a shmita year.
+    """True on any Erev-RH that carries a pruzbol note (either kind).
 
     Pruzbol is written at the END of the shevi'is year — i.e. on
     29 Elul of the shmita year, which is Erev RH of the NEXT year.
     (Printed SF 5783 sheet: "בער״ה תשפ״ג צריכין לעשות פרוזבול" —
     5782 was shmita.)
 
-    Central predicate: the yearly luach's note/footnote and any
-    future binary_sensor.yidcal_pruzbol both read from HERE.
+    Thin wrapper over ``pruzbol_kind()`` — use that when the
+    distinction (chumra vs required) matters.
     """
-    try:
-        ph = PHebrewDate.from_pydate(d)
-        if not (ph.month == 6 and ph.day == 29):   # 29 Elul
-            return False
-        return shmita_cycle_year(ph.year) == 7
-    except Exception:
-        return False
+    return pruzbol_kind(d) is not None
 
 
 def shmita_cycle_year(hyear: int) -> int:
