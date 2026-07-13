@@ -310,11 +310,19 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     """
     style = call.data.get("style") or "yearly_multi_page"
 
-    # ── Weekly-style feature gate ──
-    # The weekly card style ships disabled (const.WEEKLY_LUACH_ENABLED).
-    # "weekly" stays in _VALID_STYLES so the schema accepts it and the
-    # caller gets THIS clear message instead of a validator stack trace.
-    if style in _WEEKLY_STYLES and not WEEKLY_LUACH_ENABLED:
+    # ── LEGACY weekly feature gate ──
+    # const.WEEKLY_LUACH_ENABLED gates the ORIGINAL 'weekly' card only.
+    # It is what keeps that style out of the dropdown (see
+    # _async_publish_weekly_ui, which injects the option when the flag
+    # is on). 'weekly' stays in _VALID_STYLES so the schema accepts it
+    # and the caller gets THIS clear message instead of a validator
+    # stack trace.
+    #
+    # NB: 'weekly_yidcal' is NOT gated by it. The two share the weekly
+    # data pipeline (_WEEKLY_STYLES), but Weekly YidCal is a shipped
+    # style — its only precondition is that its template rasters and
+    # fonts are present, which the next check covers.
+    if style == "weekly" and not WEEKLY_LUACH_ENABLED:
         raise ServiceValidationError(
             f"The {style!r} luach style is not available in this release."
         )
