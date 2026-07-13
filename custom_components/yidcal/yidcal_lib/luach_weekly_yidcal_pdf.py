@@ -317,6 +317,15 @@ _WATERMARK_X = 19.0   # ≥5.5 mm in from the paper edge — x=7 pt
 _FOLDED_LAMED = "\ue004"       # uni05DC_less
 _CANDLE_TOKENS = ("הדלקת", "הדלה״נ")
 
+# The ל is the TALLEST ink in every candle line ('הדלקת', 'הדלה״נ',
+# 'ליל …' — taller even than the fallback ״). Folding it drops the line's
+# ascent 0.832em → 0.661em, so with the baselines fixed the ink block
+# loses height at the TOP only and its optical centre SINKS by half the
+# loss. Lift the label group back by that much so a folded label sits
+# exactly where the plain one did.
+_LAM_ASC_PLAIN, _LAM_ASC_FOLD = 0.832, 0.661
+_FOLD_LIFT_EM = (_LAM_ASC_PLAIN - _LAM_ASC_FOLD) / 2.0      # 0.0855
+
 
 def _fold_lameds(text: str) -> str:
     """Fold EVERY ל in a candle-lighting label.
@@ -752,6 +761,8 @@ class _Weekly2PDF(FPDF):
                     font=FONT_FAMILY_MONO, bold=True)
             l1, l2 = self._two_line_split(_fold_lameds(b.label_he))
             _lb0 = _BIG_LABEL_BASE0 + (_BIG_MOTZEI_CY - _BIG_CANDLE_CY) * i
+            if _FOLDED_LAMED in l1:
+                _lb0 -= _FOLD_LIFT_EM * _BIG_LABEL_SIZE
             _she = _shecheyanu(w, b)
             if _she:
                 _lb0 -= _SHE_LIFT_BIG
@@ -834,18 +845,21 @@ class _Weekly2PDF(FPDF):
                 l1, l2 = self._two_line_split(_fold_lameds(_lbl))
                 _she = _shecheyanu(w, b)
                 if not _she:
-                    # unmarked → the mock's exact baselines
+                    # mock baselines, lifted for the folded ל
+                    _b0 = _SM_LABEL_BASE0 + _SM2_DY_LABEL * i
+                    if _FOLDED_LAMED in l1:
+                        _b0 -= _FOLD_LIFT_EM * _SM_LABEL_SIZE
                     self._stacked(_SM_LABEL_CX, 0,
                                   [l1, l2], size=_SM_LABEL_SIZE,
                                   pitch=_SM_LABEL_PITCH,
                                   max_w=_SM_LABEL_MW,
-                                  base0=_SM_LABEL_BASE0 + _SM2_DY_LABEL * i,
+                                  base0=_b0,
                                   condense=True, floor=58)
                 else:
                     _L, _P, _M, _G, _H = self._sm_marked_layout()
                     _ptop = _SM_PANEL_TOP + _SM_PANEL_DY * i
                     _top = _ptop + (_SM_PANEL_H - _H) / 2.0
-                    _b0 = _top + _HEB_ASC_MAX * _L
+                    _b0 = _top + _LAM_ASC_FOLD * _L
                     self._stacked(_SM_LABEL_CX, 0, [l1, l2],
                                   size=_L, pitch=_P,
                                   max_w=_SM_LABEL_MW, base0=_b0,
@@ -975,7 +989,7 @@ class _Weekly2PDF(FPDF):
             # marker ('שהחיינו' — no ל) uses the typical ascent; the LABEL
             # uses the true max, or a ל pokes out through the panel roof.
             gap = _P2_ASC_EM * M + _HEB_DESC_MAX * L + _SHE_CLEAR
-            h = _HEB_ASC_MAX * L + pitch + gap + _P2_DESC_EM * M
+            h = _LAM_ASC_FOLD * L + pitch + gap + _P2_DESC_EM * M
             return pitch, gap, h
 
         pitch, gap, h = _m(L)
