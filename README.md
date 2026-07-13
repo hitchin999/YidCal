@@ -315,6 +315,12 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   The deadline as a printed-luach Hebrew line, e.g. `ס״ז קידוש לבנה: ליל ב׳ 2:07` or `ס״ז קידוש לבנה: ליל ג׳ כל הלילה` — same day/night display rule as the weekly luach PDF (a deadline that falls during the day rolls back to the preceding night as "כל הלילה"; Yom-Tov nights get their YT name, e.g. ליל א׳ דפסח). Rolls to the next month together with the timestamp sensor.
   *Attribute:* `Zayin_Shleimim` — the ז׳ שלמים line in the same style (e.g. `ז׳ שלמים: יום ב׳ 1:10`)
 
+* **Shehecheyanu Display** (`sensor.yidcal_shehecheyanu_display`)
+  Whether **שהחיינו** is said at the **next candle lighting** — Shabbos or Yom Tov, whichever comes first. Always populated, with one of exactly two states: `שהחיינו` or `אין אומרים שהחיינו`. Rolls forward to the next lighting on the same minute **Zman Erev** publishes (ceil-to-minute for after-tzeis lightings, half-up for before-shkia).
+  It is said at **every** Yom Tov lighting — including **Erev Yom Kippur**, the **ליל ב׳** lightings (ר״ה, סוכות, פסח, שבועות) and **שמחת תורה** — **except** **שביעי** and **אחרון של פסח**. Those are the same two days on which the printed luach stamps *א״א שהחיינו* on the Erev row, and they read from the same predicate, so the sensor and the sheet cannot disagree. A plain Shabbos lighting always shows `אין אומרים שהחיינו`.
+  **Israel** falls out for free: אחרון של פסח is not a Yom Tov there, so it produces no lighting at all — while **ראש השנה ב׳** is still kept (יומא אריכתא). Night-2/3 lightings are always seen, whether or not the optional Night 2 / Night 3 candle sensors are enabled — that option is a display preference, not a halachic one.
+  *Attributes:* `Shehecheyanu` (`"true"`/`"false"`), `Candle_Lighting` (ISO timestamp), `Lighting_Date`, `Lighting_Kind` (`erev_before_sunset` / `between_yt_after_tzeis` / `motzaei_shabbos_after_tzeis`), `Lighting_Label` (e.g. `Yom Tov – Night 2`, `Motzi Shabbos → Yom Tov`), `Incoming_Date`, `Incoming_Day` (the Hebrew Yom Tov name, or שבת קודש), `Is_Yom_Tov`, `Days_Until`, `Is_Today`, `Activation_Logic`
+
 ---
 
 ## Day Type (timing notes)
