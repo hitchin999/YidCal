@@ -115,10 +115,18 @@ class LuachRow:
     # suffix). ``title_main_he`` is the visually-prominent label
     # (e.g., "נח", "ערב סוכות", "ב׳ דראש השנה"). ``title_suffix_he``
     # is the smaller trailing portion (e.g., "יום ב׳", "ערב שב״ק")
+    #
+    # ``*_sheet_he`` are OPTIONAL yearly-SINGLE-SHEET wordings for the
+    # same row. The SF sheet abbreviates the Erev prefixes where the
+    # weekly card wants them spelled out, and the sheet's title cell
+    # is only 41 mm wide. Every other consumer (weekly card, multi-page
+    # yearly) reads the plain fields and is untouched.
     # or empty when the title is a bare parsha name.
     # ``title_he`` is kept as ``f"{title_main_he} {title_suffix_he}".strip()``
     # for any renderer that wants the combined string.
     title_main_he: str = ""
+    title_main_sheet_he: str = ""
+    title_suffix_sheet_he: str = ""
     title_suffix_he: str = ""
     pirkei_avos_he: str = ""       # 'פרק א׳' / 'פרק ה׳-ו׳' / ''
     special_shabbos_he: list[str] = field(default_factory=list)  # ['שבת ר״ח', ...]
@@ -346,6 +354,12 @@ def _build_row_title(
         and is_shabbos_tom
         and is_yt_tom
     ):
+        # Hoshana Rabba again — 21 Tishrei is 'הושענא רבה', never
+        # 'ערב שמיני עצרת', even when שמיני עצרת lands on Shabbos
+        # (5784: printed 'הושענא רבה עש״ק, כ״א תשרי'). The same
+        # special case above only covered the weekday branch.
+        if ph_today.month == 7 and ph_today.day == 21:
+            return ("הושענא רבה", "ערב שב״ק")
         yt = he.major_yt_name(ph_next, diaspora=diaspora) or ""
         yt = yt.replace("שביעי של פסח", "שביעי ש״פ")
         yt = yt.replace("ראש השנה", "ר״ה")
@@ -588,6 +602,20 @@ def _build_rows(
             except Exception:
                 _fri_yt_paren = ""
 
+        # ── SF SHEET wording (verified vs the printed 5783/5784/5785) ──
+        #   • a FRIDAY Erev row's suffix is 'עש״ק', never 'ערב שב״ק'
+        #     (ער״ה תשפ״ד עש״ק · ערב סוכות עש״ק · הושענא רבה עש״ק)
+        #   • Erev-Shvi'i-of-Pesach reads 'ע׳ שביעי של פסח' — the YT
+        #     name spelled OUT and the ערב abbreviated. Ours is the
+        #     other way round ('ערב שביעי ש״פ') and overran the cell.
+        _sheet_main = ""
+        _sheet_suffix = ""
+        if title_suffix == "ערב שב״ק":
+            _sheet_suffix = "עש״ק"
+        if title_main.startswith("ערב שביעי ש״פ"):
+            _sheet_main = title_main.replace(
+                "ערב שביעי ש״פ", "ע׳ שביעי של פסח", 1)
+
         title = f"{title_main} {title_suffix}".strip()
         hebrew_date = he.hebrew_date_str(d, rc_emphasis=config.hebrew_date_rc_emphasis)
 
@@ -726,6 +754,8 @@ def _build_rows(
             title_he=title,
             title_main_he=title_main,
             title_suffix_he=title_suffix,
+            title_main_sheet_he=_sheet_main,
+            title_suffix_sheet_he=_sheet_suffix,
             pirkei_avos_he=pirkei,
             special_shabbos_he=(
                 special_he + [_fri_yt_paren] if _fri_yt_paren
