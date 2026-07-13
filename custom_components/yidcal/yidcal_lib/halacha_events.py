@@ -200,6 +200,45 @@ HE_WEEKDAY = {
 # Hebrew year helpers
 # ────────────────────────────────────────────────────────────────────────
 
+def hebrew_year_from_letters(s: str) -> int | None:
+    """Inverse of :func:`hebrew_year_letters` — 'תשפ״ו' → 5786.
+
+    Plain gematria. Tolerates geresh/gershayim in either the Hebrew
+    (׳ ״) or ASCII (' ") forms, an optional leading ה׳ for the 5000s,
+    and surrounding whitespace. Returns None if it isn't Hebrew at all,
+    so callers can fall through to plain-int parsing.
+
+        'תשפ״ו'   → 5786
+        'ה׳תשפ״ו' → 5786
+        'תשפו'    → 5786   (marks are optional)
+    """
+    if not s:
+        return None
+    t = str(s).strip()
+    for ch in ("\u05f4", "\u05f3", '"', "'", "\u2019", "\u201d", " "):
+        t = t.replace(ch, "")
+    if not t or not all("\u05d0" <= c <= "\u05ea" for c in t):
+        return None
+    vals = {
+        "א": 1, "ב": 2, "ג": 3, "ד": 4, "ה": 5, "ו": 6, "ז": 7,
+        "ח": 8, "ט": 9, "י": 10, "כ": 20, "ך": 20, "ל": 30,
+        "מ": 40, "ם": 40, "נ": 50, "ן": 50, "ס": 60, "ע": 70,
+        "פ": 80, "ף": 80, "צ": 90, "ץ": 90, "ק": 100, "ר": 200,
+        "ש": 300, "ת": 400,
+    }
+    # A leading ה׳ spells out the 5000s ('ה׳תשפ״ו'); drop it so the rest
+    # is the plain 3-digit remainder, exactly as hebrew_year_letters emits.
+    if len(t) > 3 and t[0] == "ה":
+        t = t[1:]
+    try:
+        n = sum(vals[c] for c in t)
+    except KeyError:
+        return None
+    if n <= 0:
+        return None
+    return n + 5000 if n < 1000 else n
+
+
 def hebrew_year_letters(hy: int) -> str:
     """Format a 4-digit Hebrew year (e.g. 5787) as letters 'תשפ״ז'.
     Strips the implicit 5000s prefix that's conventionally omitted.
