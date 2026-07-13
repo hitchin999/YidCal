@@ -4,27 +4,44 @@ custom_components/yidcal/pruzbol_sensors.py
 Pruzbol (פרוזבול) sensors, both grouped under the YidCal — Special Sensors
 device:
 
-  binary_sensor.yidcal_pruzbol      ON from alos until candle-lighting on the
-                                    Erev Rosh Hashana that CLOSES a Shmita year
-                                    (29 Elul of shmita cycle-year 7) — the same
-                                    alos → candle-lighting window convention as
+  binary_sensor.yidcal_pruzbol      ON from alos until candle-lighting on an
+                                    Erev Rosh Hashana that BRACKETS a Shmita
+                                    year — the same alos → candle-lighting
+                                    window convention as
                                     binary_sensor.yidcal_erev.
   sensor.yidcal_pruzbol_display     ALWAYS shows the printed-luach Hebrew line
                                     for the next pruzbol, e.g.
                                     "בער״ה תש״צ צריכין לעשות פרוזבול".
                                     The year is derived, never hard-coded.
 
-The date rule is NOT re-derived here. ``halacha_events.needs_pruzbol()`` is the
-single source of truth — the yearly luach's note and its נוסח footnote read the
-same predicate — and ``halacha_events.next_shmita_year()`` only *proposes* the
-candidate year, which is then validated against it. The Hebrew line reuses
-``halacha_events.hebrew_year_letters()`` and the נוסח reuses
-``luach_data.PRUZBOL_FOOTNOTE_HE``, so these sensors and the printed sheet can
-never disagree.
+TWO OCCURRENCES PER CYCLE — the printed SF sheets carry two different notes,
+because the Erev Rosh Hashana that ENTERS shmita and the one that LEAVES it are
+not the same halacha:
+
+  • 29 Elul of cycle-year 6 → "chumra"    — entering shmita:
+        בער״ה תשפ״ב יש מחמירים לעשות פרוזבול (לכתחלה)
+  • 29 Elul of cycle-year 7 → "required"  — leaving shmita (shevi'is has just
+    ended and the debts are about to be cancelled):
+        בער״ה תשפ״ג צריכין לעשות פרוזבול
+
+They fall in CONSECUTIVE years (5781 then 5782), then nothing for six years —
+so the look-ahead walks year by year rather than stepping a whole cycle.
+
+NOTHING here re-derives the rule. ``halacha_events`` is the single source of
+truth for all four pieces:
+
+    pruzbol_kind()        which note (if any) belongs on a date
+    pruzbol_shmita_year() the shmita year the date brackets
+    pruzbol_note()        the printed Hebrew line
+    PRUZBOL_FOOTNOTE_HE   the נוסח
+
+The yearly luach's note and its נוסח footnote read the very same functions, so
+these sensors and the printed sheet can never disagree.
 
 ROLLOVER: the occurrence "in view" advances the moment its deadline passes —
 i.e. at candle-lighting on that Erev Rosh Hashana, in lock-step with the binary
-sensor going OFF. Both sensors then point at the occurrence seven years later.
+sensor going OFF. Both sensors then point at the next occurrence (the "required"
+one a year later, or — once that has passed — the "chumra" one six years on).
 """
 from __future__ import annotations
 
@@ -44,11 +61,12 @@ from .const import DOMAIN
 from .device import YidCalSpecialDevice
 from .zman_sensors import get_geo
 from .yidcal_lib.halacha_events import (
+    PRUZBOL_FOOTNOTE_HE,
     hebrew_year_letters,
-    needs_pruzbol,
-    next_shmita_year,
+    pruzbol_kind,
+    pruzbol_note,
+    pruzbol_shmita_year,
 )
-from .yidcal_lib.luach_data import PRUZBOL_FOOTNOTE_HE
 from .yidcal_lib.zman_compute import (
     dawn_for_date,
     round_half_up as _round_half_up,
@@ -58,28 +76,18 @@ from .yidcal_lib.zman_compute import (
 _LOGGER = logging.getLogger(__name__)
 
 # 29 Elul (pyluach month 6) is always the last day of the Hebrew year — i.e.
-# Erev Rosh Hashana of the year that follows. Same coordinates needs_pruzbol()
-# checks; named here only so the look-ahead can construct the candidate date.
+# Erev Rosh Hashana of the year that follows. The same coordinates
+# pruzbol_kind() checks; named here only so the look-ahead can build candidates.
 _ELUL = 6
 _EREV_RH_DAY = 29
 
-# One shmita cycle — the gap between consecutive pruzbol occurrences.
-_CYCLE_YEARS = 7
+# Worst case the search has to cover: standing just past a "required" day, the
+# next occurrence is the "chumra" one six years later. Eight is comfortable.
+_SCAN_YEARS = 8
 
-# The luach prints a leading '*' on the footnote as the marker that ties it to
-# the 'פרוזבול*' note. A sensor attribute has no footnote to tie, so it's dropped.
+# The luach appends a '*' to the נוסח as the marker tying it to the 'פרוזבול*'
+# note. A sensor attribute has no footnote to tie, so it's dropped.
 NUSACH_HE = PRUZBOL_FOOTNOTE_HE.lstrip("*").strip()
-
-
-def pruzbol_line(hebrew_year: int) -> str:
-    """The printed-luach line, e.g. 'בער״ה תש״צ צריכין לעשות פרוזבול'.
-
-    ``hebrew_year`` is the INCOMING year (the one Rosh Hashana brings in) —
-    identical to ``luach_data._build_pruzbol_annotations``' ``ph.year + 1``.
-    The luach appends a trailing '*' as the footnote marker; a sensor has no
-    footnote, so it is dropped here.
-    """
-    return f"בער״ה {hebrew_year_letters(hebrew_year)} צריכין לעשות פרוזבול"
 
 
 class _PruzbolBase(YidCalSpecialDevice):
@@ -142,29 +150,39 @@ class _PruzbolBase(YidCalSpecialDevice):
         return start, end
 
     def _compute(self, now_local: datetime) -> dict:
-        """The pruzbol occurrence in view: the next Erev RH closing a shmita
-        year whose candle-lighting deadline has not yet passed."""
-        hy = next_shmita_year(PHebrewDate.from_pydate(now_local.date()).year)
+        """The pruzbol occurrence in view: the next Erev Rosh Hashana that
+        brackets a shmita year and whose candle-lighting deadline has not yet
+        passed.
 
-        for _ in range(4):                      # ≤1 step ever needed in practice
+        Walks YEAR BY YEAR, never by whole cycles — the two occurrences are in
+        consecutive years (chumra, then required), so a 7-year stride would
+        step straight over the first of them.
+        """
+        hy = PHebrewDate.from_pydate(now_local.date()).year
+
+        for _ in range(_SCAN_YEARS):
             d = PHebrewDate(hy, _ELUL, _EREV_RH_DAY).to_pydate()
-            # next_shmita_year() only PROPOSES; halacha_events.needs_pruzbol()
-            # remains the single source of truth for the rule itself.
-            if needs_pruzbol(d):
+            kind = pruzbol_kind(d)          # ← the single source of truth
+            if kind:
                 start, end = self._window(d)
-                if now_local < end:             # deadline still ahead
+                if now_local < end:         # deadline still ahead
+                    incoming = hy + 1       # the year Rosh Hashana brings in
+                    shmita = pruzbol_shmita_year(d)
                     return {
-                        "shmita_year": hy,          # the year being closed
-                        "hebrew_year": hy + 1,      # the year the line names
-                        "letters": hebrew_year_letters(hy + 1),
-                        "line": pruzbol_line(hy + 1),
+                        "kind": kind,                   # 'chumra' | 'required'
+                        "entering": kind == "chumra",
+                        "shmita_year": shmita,          # year bracketed (same
+                                                        # for BOTH occurrences)
+                        "hebrew_year": incoming,        # the year the line names
+                        "letters": hebrew_year_letters(incoming),
+                        "line": pruzbol_note(incoming, kind),
                         "date": d,
                         "start": start,
                         "end": end,
                         "in_window": start <= now_local < end,
                         "days_until": (d - now_local.date()).days,
                     }
-            hy += _CYCLE_YEARS
+            hy += 1
 
         raise RuntimeError("no upcoming pruzbol occurrence found")
 
@@ -192,7 +210,7 @@ class _PruzbolBase(YidCalSpecialDevice):
 
 
 class PruzbolSensor(_PruzbolBase, BinarySensorEntity):
-    """ON from alos until candle-lighting on the Erev RH closing a shmita year."""
+    """ON from alos until candle-lighting on an Erev RH bracketing shmita."""
 
     _attr_name = "Pruzbol"
     _attr_icon = "mdi:file-document-edit-outline"
@@ -209,15 +227,24 @@ class PruzbolSensor(_PruzbolBase, BinarySensorEntity):
         self._attrs = {
             "Now": now_local.isoformat(),
             "Pruzbol_Date": cyc["date"].isoformat(),
+            # 'chumra'   → entering shmita (יש מחמירים … לכתחלה)
+            # 'required' → leaving  shmita (צריכין)
+            "Pruzbol_Kind": cyc["kind"],
+            # House convention: boolean ATTRIBUTES as strings, so HA state
+            # conditions can match them directly.
+            "Entering_Shmita": "true" if cyc["entering"] else "false",
+            "Shmita_Year": cyc["shmita_year"],
             "Hebrew_Year": cyc["hebrew_year"],
             "Hebrew_Year_Letters": cyc["letters"],
-            "Shmita_Year": cyc["shmita_year"],
+            "Line": cyc["line"],
             "Days_Until": cyc["days_until"],
             "Next_Window_Start": cyc["start"].isoformat(),
             "Next_Window_End": cyc["end"].isoformat(),
             "Activation_Logic": (
-                "ON from alos until candle-lighting on the Erev Rosh Hashana "
-                "that closes a Shmita year (29 Elul). OFF otherwise."
+                "ON from alos until candle-lighting on an Erev Rosh Hashana "
+                "(29 Elul) that brackets a Shmita year — the year ENTERING it "
+                "(יש מחמירים, לכתחלה) and the year LEAVING it (צריכין). "
+                "OFF otherwise."
             ),
         }
 
@@ -239,9 +266,11 @@ class PruzbolDisplaySensor(_PruzbolBase, SensorEntity):
         self._attr_native_value = cyc["line"]
         self._attrs = {
             "Pruzbol_Date": cyc["date"].isoformat(),
+            "Pruzbol_Kind": cyc["kind"],
+            "Entering_Shmita": "true" if cyc["entering"] else "false",
+            "Shmita_Year": cyc["shmita_year"],
             "Hebrew_Year": cyc["hebrew_year"],
             "Hebrew_Year_Letters": cyc["letters"],
-            "Shmita_Year": cyc["shmita_year"],
             "Days_Until": cyc["days_until"],
             "Window_Start": cyc["start"].isoformat(),
             "Window_End": cyc["end"].isoformat(),
