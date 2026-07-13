@@ -131,10 +131,28 @@ def _style_validator(v):
     )
 
 
+def _hebrew_year(v):
+    """Accept 5786, "5786" — or Hebrew letters: "תשפ״ו" / "ה׳תשפ״ו".
+
+    Letters go through halacha_events.hebrew_year_from_letters(), the exact
+    inverse of the hebrew_year_letters() that PRINTS the year on the luach —
+    so whatever you read on the sheet, you can type straight back in."""
+    from . import halacha_events as _he
+
+    if isinstance(v, str):
+        n = _he.hebrew_year_from_letters(v)
+        if n is not None:
+            v = n
+    return vol.All(
+        vol.Coerce(int), vol.Range(min=5780, max=5900),
+    )(v)
+
+
 _SCHEMA = vol.Schema({
     vol.Optional("style", default="yearly_multi_page"): _style_validator,
     vol.Optional("time_format"): vol.Any(None, vol.In(("12", "24"))),
-    vol.Optional("hebrew_year"): vol.All(vol.Coerce(int), vol.Range(min=5780, max=5900)),
+    vol.Optional("shehecheyanu"): vol.Any(None, cv.boolean),
+    vol.Optional("hebrew_year"): _hebrew_year,
     vol.Optional("start_date"): cv.date,
     vol.Optional("end_date"): cv.date,
     vol.Optional("location"): cv.string,
@@ -395,6 +413,9 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         candle_off = int(call.data["candle_offset"])
     if call.data.get("time_format") in ("12", "24"):
         time_fmt = call.data["time_format"]
+    # Weekly-YidCal only: print שהחיינו / א״א שהחיינו under each candle
+    # box. Ignored by every other style (they don't read the field).
+    show_shehecheyanu = bool(call.data.get("shehecheyanu", False))
     if call.data.get("havdalah_offset") is not None:
         havdalah_off = int(call.data["havdalah_offset"])
 
@@ -471,6 +492,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
                 candle_offset=candle_off, havdalah_offset=havdalah_off,
                 metzora_display=metzora_disp,
                 time_format=time_fmt,
+                show_shehecheyanu=show_shehecheyanu,
                 extra_zmanim_labels=extra_labels,
                 molad_style="monroe",
                 hebrew_date_rc_emphasis=True,
