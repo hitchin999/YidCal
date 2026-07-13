@@ -1540,6 +1540,52 @@ def next_leap_year(hyear: int) -> int:
     return y
 
 
+# The נוסח printed at the foot of the sheet whenever a pruzbol note appears.
+# Lives HERE, not in the renderer, so the sheet and the sensors quote the
+# identical text.
+PRUZBOL_FOOTNOTE_HE = (
+    "*נוסח הפרוזבול: במותב תלתא כחדא הוינא ואתא פלוני המלוה ואמר "
+    "לפנינו: מוסרני לכם פלוני ופלוני הדיינים שבמקום פלוני שכל חוב "
+    "שיש לי שאגבנו כל זמן שארצה (הדיינים צריכים לחתום)"
+)
+
+
+def pruzbol_note(
+    hebrew_year_incoming: int, kind: str, *, star: bool = False,
+) -> str:
+    """The printed-luach line for a pruzbol day.
+
+    ``hebrew_year_incoming`` is the year Rosh Hashana brings IN (the one the
+    line names). ``kind`` comes from :func:`pruzbol_kind`.
+
+        required → בער״ה תשפ״ג צריכין לעשות פרוזבול
+        chumra   → בער״ה תשפ״ב יש מחמירים לעשות פרוזבול (לכתחלה)
+
+    ``star`` adds the footnote marker (the sheet stars only the FIRST note
+    on the page; a sensor has no footnote to tie, so it passes False).
+    """
+    body = (
+        "יש מחמירים לעשות פרוזבול (לכתחלה)" if kind == "chumra"
+        else "צריכין לעשות פרוזבול"
+    )
+    return f"בער״ה {hebrew_year_letters(hebrew_year_incoming)} {body}" + (
+        "*" if star else ""
+    )
+
+
+def pruzbol_shmita_year(d: date_cls) -> int | None:
+    """The SHMITA year this pruzbol day brackets (same year either way).
+
+    29 Elul 5781 (chumra, entering) and 29 Elul 5782 (required, leaving)
+    both bracket shmita year 5782.
+    """
+    kind = pruzbol_kind(d)
+    if not kind:
+        return None
+    ph = PHebrewDate.from_pydate(d)
+    return ph.year + 1 if kind == "chumra" else ph.year
+
+
 def pruzbol_kind(d: date_cls) -> str | None:
     """Which pruzbol note (if any) belongs on ``d`` — 29 Elul.
 
