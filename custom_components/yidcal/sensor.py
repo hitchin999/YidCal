@@ -61,6 +61,7 @@ from .kiddush_levana_sensors import (
     SofKiddushLevanaDisplaySensor,
 )
 from .pruzbol_sensors import PruzbolDisplaySensor
+from .shehecheyanu_sensor import ShehecheyanuDisplaySensor
 from .daf_hayomi_sensor import DafHaYomiSensor
 from .amud_hayomi_sensor import AmudHaYomiSensor
 from .special_prayer_sensor import SpecialPrayerSensor
@@ -241,6 +242,7 @@ async def async_setup_entry(
         SofZmanKiddushLevanaSensor(hass),
         SofKiddushLevanaDisplaySensor(hass),
         PruzbolDisplaySensor(hass, candle_offset),
+        ShehecheyanuDisplaySensor(hass, candle_offset, havdalah_offset, diaspora),
         SpecialPrayerSensor(hass, candle_offset, havdalah_offset),
         ZmanErevSensor(hass, candle_offset, havdalah_offset, static_mode=bool(enable_multiday_candles)),
         ZmanMotziSensor(hass, candle_offset, havdalah_offset),
