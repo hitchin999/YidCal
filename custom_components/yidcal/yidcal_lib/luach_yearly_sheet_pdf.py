@@ -185,6 +185,7 @@ class _YearlySheetPDF(FPDF):
     HEADER_SIZE = 8         # column-header labels (הדלקת/הנרות etc.) — bold
     ROW_MAIN_SIZE = 8       # times (candle / motzei / sof zman / alos) — bold
     TITLE_MAIN_SIZE = 9     # title main label (parsha / YT name) — bold, biggest
+    TITLE_MIN_LEADER = 2.0  # mm of dot-leader room the title must leave
     TITLE_SECONDARY_SIZE = 7  # title secondary (suffix + hd + special + pirkei) — regular
     ROW_TAIL_SIZE = 7       # legacy: parens (kept for fallback, no longer used)
     ANN_SIZE = 8            # annotation lines (mevorchim, fast-day, tekufah, etc.)
@@ -440,8 +441,12 @@ class _YearlySheetPDF(FPDF):
         """
         # Fall back to title_he if the data layer hasn't populated
         # the split fields (older LuachRow instances during transition).
-        main_text = row.title_main_he or row.title_he or ""
-        explicit_suffix = row.title_suffix_he or ""
+        # A sheet-specific wording wins when the data layer supplies
+        # one (the SF sheet abbreviates the Erev prefixes).
+        main_text = (getattr(row, "title_main_sheet_he", "")
+                     or row.title_main_he or row.title_he or "")
+        explicit_suffix = (getattr(row, "title_suffix_sheet_he", "")
+                           or row.title_suffix_he or "")
         if not row.title_main_he and row.title_he and not explicit_suffix:
             # No split available — treat the whole title as the main
             # label and put nothing in the secondary suffix slot.
@@ -541,6 +546,15 @@ class _YearlySheetPDF(FPDF):
         main_bidi = bidi(main_text) if main_text else ""
         sec_bidi = bidi(secondary_text) if secondary_text else ""
 
+        # Sizes/tracking for THIS cell — a long label (e.g. 'ערב שביעי
+        # ש״פ ערב שב״ק, כ׳ ניסן, א״א שהחיינו') used to overrun the cell
+        # and collide with the civil-date column, and its dot leaders
+        # vanished. Condense first, shrink only if that isn't enough,
+        # so every normal row keeps the design sizes untouched.
+        main_sz = self.TITLE_MAIN_SIZE
+        sec_sz = self.TITLE_SECONDARY_SIZE
+        track = 100.0
+
         # Measure widths
         if main_bidi:
             self.set_font(FONT_FAMILY_SERIF, "B", self.TITLE_MAIN_SIZE)
@@ -561,11 +575,37 @@ class _YearlySheetPDF(FPDF):
         else:
             sec_w = 0
 
+        # ── fit the cell ──
+        def _remeasure() -> tuple[float, float]:
+            self.set_stretching(track)
+            mw = sw = 0.0
+            if main_bidi:
+                self.set_font(FONT_FAMILY_SERIF, "B", main_sz)
+                mw = self.get_string_width(main_bidi)
+            if sec_bidi:
+                self.set_font(FONT_FAMILY_SERIF, "", sec_sz)
+                sw = self.get_string_width(sec_bidi)
+            return mw, sw
+
+        avail = width - self.TITLE_MIN_LEADER
+        _g = 0
+        while (main_w + gap_main_secondary + sec_w) > avail and _g < 80:
+            if track > 68.0:
+                track = max(68.0, track - 2.0)
+            elif main_sz > 4.0:
+                main_sz -= 0.2
+                sec_sz = max(3.5, sec_sz - 0.2)
+            else:
+                break
+            main_w, sec_w = _remeasure()
+            _g += 1
+        self.set_stretching(track)
+
         right_edge = x + width  # right-align to cell right edge
 
         # Render main at right edge
         if main_bidi:
-            self.set_font(FONT_FAMILY_SERIF, "B", self.TITLE_MAIN_SIZE)
+            self.set_font(FONT_FAMILY_SERIF, "B", main_sz)
             # fpdf2's cell() indents its text by self.c_margin (1 mm
             # by default), so anchoring the cell at (right_edge - w)
             # actually printed the title ~1 mm PAST right_edge — bold
@@ -578,7 +618,7 @@ class _YearlySheetPDF(FPDF):
 
         # Render secondary to the LEFT of main
         if sec_bidi:
-            self.set_font(FONT_FAMILY_SERIF, "", self.TITLE_SECONDARY_SIZE)
+            self.set_font(FONT_FAMILY_SERIF, "", sec_sz)
             # Same c_margin compensation as the main title above.
             self.set_xy(
                 right_edge - main_w - gap_main_secondary - sec_w - self.c_margin,
@@ -592,6 +632,7 @@ class _YearlySheetPDF(FPDF):
         # at the row's main-size font (regular weight), matching the
         # SF printed-luach convention of connecting the title text
         # to the civil-date column.
+        self.set_stretching(100)   # leaders / the rest of the row
         DOT_GAP_RIGHT = 1.0   # mm: gap between dots and the secondary text
         DOT_GAP_LEFT = 0.0    # mm: dots run flush to the civil-date column
         used_width = main_w + gap_main_secondary + sec_w
