@@ -216,13 +216,9 @@ def _is_chol_hamoed(ph, *, diaspora: bool) -> bool:
     return he.chol_hamoed_day(ph.month, ph.day, diaspora=diaspora) is not None
 
 
-# The footnote the SF sheet prints at the very bottom whenever the
-# pruzbol note appears. Exact text supplied by Yoel.
-PRUZBOL_FOOTNOTE_HE = (
-    "*נוסח הפרוזבול: במותב תלתא כחדא הוינא ואתא פלוני המלוה ואמר "
-    "לפנינו: מוסרני לכם פלוני ופלוני הדיינים שבמקום פלוני שכל חוב "
-    "שיש לי שאגבנו כל זמן שארצה (הדיינים צריכים לחתום)"
-)
+# Re-exported so the sheet renderer's existing import keeps working; the
+# text itself lives in halacha_events (shared with the pruzbol sensors).
+PRUZBOL_FOOTNOTE_HE = he.PRUZBOL_FOOTNOTE_HE
 
 
 def _build_pruzbol_annotations(
@@ -246,20 +242,13 @@ def _build_pruzbol_annotations(
         kind = he.pruzbol_kind(d)
         if kind:
             ph = PHebrewDate.from_pydate(d)
-            try:
-                yl = he.hebrew_year_letters(ph.year + 1)
-            except Exception:
-                yl = ""
-            body = (
-                "יש מחמירים לעשות פרוזבול (לכתחלה)"
-                if kind == "chumra"
-                else "צריכין לעשות פרוזבול"
-            )
-            star = "*" if not out else ""
             out.append(AnnotationRow(
                 civil_date=d,
                 kind="pruzbol",
-                text_he=f"בער״ה {yl} {body}{star}".strip(),
+                # the line is built ONCE, in halacha_events — the sensors
+                # quote the identical text
+                text_he=he.pruzbol_note(
+                    ph.year + 1, kind, star=not out),
                 position="before",
             ))
         d += timedelta(days=1)
