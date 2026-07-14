@@ -35,6 +35,8 @@ from .yidcal_lib.zman_compute import (
 )
 from .yidcal_lib.zman_day_label import compute_day_label
 from .yidcal_lib.zman_erev_motzi import compute_erev_motzi
+from .yidcal_lib.helper import int_to_hebrew
+from .date_sensor import get_hebrew_month_name, _normalize_hebrew_punct
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
@@ -195,16 +197,29 @@ class ZmanimLookupSensor(YidCalZmanDevice, SensorEntity):
         erev_motzi = self._compute_erev_motzi_attrs(target, geo=eff_geo, tz=eff_tz)
         chametz = self._compute_chametz_attrs(target, geo=eff_geo, tz=eff_tz)
 
+        # Plain Hebrew calendar date for the *daytime* of this civil date
+        # (no sunset flip — the zmanim listed are for the civil day).
+        # Format matches sensor.yidcal_date exactly: day + month + year,
+        # gershayim/geresh normalized to ASCII quotes.
+        ph_target = PHebrewDate.from_pydate(target)
+        hebrew_date = _normalize_hebrew_punct(
+            f"{int_to_hebrew(ph_target.day)} "
+            f"{get_hebrew_month_name(ph_target.month, ph_target.year)} "
+            f"{int_to_hebrew(ph_target.year % 1000)}"
+        )
+
         # Build keys in a strict explicit order so the HA UI renders them
         # in this order:
         #   1) Lookup_Date{suffix}
-        #   2) Label{suffix}                  (only for dates 2+)
-        #   3) הדלקת נרות{suffix}             (Erev only)
-        #   4) מוצאי שבת/יום טוב{suffix}       (in/before a no-melucha block)
-        #   5) סוף זמן אכילת/שריפת חמץ{suffix} (Erev Pesach only)
-        #   6) Daily zmanim, chronological
+        #   2) Hebrew_Date{suffix}            (plain day-month-year Hebrew date)
+        #   3) Label{suffix}                  (only for dates 2+)
+        #   4) הדלקת נרות{suffix}             (Erev only)
+        #   5) מוצאי שבת/יום טוב{suffix}       (in/before a no-melucha block)
+        #   6) סוף זמן אכילת/שריפת חמץ{suffix} (Erev Pesach only)
+        #   7) Daily zmanim, chronological
         attrs: dict[str, str] = {}
         attrs[f"Lookup_Date{suffix}"] = f"{target.strftime('%a')}, {target.isoformat()}"
+        attrs[f"Hebrew_Date{suffix}"] = hebrew_date
         if include_label:
             attrs[f"Label{suffix}"] = day_label
         if "הדלקת נרות" in erev_motzi:
@@ -270,14 +285,14 @@ class ZmanimLookupSensor(YidCalZmanDevice, SensorEntity):
             targets[0], suffix="", include_label=False, geo=eff_geo, tz=eff_tz,
         )
 
-        # Inject the Location attribute right after Lookup_Date so it
-        # renders near the top. Only present when the user supplied an
-        # override location for this call.
+        # Inject the Location attribute right after the date keys
+        # (Lookup_Date / Hebrew_Date) so it renders near the top. Only
+        # present when the user supplied an override location for this call.
         if location_display:
             ordered: dict[str, str] = {}
             for k, v in day1_attrs.items():
                 ordered[k] = v
-                if k == "Lookup_Date":
+                if k == "Hebrew_Date":
                     ordered["Location"] = location_display
             day1_attrs = ordered
 
