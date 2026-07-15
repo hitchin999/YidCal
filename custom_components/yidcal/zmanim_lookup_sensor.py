@@ -37,8 +37,23 @@ from .yidcal_lib.zman_day_label import compute_day_label
 from .yidcal_lib.zman_erev_motzi import compute_erev_motzi
 from .yidcal_lib.helper import int_to_hebrew
 from .date_sensor import get_hebrew_month_name, _normalize_hebrew_punct
+from .parsha_sensor import compute_parsha_state
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
+
+
+# Whole-day weekday labels for looked-up dates, indexed by
+# date.weekday() (Mon=0 .. Sun=6). These mirror the per-day mappings
+# of sensor.yidcal_day_label_hebrew (its `today_label` attribute) and
+# sensor.yidcal_day_label_yiddish — the intra-day states of those
+# sensors (ערב שבת / מוצאי שבת / ערש״ק / מוצש״ק) don't apply to a
+# whole future civil date.
+_HEBREW_DAY_BY_WEEKDAY = [
+    "יום ב׳", "יום ג׳", "יום ד׳", "יום ה׳", "יום ו׳", "שבת קודש", "יום א׳",
+]
+_YIDDISH_DAY_BY_WEEKDAY = [
+    "מאנטאג", "דינסטאג", "מיטוואך", "דאנערשטאג", "פרייטאג", "שבת", "זונטאג",
+]
 
 
 # Key under hass.data[DOMAIN] for stashing the live sensor instance so
@@ -217,6 +232,9 @@ class ZmanimLookupSensor(YidCalZmanDevice, SensorEntity):
         #   5) מוצאי שבת/יום טוב{suffix}       (in/before a no-melucha block)
         #   6) סוף זמן אכילת/שריפת חמץ{suffix} (Erev Pesach only)
         #   7) Daily zmanim, chronological
+        #   8) Hebrew_Day{suffix}             (whole-day weekday label)
+        #   9) Yiddish_Day{suffix}            (whole-day weekday label)
+        #  10) Parsha{suffix}                 (week's parsha; "" if none)
         attrs: dict[str, str] = {}
         attrs[f"Lookup_Date{suffix}"] = f"{target.strftime('%a')}, {target.isoformat()}"
         attrs[f"Hebrew_Date{suffix}"] = hebrew_date
@@ -233,6 +251,19 @@ class ZmanimLookupSensor(YidCalZmanDevice, SensorEntity):
             attrs[f"{entry.label}{suffix}"] = self._format_simple_time(
                 entry.dt_local, fmt
             )
+
+        # Whole-day context attrs — kept at the BOTTOM of the list by
+        # design. Same daytime-of-civil-date convention as Hebrew_Date.
+        wd = target.weekday()
+        attrs[f"Hebrew_Day{suffix}"] = _HEBREW_DAY_BY_WEEKDAY[wd]
+        attrs[f"Yiddish_Day{suffix}"] = _YIDDISH_DAY_BY_WEEKDAY[wd]
+        # Same algorithm as sensor.yidcal_parsha (shared pure function);
+        # "" when the week has no parsha association.
+        attrs[f"Parsha{suffix}"] = compute_parsha_state(
+            target,
+            diaspora=self._diaspora,
+            metzora_display=self._metzora_display,
+        )
         return (day_label, attrs)
 
     async def async_lookup_date(self, target_date: date_cls) -> None:
