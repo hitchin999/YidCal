@@ -119,7 +119,7 @@ def _style_validator(v):
     aliases. Otherwise validates against the allowed set.
     """
     if v is None:
-        return "yearly_multi_page"
+        return "weekly_yidcal"
     # Current valid styles ALWAYS win over legacy aliases, so a real
     # style name can never be hijacked by a stale alias mapping.
     if v in _VALID_STYLES:
@@ -149,7 +149,7 @@ def _hebrew_year(v):
 
 
 _SCHEMA = vol.Schema({
-    vol.Optional("style", default="yearly_multi_page"): _style_validator,
+    vol.Optional("style", default="weekly_yidcal"): _style_validator,
     vol.Optional("time_format"): vol.Any(None, vol.In(("12", "24"))),
     vol.Optional("shehecheyanu"): vol.Any(None, cv.boolean),
     vol.Optional("hebrew_year"): _hebrew_year,
@@ -308,7 +308,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     """Service handler body. Runs on the HA event loop; offloads the
     blocking PDF generation to the executor.
     """
-    style = call.data.get("style") or "yearly_multi_page"
+    style = call.data.get("style") or "weekly_yidcal"
 
     # ── LEGACY weekly feature gate ──
     # const.WEEKLY_LUACH_ENABLED gates the ORIGINAL 'weekly' card only.
