@@ -2182,6 +2182,116 @@ def _zsh_anchor_when(
     return f"ליל {_szkl_day_letter(d)} {t}"
 
 
+# ────────────────────────────────────────────────────────────────────
+# Sensor-only parsha-aware variants
+#
+# These are used ONLY by the Kiddush-Levana display sensor — never by
+# any luach PDF. They call the verified base formatters above verbatim
+# (so the anchor/time text can never drift), then splice the week's
+# parsha in right after the anchor, in '<anchor> <parsha> <tail>' form
+# (matching _weekday_parsha_anchor's no-prefix convention). The parsha
+# is SKIPPED when the anchor is a Yom-Tov / Chol-HaMoed night (e.g.
+# 'ליל א׳ דפסח'): that week's Shabbos has no parsha, and such anchors
+# already name a unique night, so no disambiguation is needed.
+# ────────────────────────────────────────────────────────────────────
+
+def _kl_anchor_date_and_yt(
+    sk: datetime, *, geo, tz: ZoneInfo, diaspora: bool,
+) -> tuple[date_cls, bool]:
+    """Return (civil date of the Hebrew day the deadline-night belongs
+    to, is_yt_or_cholhamoed_night) using the SAME day/pre-dawn branch
+    logic as ``_szkl_anchor_when`` — kept in lockstep with it."""
+    d = sk.date()
+    try:
+        netz, shkia = sun_events_for_date(geo=geo, tz=tz, base_date=d)
+        sk_a = sk.replace(tzinfo=tz)
+        is_day = netz <= sk_a <= shkia
+    except Exception:
+        is_day, netz = False, None
+    if is_day:
+        anchor_d = d                       # rolled back to the night that began today
+    else:
+        pre_dawn = (netz is None) or (sk.replace(tzinfo=tz) < netz)
+        anchor_d = d if pre_dawn else d + timedelta(days=1)
+    try:
+        yt = bool(he.intra_block_day_label(
+            PHebrewDate.from_pydate(anchor_d), diaspora=diaspora))
+    except Exception:
+        yt = False
+    return anchor_d, yt
+
+
+def _splice_parsha(base: str, parsha: str) -> str:
+    """Insert ``parsha`` after the anchor and before the trailing
+    time / 'כל הלילה' chunk of a base formatter string."""
+    if not parsha:
+        return base
+    if base.endswith("כל הלילה"):
+        anchor = base[: -len("כל הלילה")].rstrip()
+        return f"{anchor} {parsha} כל הלילה"
+    anchor, _, tail = base.rpartition(" ")     # tail = the H:MM time
+    return f"{anchor} {parsha} {tail}" if anchor else base
+
+
+def szkl_anchor_when_with_parsha(
+    sk: datetime, *, geo, tz: ZoneInfo, diaspora: bool,
+    metzora_display: str = "metzora", time_fmt: str = "12",
+    ref_date: date_cls | None = None,
+) -> str:
+    """ס״ז-קידוש-לבנה fragment with the week's parsha spliced in.
+    Sensor-only. Returns the plain fragment — byte-identical to what
+    the printed luach shows — when EITHER:
+
+      • the anchor is a YT / Chol-HaMoed night (e.g. 'ליל א׳ דפסח',
+        already self-disambiguating), OR
+      • the deadline falls in the SAME weekly-parsha week as
+        ``ref_date`` (i.e. the current week). In that case the ליל-X
+        anchor already points at the obvious upcoming night, so the
+        parsha would only be clutter.
+
+    The parsha is therefore shown only when it actually disambiguates
+    a deadline more than a week out. When ``ref_date`` is None no
+    suppression is applied (the parsha is always spliced)."""
+    base = _szkl_anchor_when(
+        sk, geo=geo, tz=tz, diaspora=diaspora, time_fmt=time_fmt)
+    anchor_d, yt = _kl_anchor_date_and_yt(
+        sk, geo=geo, tz=tz, diaspora=diaspora)
+    if yt:
+        return base
+    parsha = he.parsha_current_for_date(
+        anchor_d, diaspora=diaspora, metzora_display=metzora_display)
+    if ref_date is not None and parsha and parsha == he.parsha_current_for_date(
+        ref_date, diaspora=diaspora, metzora_display=metzora_display
+    ):
+        return base
+    return _splice_parsha(base, parsha)
+
+
+def zsh_anchor_when_with_parsha(
+    zs: datetime, *, geo, tz: ZoneInfo, diaspora: bool,
+    metzora_display: str = "metzora", time_fmt: str = "12",
+    ref_date: date_cls | None = None,
+) -> str:
+    """ז׳-שלמים fragment with the week's parsha spliced in.
+    Sensor-only. Same suppression rule as
+    ``szkl_anchor_when_with_parsha``: plain fragment on a YT night or
+    when ז׳ שלמים lands in the current (``ref_date``) parsha week.
+    (ז׳ שלמים never rolls to 'כל הלילה', so the tail is always a time.)"""
+    base = _zsh_anchor_when(
+        zs, geo=geo, tz=tz, diaspora=diaspora, time_fmt=time_fmt)
+    anchor_d, yt = _kl_anchor_date_and_yt(
+        zs, geo=geo, tz=tz, diaspora=diaspora)
+    if yt:
+        return base
+    parsha = he.parsha_current_for_date(
+        anchor_d, diaspora=diaspora, metzora_display=metzora_display)
+    if ref_date is not None and parsha and parsha == he.parsha_current_for_date(
+        ref_date, diaspora=diaspora, metzora_display=metzora_display
+    ):
+        return base
+    return _splice_parsha(base, parsha)
+
+
 def _strip_geresh(s: str) -> str:
     """Drop geresh/gershayim so the day-of-month column reads like the
     printed card ('כג אייר' not 'כ״ג אייר')."""
