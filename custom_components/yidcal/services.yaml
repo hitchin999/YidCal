@@ -109,23 +109,23 @@ set_yurtzeit_custom:
 
 generate_luach:
   name: Generate Luach (PDF)
-  description: Generate a luach PDF — yearly sheet, yearly multi-page, or Weekly YidCal card.
+  description: Generate a luach PDF — Weekly YidCal card, yearly multi-page, or yearly sheet.
   fields:
     style:
       name: Style
       description: Which luach to produce.
       required: false
-      default: yearly_multi_page
+      default: weekly_yidcal
       selector:
         select:
           custom_value: true
           options:
+            - value: "weekly_yidcal"
+              label: "Weekly YidCal (Single Card)"
             - value: "yearly_multi_page"
               label: "Yearly (Multi Sheet)"
             - value: "yearly_sheet"
               label: "Yearly (Single Sheet)"
-            - value: "weekly_yidcal"
-              label: "Weekly YidCal (Single Card)"
     shehecheyanu:
       name: Shehecheyanu marker
       description: Weekly YidCal only — print שהחיינו / א״א שהחיינו under each candle box.
