@@ -211,7 +211,7 @@ generate_luach:
           label: Show seconds
     output_path:
       name: Output path (optional)
-      description: Where to write the PDF. Defaults to /config/www/yidcal/.
+      description: Where to write the PDF. Defaults to /config/www/yidcal-data/.
       required: false
       example: "my_luach.pdf"
       selector:
