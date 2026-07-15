@@ -341,10 +341,12 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     # still rejected (an arbitrary range would either overflow one
     # page or leave large gaps on a fixed two-column layout).
     #
-    # ``eff_hebrew_year`` is the effective year used downstream: the
-    # caller-supplied value when given, the current Hebrew year when
-    # not (yearly_sheet only). For every other style it is simply the
-    # caller value (possibly None) — behaviour unchanged.
+    # ``eff_hebrew_year`` is the effective year used downstream (date
+    # range, page-1 title, and JSON): the caller-supplied value when
+    # given, otherwise the current Hebrew year for the two YEARLY
+    # styles so each defaults to a full-year volume. For the weekly
+    # styles it stays the caller value (possibly None) — behaviour
+    # unchanged.
     eff_hebrew_year = call.data.get("hebrew_year")
     if style == "yearly_sheet":
         if (
@@ -362,6 +364,27 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             _LOGGER.info(
                 "yearly_sheet: no hebrew_year given — defaulting to the "
                 "current Hebrew year %s", eff_hebrew_year,
+            )
+    elif style == "yearly_multi_page":
+        # Full-year by default, matching the "Yearly" label and the
+        # yearly_sheet default: with NO hebrew_year and NO explicit
+        # start/end range, default to the CURRENT Hebrew year so the
+        # booklet covers the whole year (Erev RH → the Haazinu preview
+        # of next year) with a clean single-year title. Unlike
+        # yearly_sheet, this style still accepts start_date/end_date —
+        # a caller who only wants the rest of the year from today can
+        # pass start_date (e.g. today's date), which bypasses this
+        # default and resolves through _resolve_date_range unchanged.
+        if (
+            eff_hebrew_year is None
+            and call.data.get("start_date") is None
+            and call.data.get("end_date") is None
+        ):
+            from pyluach.hebrewcal import HebrewDate as _PHDyear
+            eff_hebrew_year = _PHDyear.today().year
+            _LOGGER.info(
+                "yearly_multi_page: no dates given — defaulting to the "
+                "full current Hebrew year %s", eff_hebrew_year,
             )
 
     # ── Date range ──
@@ -392,12 +415,18 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
                 if k not in ("hebrew_year", "end_date")
             }
     else:
+        # Yearly styles resolve their range from a Hebrew year. Inject
+        # the effective year whenever it was defaulted above (sheet
+        # with no year, or multi-page with no dates) and the caller
+        # didn't pass one — so _resolve_date_range produces the full
+        # year span with the matching single-year title. When the
+        # caller passed hebrew_year (already in call.data) or passed
+        # start/end (multi-page trim, eff_hebrew_year left None), we
+        # fall through unchanged.
         if (
-            style == "yearly_sheet"
+            eff_hebrew_year is not None
             and call.data.get("hebrew_year") is None
         ):
-            # No year supplied → use the current-year default so the
-            # full-year range is resolved correctly.
             _date_input = {**call.data, "hebrew_year": eff_hebrew_year}
         else:
             _date_input = call.data
