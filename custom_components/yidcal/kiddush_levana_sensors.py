@@ -55,6 +55,8 @@ from .zman_sensors import get_geo
 from .config_flow import (
     CONF_KIDDUSH_LEVANA_START,
     DEFAULT_KIDDUSH_LEVANA_START,
+    CONF_PARSHA_METZORA_DISPLAY,
+    DEFAULT_PARSHA_METZORA_DISPLAY,
 )
 from .yidcal_lib.zman_compute import (
     # In-package use of the private molad helpers is deliberate: the
@@ -69,9 +71,10 @@ from .yidcal_lib.zman_compute import (
 )
 from .yidcal_lib.luach_data import (
     # Same private-in-package reuse: the harness-verified weekly-luach
-    # anchor formatters (Table-3 12/12, KY booklet 5/5).
-    _szkl_anchor_when,
-    _zsh_anchor_when,
+    # anchor formatters (Table-3 12/12, KY booklet 5/5), here via the
+    # sensor-only parsha-aware wrappers that leave PDF output untouched.
+    szkl_anchor_when_with_parsha,
+    zsh_anchor_when_with_parsha,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,6 +108,9 @@ class _KiddushLevanaBase(YidCalSpecialDevice):
         cfg = hass.data.get(DOMAIN, {}).get("config", {}) or {}
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
         self._diaspora: bool = cfg.get("diaspora", True)
+        self._metzora_display: str = cfg.get(
+            CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY
+        )
         self._start_opinion: str = cfg.get(
             CONF_KIDDUSH_LEVANA_START, DEFAULT_KIDDUSH_LEVANA_START
         )
@@ -285,17 +291,22 @@ class SofKiddushLevanaDisplaySensor(_KiddushLevanaBase, SensorEntity):
         self._attr_native_value: str | None = None
 
     def _recompute(self, cyc: dict, now_local: datetime) -> None:
-        self._attr_native_value = "ס״ז קידוש לבנה: " + _szkl_anchor_when(
+        ref = now_local.date()
+        self._attr_native_value = "ס״ז קידוש לבנה: " + szkl_anchor_when_with_parsha(
             cyc["sof_naive"],
             geo=self._geo,
             tz=self._tz,
             diaspora=self._diaspora,
+            metzora_display=self._metzora_display,
+            ref_date=ref,
         )
         self._attrs = {
-            "Zayin_Shleimim": "ז׳ שלמים: " + _zsh_anchor_when(
+            "Zayin_Shleimim": "ז׳ שלמים: " + zsh_anchor_when_with_parsha(
                 cyc["zayin_naive"],
                 geo=self._geo,
                 tz=self._tz,
                 diaspora=self._diaspora,
+                metzora_display=self._metzora_display,
+                ref_date=ref,
             ),
         }
