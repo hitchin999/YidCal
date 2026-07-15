@@ -42,13 +42,13 @@ CONF_ENABLE_ZMANIM_LOOKUP = "enable_zmanim_lookup"
 DEFAULT_ENABLE_ZMANIM_LOOKUP = False
 
 # ============ Luach PDF generator ============
-# Options-only toggle. When True, registers the yidcal.generate_luach
-# service which creates a printable luach PDF under
-# /config/www/yidcal-data/. Kept out of the initial setup since users
-# typically discover printable luachs after using the integration for
-# a while; behaves like enable_zmanim_lookup in that respect.
+# Options-only toggle. Registers the yidcal.generate_luach service
+# which creates a printable luach PDF under /config/www/yidcal-data/.
+# Defaults ON so the service is available out of the box; kept out of
+# the initial setup screen (it lives in Options) to avoid cluttering
+# first-run — users can uncheck it there if they don't want it.
 CONF_ENABLE_LUACH_PDF = "enable_luach_pdf"
-DEFAULT_ENABLE_LUACH_PDF = False
+DEFAULT_ENABLE_LUACH_PDF = True
 
 # ============ Haftorah Minhag ============
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
@@ -343,7 +343,7 @@ class YidCalConfigFlow(_LangFlowMixin, config_entries.ConfigFlow, domain=DOMAIN)
         if user_input is None:
             return self._form(
                 "general",
-                _general_schema(self._lang, lambda k, d: d, include_luach_pdf=False),
+                _general_schema(self._lang, lambda k, d: d, include_luach_pdf=True),
             )
 
         # Stash general config for the final entry
