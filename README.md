@@ -327,7 +327,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 * **Sof Kiddush Levunah Display** (`sensor.yidcal_sof_kiddush_levana_display`)
   The deadline as a printed-luach Hebrew line, e.g. `ס״ז קידוש לבנה: ליל ב׳ 2:07` or `ס״ז קידוש לבנה: ליל ג׳ כל הלילה` — same day/night display rule as the weekly luach PDF (a deadline that falls during the day rolls back to the preceding night as "כל הלילה"; Yom-Tov nights get their YT name, e.g. ליל א׳ דפסח). Rolls to the next month together with the timestamp sensor.
-  *Attribute:* `Zayin_Shleimim` — the ז׳ שלמים line in the same style (e.g. `ז׳ שלמים: יום ב׳ 1:10`)
+  When the deadline is more than a week out, the week's parsha is added after the night so you can tell *which* ליל ד׳ it means — e.g. `ס״ז קידוש לבנה: ליל ד׳ עקב כל הלילה`. Once you're **in** that same parsha week (or on a Yom-Tov night, which already names itself), the parsha drops and it reads exactly like the printed luach — `ס״ז קידוש לבנה: ליל ד׳ כל הלילה`. Honors the מצורע/טהרה naming option. This is display-only — the PDF luachs are unchanged.
+  *Attribute:* `Zayin_Shleimim` — the ז׳ שלמים line in the same style, with the same parsha rule (e.g. `ז׳ שלמים: יום ב׳ 1:10`, or `ז׳ שלמים: ליל ג׳ ואתחנן 8:30` when it's a different week)
 
 * **Shehecheyanu Display** (`sensor.yidcal_shehecheyanu_display`)
   Whether **שהחיינו** is said at the **next candle lighting** — Shabbos or Yom Tov, whichever comes first. Always populated, with one of exactly two states: `שהחיינו` or `אין אומרים שהחיינו`. Rolls forward to the next lighting on the same minute **Zman Erev** publishes (ceil-to-minute for after-tzeis lightings, half-up for before-shkia).
