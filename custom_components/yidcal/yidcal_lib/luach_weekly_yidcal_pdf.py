@@ -139,6 +139,13 @@ _INFO_FULL_SIZE = 24.0           # mock-exact
 _INFO_FULL_PITCH = 25.0
 _INFO_BASE_ONE = 339.8           # mock single molad line baseline
 _INFO_BASE_TWO = (327.3, 352.3)  # pair centred on the same anchor
+# One-message-per-line ribbon: the shared point size only steps
+# down if the stack would spill the ribbon rect (y 285.1 -> 383.0).
+# These bound a Hebrew line around its baseline and inset the rect.
+_INFO_BAND_TOP = 288.0           # ribbon rect top (285.1) + pad
+_INFO_BAND_BOT = 380.0           # ribbon rect bottom (383.0) - pad
+_INFO_ASC_EM = 0.80              # em a line reaches above its baseline
+_INFO_DESC_EM = 0.35             # em below the baseline (final tails)
 # yt1: small candle box (pill 38.3,291.7 → 230.4,323.7; label zone
 # x 230.4 → 363.8 within outer 284.8 → 330.5) + right info panel
 # 386.2,285.1 → 578.2,383.0.
@@ -876,25 +883,37 @@ class _Weekly2PDF(FPDF):
                 p.strip() for p in raw.split(" - ") if p.strip())
 
         if tpl == "regular" and not panel_extra:
-            # full-width ribbon: everything on one centred line; wrap
-            # to two only when a single line would over-shrink.
-            one = f"  {INFO_SEP}  ".join(info)
-            if one:
-                self.set_font(self.FONT, "B", _INFO_FULL_SIZE)
-                w1 = self.get_string_width(bidi(one))
-                if w1 <= _INFO_FULL_MW or len(info) < 2:
-                    self._t(_INFO_FULL_CX, 0, one,
-                            size=_INFO_FULL_SIZE, max_w=_INFO_FULL_MW,
-                            baseline=_INFO_BASE_ONE)
-                else:
-                    mid = (len(info) + 1) // 2
-                    self._stacked(
-                        _INFO_FULL_CX, 0,
-                        [f"  {INFO_SEP}  ".join(info[:mid]),
-                         f"  {INFO_SEP}  ".join(info[mid:])],
-                        size=_INFO_FULL_SIZE,
-                        pitch=_INFO_BASE_TWO[1] - _INFO_BASE_TWO[0],
-                        max_w=_INFO_FULL_MW, base0=_INFO_BASE_TWO[0])
+            # Full-width ribbon: ONE message per line — never joined
+            # with a '•'. The whole box is set at a single, consistent
+            # point size; a long line CONDENSES horizontally (its
+            # letters keep their height) instead of shrinking, and the
+            # shared size only steps down if the stack would spill the
+            # ribbon — so every card's box reads at the same size.
+            parts: list[str] = []
+            for _ln in info:
+                parts.extend(
+                    seg.strip() for seg in str(_ln).split(INFO_SEP)
+                    if seg.strip())
+            if parts:
+                n = len(parts)
+                ratio = _INFO_FULL_PITCH / _INFO_FULL_SIZE
+                size = _INFO_FULL_SIZE
+                for _ in range(60):
+                    pitch = size * ratio
+                    half = pitch * (n - 1) / 2.0
+                    top = _INFO_BASE_ONE - half - _INFO_ASC_EM * size
+                    bot = _INFO_BASE_ONE + half + _INFO_DESC_EM * size
+                    if size <= 12.0 or (
+                            top >= _INFO_BAND_TOP
+                            and bot <= _INFO_BAND_BOT):
+                        break
+                    size *= 0.97
+                pitch = size * ratio
+                base0 = _INFO_BASE_ONE - pitch * (n - 1) / 2.0
+                self._stacked(
+                    _INFO_FULL_CX, 0, parts,
+                    size=size, pitch=pitch, max_w=_INFO_FULL_MW,
+                    base0=base0, condense=True, floor=70)
         else:
             # yt1 / yt2 band: small candle box slot(s) + right panel
             n_slots = 2 if tpl == "yt2" else 1
