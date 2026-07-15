@@ -153,14 +153,14 @@ generate_luach:
         text:
     start_date:
       name: Start date
-      description: Weekly YidCal only — first week to render. Defaults to this week.
+      description: Range start (Weekly & Yearly Multi Sheet). Multi Sheet — pass to trim (e.g. today = rest of year).
       required: false
       example: "2026-05-08"
       selector:
         date:
     end_date:
       name: End date
-      description: Weekly YidCal only — last week to render. Defaults to start_date.
+      description: Range end (Weekly & Yearly Multi Sheet).
       required: false
       example: "2026-09-20"
       selector:
