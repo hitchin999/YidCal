@@ -824,6 +824,12 @@ Upon installation or restart, the integration automatically creates a `/config/w
 
 Generate a printable **luach PDF** straight from Home Assistant. It runs on the **same zmanim engine as the sensors**, so it matches your printed local luach at minute precision.
 
+**Samples** — click any image to enlarge:
+
+| Weekly YidCal *(default)* | Yearly — Multi Sheet | Yearly — Single Sheet |
+|:---:|:---:|:---:|
+| [<img src="https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_weekly_yidcal.png" width="250" alt="Weekly YidCal card">](https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_weekly_yidcal.png) | [<img src="https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_multi_page.png" width="250" alt="Yearly multi-page luach">](https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_multi_page.png) | [<img src="https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_sheet.png" width="250" alt="Yearly single-sheet luach">](https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_sheet.png) |
+
 * **Service:** `yidcal.generate_luach` — **enabled by default** (toggle it under **Options → Create the Generate Luach (PDF) service**).
 * **Output:** written to `/config/www/yidcal-data/` and served at `/local/yidcal-data/…`. A persistent notification pops up with a clickable download link. YidCal keeps only the **4 most-recent** files and prunes older ones, so the folder never fills up. *(Download/save any PDF you want to keep.)*
 
