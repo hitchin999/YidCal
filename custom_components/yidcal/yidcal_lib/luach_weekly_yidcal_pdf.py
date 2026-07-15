@@ -904,7 +904,7 @@ class _Weekly2PDF(FPDF):
                     _lbl = _lbl[: -(len(_bp) + 1)].rstrip()
                 self._t(_SM_TIME_CX, 0,
                         b.time_str, size=_SM_TIME_SIZE, rtl=False,
-                        max_w=_SM_TIME_MW, font=FONT_GRID,
+                        max_w=_SM_TIME_MW, font=FONT_FAMILY_MONO,
                         baseline=320.0 + _SM2_DY_TIME * i)
                 l1, l2 = self._two_line_split(_fold_lameds(_lbl))
                 _she = _shecheyanu(w, b)
