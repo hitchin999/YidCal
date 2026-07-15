@@ -28,7 +28,7 @@ A custom Home Assistant integration that provides a full Yiddish/Hebrew Jewish c
 
 **Timing notes** — [Erev / Motzi](#erev--motzi-sensors-timing-notes) · [Day Type](#day-type-timing-notes)
 
-**More** — [Yurtzeit Customization](#yurtzeit-customization) · [Lovelace countdown example](#lovelace-example-for-fast-startsends-in-countdown-timers) · [Releases](https://github.com/hitchin999/YidCal/releases) · [Report an issue](https://github.com/hitchin999/YidCal/issues)
+**More** — [Generate Luach (PDF)](#generate-luach-pdf-beta) · [Yurtzeit Customization](#yurtzeit-customization) · [Lovelace countdown example](#lovelace-example-for-fast-startsends-in-countdown-timers) · [Releases](https://github.com/hitchin999/YidCal/releases) · [Report an issue](https://github.com/hitchin999/YidCal/issues)
 
 ---
 
@@ -694,6 +694,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `?ליינט מען קרבנות אום שלוש עשרה מדות`                     | `false`     | Include **קרבנות** in the Krias HaTorah sensor at מנחה on **שלוש עשרה מדות** days if your shul leins it from the בימה.                |
 | `?ליינט מען משנה תורה הושענא רבה ביינאכט`                  | `false`     | Include **משנה תורה** in the Krias HaTorah sensor for **הושענא רבה ביינאכט** if your minhag is to lein it (not just say it privately). |
 | `צולייגען די זמנים Lookup & service call sensors`         | `false`     | Create `sensor.yidcal_zmanim_lookup` and the `yidcal.check_zmanim` service. The service accepts **up to 10 dates** in a single call (primary + 9 optional), so you can look up a full week or a Yom Tov plus surrounding Shabbosos at once. Off by default. See the **Zmanim Lookup** section above. |
+| `צולייגען די לוח PDF סערוויס`                             | `true`      | Create the `yidcal.generate_luach` service, which writes a printable luach **(PDF)** under `/config/www/yidcal-data/`. **On by default** — uncheck it here if you don't need it. See the **[Generate Luach (PDF)](#generate-luach-pdf-beta)** section below. *(beta)* |
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. Remove them manually via **Settings → Entities**, or delete and re-add the integration with the option turned off.
 
@@ -813,6 +814,47 @@ Upon installation or restart, the integration automatically creates a `/config/w
    * Files support Hebrew/UTF-8; use a text editor that handles it well.
    * Invalid lines are silently skipped.
    * If files don't exist, restart HA to regenerate samples.
+
+---
+
+## Generate Luach (PDF) *(beta)*
+
+> [!NOTE]
+> **This feature is in beta.** If a time, date, or layout looks off, please [open a GitHub issue](https://github.com/hitchin999/YidCal/issues) — include the **style**, **location**, **Hebrew year**, and what you **expected vs. got**.
+
+Generate a printable **luach PDF** straight from Home Assistant. It runs on the **same zmanim engine as the sensors**, so it matches your printed local luach at minute precision.
+
+* **Service:** `yidcal.generate_luach` — **enabled by default** (toggle it under **Options → Create the Generate Luach (PDF) service**).
+* **Output:** written to `/config/www/yidcal-data/` and served at `/local/yidcal-data/…`. A persistent notification pops up with a clickable download link. YidCal keeps only the **4 most-recent** files and prunes older ones, so the folder never fills up. *(Download/save any PDF you want to keep.)*
+
+Call it with no data to get **this week's** YidCal card for your **configured location**:
+
+```yaml
+service: yidcal.generate_luach
+```
+
+Or set any of the options:
+
+```yaml
+service: yidcal.generate_luach
+data:
+  style: yearly_multi_page   # weekly_yidcal (default) | yearly_multi_page | yearly_sheet
+  hebrew_year: "תשפ״ז"       # 5787 or תשפ״ז — defaults to the current year
+  time_format: "12"          # "12" or "24"
+  location: "Monsey, NY"     # ZIP, place name, or "lat,lon" — defaults to your HA location
+  is_in_israel: false        # override Diaspora/Israel just for this call
+  candle_offset: 15          # minutes before sunset — defaults to your config
+  havdalah_offset: 72        # minutes after sunset — defaults to your config
+  emit_json: true            # also drop a JSON data file next to the PDF
+```
+
+**Styles:**
+
+* `yearly_multi_page` — full year as a multi-page table.
+* `yearly_sheet` — full year on a single two-column sheet (התאחדות-style).
+* `weekly_yidcal` (default) — one YidCal card per week. Use `start_date` / `end_date` to pick the range; `shehecheyanu` and `add_seconds` are weekly-only extras.
+
+Every field defaults to your integration settings, so overrides are only needed when you want something different (a different year, another city, an Israel luach from a Diaspora setup, etc.).
 
 ---
 
