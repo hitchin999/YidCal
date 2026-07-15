@@ -203,7 +203,7 @@ generate_luach:
           mode: box
     add_seconds:
       name: Add seconds
-      description: Show seconds on the zmanim.
+      description: Weekly YidCal only — Show seconds on the zmanim in Grid times.
       required: false
       selector:
         constant:
