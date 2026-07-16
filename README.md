@@ -832,7 +832,7 @@ Generate a printable **luach PDF** straight from Home Assistant. It runs on the 
 
 **Yearly — Multi Sheet** — the full year as a multi-page booklet:
 
-[<img src="https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_multi_page.png" width="820" alt="Yearly multi-page luach — full-year booklet">](https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_multi_page.png)
+[<img src="https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_multi_page_v2.png" width="820" alt="Yearly multi-page luach — full-year booklet">](https://cdn.jsdelivr.net/gh/hitchin999/yidcal-data@main/docs/luach/luach_yearly_multi_page_v2.png)
 
 * **Service:** `yidcal.generate_luach` — **enabled by default** (toggle it under **Options → Create the Generate Luach (PDF) service**).
 * **Output:** written to `/config/www/yidcal-data/` and served at `/local/yidcal-data/…`. A persistent notification pops up with a clickable download link. YidCal keeps only the **4 most-recent** files and prunes older ones, so the folder never fills up. *(Download/save any PDF you want to keep.)*
