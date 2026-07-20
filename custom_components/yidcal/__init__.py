@@ -775,8 +775,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     if enable_luach_pdf:
         _async_register_luach_service(hass)
+        # Keep the fixed-name yearly luach JSON current, refreshed on
+        # Erev Rosh Hashanah for the incoming year (self-healing). Reuses
+        # the generate_luach service in json_only mode.
+        from .yidcal_lib.luach_auto_json import async_setup_erev_rh_json
+        async_setup_erev_rh_json(hass)
     else:
         _async_remove_luach_service(hass)
+        from .yidcal_lib.luach_auto_json import async_shutdown_erev_rh_json
+        async_shutdown_erev_rh_json(hass)
 
     # Yurtzeit list-management services are always available — they
     # only touch www/yidcal-data/*.txt and don't depend on any optional
@@ -830,6 +837,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Remove the generate_luach service on full unload.
     from .yidcal_lib.luach_service import async_remove_service as _remove_luach
     _remove_luach(hass)
+    # Stop the Erev-RH luach JSON auto-generator's timers.
+    from .yidcal_lib.luach_auto_json import async_shutdown_erev_rh_json
+    async_shutdown_erev_rh_json(hass)
     # Drop yurtzeit list services on full unload too.
     for svc in (SERVICE_SET_YURTZEIT_MUTED, SERVICE_SET_YURTZEIT_CUSTOM):
         if hass.services.has_service(DOMAIN, svc):
