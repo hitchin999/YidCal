@@ -694,6 +694,40 @@ def is_chol_hamoed(
     ) is not None
 
 
+def vayehi_noam_omitted(shabbos_date: date_cls, *, diaspora: bool) -> bool:
+    """On the Motzei Shabbos following ``shabbos_date`` (a Saturday), is
+    ויהי נועם / ואתה קדוש omitted?
+
+    True when the coming week cannot muster ששת ימי המעשה, i.e. EITHER:
+
+      (A) a no-melacha Yom Tov (a full Yom Tov, Yom Kippur included)
+          falls Sunday-Thursday of the coming week, OR
+      (B) any day Sunday-Friday of the coming week is Chol HaMoed.
+
+    Condition (B) is essential: melacha is (largely) forbidden on Chol
+    HaMoed, so ויהי נועם is omitted for the whole Pesach/Sukkos
+    intermediate week even when the closing full Yom Tov lands on Friday
+    or Shabbos -- where (A), which stops at Thursday, would not fire. A
+    stand-alone Yom Tov on Friday/Shabbos with NO Chol HaMoed in the week
+    does not omit it.
+
+    This is the pure calendar rule. It does NOT handle the case where the
+    Motzei Shabbos is itself Erev Yom Tov (Sunday is a full Yom Tov), in
+    which one davens Yom Tov Maariv and the whole ויהי נועם framework is
+    moot; the caller suppresses that separately via is_no_melacha(sunday).
+    (Sunday CHOL HAMOED is not that case -- that is a weekday Maariv.)
+    """
+    yt_sun_thu = any(
+        is_no_melacha(shabbos_date + timedelta(days=k), diaspora=diaspora)
+        for k in range(1, 6)  # Sunday(+1) .. Thursday(+5)
+    )
+    chm_sun_fri = any(
+        is_chol_hamoed(shabbos_date + timedelta(days=k), diaspora=diaspora)
+        for k in range(1, 7)  # Sunday(+1) .. Friday(+6)
+    )
+    return yt_sun_thu or chm_sun_fri
+
+
 def chanukah_day_for_date(d: date_cls) -> int | None:
     """Return the day of Chanukah (1-8) for a civil date, or None if
     the date is outside Chanukah. Handles both Kislev-30-day and
