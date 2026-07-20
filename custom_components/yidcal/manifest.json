@@ -22,5 +22,5 @@
     "python-bidi==0.4.2"
   ],
   "single_config_entry": true,
-  "version": "0.7.9"
+  "version": "0.8.0"
 }
