@@ -272,6 +272,10 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   **ON** when all of the following are true: today is Erev Shabbos or Erev Yom Tov (and not itself Shabbos/YT), current time is **after Chatzos HaYom** (midday), and current time is **before** the erev window end (candle-lighting / early start).
   *Attributes:* `Now`, `Is_Erev_Day`, `Chatzos`, `Erev_Window_End`, `Activation_Logic`
 
+* **Erev Tisha B’Av After Chatzos** (`binary_sensor.yidcal_erev_tisha_bav_after_chatzos`)
+  **ON** when all of the following are true: today is **Erev Tisha B’Av** (the daytime of 8 Av), current time is **after Chatzos HaYom** (midday), and current time is **before shkia** (the moment the fast / תשעה באב begins). Always **OFF** when the erev-of-fast falls on **Shabbos** — a **nidcheh** year (9 Av on Shabbos, the fast deferred to Sunday) or when 8 Av itself is Shabbos — since there is no after-chatzos window on Shabbos.
+  *Attributes:* `Now`, `Is_Erev_Tisha_Bav_Day`, `Chatzos`, `Tisha_Bav_Onset`, `Erev_Falls_On_Shabbos`, `Activation_Logic`
+
 * **Season** (`sensor.yidcal_season`)
   State: **"בין פסח לסוכות"** or **"בין סוכות לפסח"** — easy to use in automation triggers/conditions.
   *Boolean attributes:* `Pesach_to_Sukkos`, `Sukkos_to_Pesach`, `Pesach_till_Shvuos`, `Shvuos_till_Rosh_Hashanah`, `After_Shvuos_till_DST_OFF`, `DST_OFF_till_Pesach`, `DST_ON_till_Pesach`, `DST_OFF_till_Chanukah`
