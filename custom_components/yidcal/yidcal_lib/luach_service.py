@@ -180,6 +180,18 @@ _SCHEMA = vol.Schema({
     # ``.json`` extension) carrying the structured luach data, so a
     # dashboard/card can be built off the data instead of the PDF.
     vol.Optional("emit_json"): cv.boolean,
+    # When True, SKIP the PDF render and write ONLY the sidecar JSON
+    # (forces emit_json on). Yearly styles only; runs quietly. Internal
+    # to the built-in Erev-RH auto-export -- intentionally NOT a UI
+    # field (see services.yaml), so the manual service is unchanged.
+    vol.Optional("json_only"): cv.boolean,
+    # When True (yearly styles) ALSO embed the full-year weekly grid
+    # (per-day zmanim + boxes) into the sidecar JSON under a "weekly"
+    # key, so ONE file carries both the yearly luach rows and the
+    # daily grid. Implies emit_json. Ignored by the weekly styles
+    # (already the grid); never affects the PDF (JSON enrichment).
+    # Also UI-hidden -- driven only by the auto-export.
+    vol.Optional("include_weekly"): cv.boolean,
 })
 
 
@@ -333,6 +345,26 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             " one or more are missing."
         )
 
+    # ── JSON-only mode ──
+    # Build the data and write ONLY the sidecar JSON, skipping the PDF
+    # render. Forces emit_json on and runs quietly (no persistent
+    # notifications — just an INFO log), since it targets programmatic
+    # consumers: dashboard cards and the built-in Erev-RH auto-export.
+    # Limited to the yearly styles; the weekly card's JSON is available
+    # via the normal emit_json flag (which also writes the PDF).
+    json_only = bool(call.data.get("json_only", False))
+    if json_only and style in _WEEKLY_STYLES:
+        raise ServiceValidationError(
+            "json_only is currently supported only for the yearly styles "
+            "(yearly_multi_page / yearly_sheet). For a weekly card, use "
+            "emit_json — it writes the same JSON alongside the PDF."
+        )
+
+    # Embed the full-year weekly grid into the yearly JSON (yearly
+    # styles only). Implies emit_json; ignored by the weekly styles,
+    # which already carry the grid.
+    include_weekly = bool(call.data.get("include_weekly", False))
+
     # ── Yearly-sheet-specific input validation ──
     # The yearly-sheet style is a one-Hebrew-year single-page layout.
     # ``hebrew_year`` is optional: when omitted it defaults to the
@@ -457,12 +489,12 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         havdalah_off = int(call.data["havdalah_offset"])
 
     # ── Verify bundled fonts are present (small, but fail loudly if not) ──
-    if not fonts_available():
+    if not json_only and not fonts_available():
         raise ServiceValidationError(
             "Required font files are missing from custom_components/yidcal/"
             "yidcal_lib/fonts/. Reinstall the integration to restore them."
         )
-    if style == "yearly_sheet" and not serif_fonts_available():
+    if not json_only and style == "yearly_sheet" and not serif_fonts_available():
         raise ServiceValidationError(
             "yearly_sheet luach style requires the Frank Ruehl CLM serif "
             "fonts (FrankRuehlCLM-Medium.ttf, FrankRuehlCLM-Bold.ttf) "
@@ -486,6 +518,10 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     # twin of the PDF is written with the structured luach data so a
     # dashboard card can be built off it.
     emit_json = bool(call.data.get("emit_json", False))
+    if json_only:
+        emit_json = True  # JSON is the sole deliverable in this mode
+    if include_weekly:
+        emit_json = True  # the weekly grid rides inside the JSON
     _json_location = {
         "lat": lat, "lon": lon, "tzname": tzname,
         "name": loc_name or "",
@@ -713,32 +749,49 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             candle_offset=candle_off, havdalah_offset=havdalah_off,
             style=style,
         )
-        if style == "yearly_sheet":
-            render_yearly_sheet_pdf(
-                items=items, output_path=out_path,
-                title_he=title_he, subtitle_he=subtitle_he,
-                notes_he=notes_he,
-                hebrew_year=int(eff_hebrew_year),
-                extra_zmanim_labels=extra_labels, diaspora=diaspora,
-            )
-        else:
-            render_yearly_multi_page_pdf(
-                items=items, output_path=out_path,
-                title_he=title_he, subtitle_he=subtitle_he,
-                notes_he=notes_he,
-                extra_zmanim_labels=extra_labels, diaspora=diaspora,
-            )
-        if emit_json:
-            _write_sidecar_json(
-                out_path,
-                _json_yearly_payload(
-                    items, kind=style,
+        if not json_only:
+            if style == "yearly_sheet":
+                render_yearly_sheet_pdf(
+                    items=items, output_path=out_path,
                     title_he=title_he, subtitle_he=subtitle_he,
-                    notes_he=notes_he, location=_json_location,
-                    diaspora=diaspora, hebrew_year=eff_hebrew_year,
-                    start=start_d, end=end_d,
-                ),
+                    notes_he=notes_he,
+                    hebrew_year=int(eff_hebrew_year),
+                    extra_zmanim_labels=extra_labels, diaspora=diaspora,
+                )
+            else:
+                render_yearly_multi_page_pdf(
+                    items=items, output_path=out_path,
+                    title_he=title_he, subtitle_he=subtitle_he,
+                    notes_he=notes_he,
+                    extra_zmanim_labels=extra_labels, diaspora=diaspora,
+                )
+        if emit_json:
+            _payload = _json_yearly_payload(
+                items, kind=style,
+                title_he=title_he, subtitle_he=subtitle_he,
+                notes_he=notes_he, location=_json_location,
+                diaspora=diaspora, hebrew_year=eff_hebrew_year,
+                start=start_d, end=end_d,
             )
+            if include_weekly:
+                _wk_cards = _weekly_full_year_cards(
+                    geo=geo, tz=ZoneInfo(tzname), diaspora=diaspora,
+                    candle_offset=candle_off, havdalah_offset=havdalah_off,
+                    metzora_display=metzora_disp, time_format=time_fmt,
+                    show_shehecheyanu=show_shehecheyanu,
+                    extra_zmanim_labels=extra_labels,
+                    molad_provider=molad_provider,
+                    start=start_d, end=end_d, hebrew_year=eff_hebrew_year,
+                    add_seconds=bool(call.data.get("add_seconds", False)),
+                )
+                _payload["weekly"] = {
+                    "kind": "weekly",
+                    "weeks": _json_weekly_payload(
+                        _wk_cards, location=_json_location,
+                        diaspora=diaspora,
+                    )["weeks"],
+                }
+            _write_sidecar_json(out_path, _payload)
         return out_path
 
     try:
@@ -764,7 +817,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     # notification_id) so it sits alongside the "saved" one.
     # Skipped silently when nothing was deleted (no spammy
     # zero-count noises).
-    if _pruned_names:
+    if _pruned_names and not json_only:
         from homeassistant.components import (
             persistent_notification as _pn_del,
         )
@@ -787,6 +840,17 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             title="YidCal luach auto-cleanup",
             notification_id="yidcal_luach_pruned",
         )
+
+    # ── JSON-only: no PDF to link to — log the data file and stop ──
+    if json_only:
+        _json_rel = _sidecar_json_path(out_path).name
+        _LOGGER.info(
+            "YidCal: generated luach JSON → %s "
+            "(served at /local/yidcal-data/%s)",
+            _sidecar_json_path(out_path),
+            _json_rel,
+        )
+        return
 
     # ── Notify the user with a download link ──
     # The clickable anchor uses the RELATIVE ``/local/...`` URL on
@@ -1260,6 +1324,61 @@ def _json_weekly_payload(
         "location": location,
         "weeks": [dataclasses.asdict(wd) for wd in weeks],
     }
+
+
+def _weekly_full_year_cards(
+    *, geo, tz, diaspora: bool, candle_offset: int, havdalah_offset: int,
+    metzora_display: str, time_format: str, show_shehecheyanu: bool,
+    extra_zmanim_labels, molad_provider, start: date_cls, end: date_cls,
+    hebrew_year, add_seconds: bool,
+) -> list:
+    """Build one WeeklyData card per Sun->Shabbos week in [start, end],
+    for embedding the daily grid into a yearly JSON. Reuses the
+    canonical build_weekly_cards (all halachic/zman computation stays
+    single-source there).
+
+    NOTE: the LuachConfig built here MUST stay in sync with the weekly
+    branch's wconfig in _async_generate_luach (both feed
+    build_weekly_cards). Only the config construction and the week
+    stepping are mirrored.
+    """
+    from datetime import timedelta as _td
+    from pyluach.hebrewcal import HebrewDate as _PHD
+    wconfig = LuachConfig(
+        geo=geo, tz=tz, diaspora=diaspora,
+        candle_offset=candle_offset, havdalah_offset=havdalah_offset,
+        metzora_display=metzora_display, time_format=time_format,
+        show_shehecheyanu=show_shehecheyanu,
+        extra_zmanim_labels=extra_zmanim_labels,
+        molad_style="monroe", hebrew_date_rc_emphasis=True,
+    )
+    # Anchor each week on its Shabbos (first Saturday on/after start),
+    # then step +7 through end. Trailing weeks on/after RH of
+    # (hebrew_year + 1) carry the incoming year as their hero sub --
+    # mirrors the weekly-booklet path.
+    _sat = start + _td(days=(5 - start.weekday()) % 7)
+    _next_rh = None
+    _next_n = None
+    if hebrew_year is not None:
+        try:
+            _n = int(hebrew_year)
+            _next_n = _n + 1
+            _next_rh = _PHD(_n + 1, 7, 1).to_pydate()
+        except Exception:
+            _next_rh = None
+            _next_n = None
+    cards = []
+    while _sat <= end:
+        _tys = _next_n if (_next_rh is not None and _sat >= _next_rh) else None
+        cards.extend(
+            build_weekly_cards(
+                anchor_date=_sat, config=wconfig,
+                molad_provider=molad_provider,
+                trailing_year_sub=_tys, add_seconds=add_seconds,
+            )
+        )
+        _sat = _sat + _td(days=7)
+    return cards
 
 
 def _json_yearly_payload(
