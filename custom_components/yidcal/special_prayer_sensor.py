@@ -41,6 +41,12 @@ Main state (joined with " - ")
     Uses `binary_sensor.yidcal_no_melucha` if available to detect when prohibition lifts;
     otherwise falls back to local havdalah offset.
 
+• אין אומרים ויהי נועם / ואתה קדוש  
+  – On Motzaei Shabbos when the coming week cannot muster ששת ימי המעשה:
+    a full Yom Tov (Yom Kippur included) falls Sun–Thu, OR any day
+    Sun–Fri is Chol HaMoed. Suppressed when Motzaei Shabbos is itself
+    Erev Yom Tov (Yom Tov Maariv, not weekday Maariv).
+
 Extra attributes
 ----------------
 • "הושענות היום" – Which *Hoshana* is recited today (15–20 תשרי), empty otherwise.  
@@ -109,6 +115,7 @@ from .yidcal_lib.zman_compute import (
     round_half_up as _round_half_up,
     sunset_for_date,
 )
+from .yidcal_lib.halacha_events import is_no_melacha, vayehi_noam_omitted
 
 
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
@@ -518,12 +525,36 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                 )
                 ayt_str = " - ".join(ayt_list)
 
-            # ---------- אתה חוננתנו ----------
-            # Purely local logic: after the rounded havdalah of Shabbos until civil 23:59
-            motzash_tog = False
-            if now.weekday() == 5 and now.time() < time(23, 59):
-                if now >= havdala:
-                    motzash_tog = True
+            # ---------- אתה חוננתנו / ויהי נועם ----------
+            # Both are Motzei-Shabbos Maariv items. Shared window:
+            # Saturday, after the rounded havdalah, until civil 23:59.
+            motzei_shabbos_window = (
+                now.weekday() == 5 and now >= havdala and now.time() < time(23, 59)
+            )
+            # Does this Motzei Shabbos run straight into a Sunday that is
+            # a FULL Yom Tov? Then you daven Yom Tov Maariv (ותודיענו,
+            # not אתה חוננתנו) and ויהי נועם / its omission notice do not
+            # apply. A Sunday that is CHOL HAMOED is NOT this case -- that
+            # is a weekday Maariv (with יעלה ויבוא), so אתה חוננתנו IS
+            # said and ויהי נועם is still omitted.
+            motzei_into_yt = is_no_melacha(
+                today + timedelta(days=1), diaspora=self._diaspora
+            )
+
+            # אתה חוננתנו -- weekday Motzei-Shabbos Maariv only.
+            motzash_tog = motzei_shabbos_window and not motzei_into_yt
+
+            # אין אומרים ויהי נועם / ואתה קדוש -- omitted when the coming
+            # week lacks ששת ימי המעשה: a full Yom Tov (Yom Kippur
+            # included) Sun-Thu, OR any Chol HaMoed day Sun-Fri (the whole
+            # Pesach/Sukkos intermediate week, even when the closing Yom
+            # Tov is on Fri/Shabbos). Suppressed when this Motzei Shabbos
+            # is itself Erev Yom Tov (Yom Tov Maariv -- see above).
+            no_vayehi_noam = (
+                motzei_shabbos_window
+                and vayehi_noam_omitted(today, diaspora=self._diaspora)
+                and not motzei_into_yt
+            )
 
             # ---------- Hoshanos ----------
             hd_ref = PHebrewDate.from_pydate(today)
@@ -575,6 +606,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             attrs["הלל"] = is_hallel
             attrs["הלל השלם"] = is_hallel_shalem
             attrs["אתה חוננתנו"] = motzash_tog
+            attrs["אין אומרים ויהי נועם/ואתה קדוש"] = no_vayehi_noam
             attrs["פרשת המן"] = is_parshas_haman
 
             self._attr_extra_state_attributes = attrs
@@ -599,6 +631,8 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                 parts.append("עשי\"ת")
             if motzash_tog:
                 parts.append("אתה חוננתנו")
+            if no_vayehi_noam:
+                parts.append("אין אומרים ויהי נועם/ואתה קדוש")
             if is_parshas_haman:
                 parts.append("פרשת המן")
 
