@@ -224,3 +224,8 @@ generate_luach:
         constant:
           value: true
           label: Write the JSON file
+    # NOTE: the handler also accepts two params — `json_only` and
+    # `include_weekly` — used ONLY by the background Erev-Rosh-Hashanah
+    # JSON auto-export. They are intentionally NOT exposed as UI fields, so
+    # this manual "Generate Luach (PDF)" service looks and behaves exactly
+    # as it did before. (Still accepted if passed by hand via YAML.)
