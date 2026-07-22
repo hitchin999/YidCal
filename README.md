@@ -277,6 +277,10 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   **ON** when all of the following are true: today is **Erev Tisha B’Av** (the daytime of 8 Av), current time is **after Chatzos HaYom** (midday), and current time is **before shkia** (the moment the fast / תשעה באב begins). Always **OFF** when the erev-of-fast falls on **Shabbos** — a **nidcheh** year (9 Av on Shabbos, the fast deferred to Sunday) or when 8 Av itself is Shabbos — since there is no after-chatzos window on Shabbos.
   *Attributes:* `Now`, `Is_Erev_Tisha_Bav_Day`, `Chatzos`, `Tisha_Bav_Onset`, `Erev_Falls_On_Shabbos`, `Activation_Logic`
 
+* **Tisha B’Av Night** (`binary_sensor.yidcal_tisha_bav_night`)
+  **ON** from the floored **shkia** that begins the fast (on the erev-of-fast) until **alos HaShachar** the next morning — the **night** portion of Tisha B’Av only. Because the fast spans two sunsets, this stays **OFF** through the fast's daytime and its second (closing) shkia, so an automation can trigger on this sensor turning **on** for the first shkia without ambiguity. Follows the observed fast: in a **nidcheh** year (9 Av on Shabbos) it shifts to 10 Av — shkia on Motzei Shabbos → alos Sunday; when 9 Av is Sunday it begins at Motzei-Shabbos shkia.
+  *Attributes:* `Now`, `Fast_Day`, `Is_Nidche`, `Night_Start`, `Alos`, `Activation_Logic`
+
 * **Season** (`sensor.yidcal_season`)
   State: **"בין פסח לסוכות"** or **"בין סוכות לפסח"** — easy to use in automation triggers/conditions.
   *Boolean attributes:* `Pesach_to_Sukkos`, `Sukkos_to_Pesach`, `Pesach_till_Shvuos`, `Shvuos_till_Rosh_Hashanah`, `After_Shvuos_till_DST_OFF`, `DST_OFF_till_Pesach`, `DST_ON_till_Pesach`, `DST_OFF_till_Chanukah`
