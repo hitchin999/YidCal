@@ -497,12 +497,23 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
             )
             is_anenu = False
             is_nachem = False
+            # Fast windows close STRICTLY before havdalah. The halachic date
+            # flips forward at `now >= havdala` (above), so at the havdalah
+            # instant it is already the NEXT Hebrew day and the fast window
+            # must already be shut. When both used `<=`, the single poll tick
+            # landing exactly on havdalah satisfied BOTH -- תשעה באב had just
+            # begun AND the erev day's dawn->motzei window was still open --
+            # so עננו/נחם flashed for exactly one minute at tzeis on Erev
+            # Tisha B'Av. Deterministic, not a race: havdalah is ceil-rounded
+            # to :00 seconds and `now` is truncated to :00, so they compare
+            # equal every year. Nothing is lost on the fast day itself -- the
+            # window now ends at the same instant the fast ends.
             if is_tisha_bav:
-                if dawn <= now <= havdala:
+                if dawn <= now < havdala:
                     is_anenu = True
-                if hal_mid <= now <= havdala:
+                if hal_mid <= now < havdala:
                     is_nachem = True
-            elif is_minor_fast and dawn <= now <= havdala:
+            elif is_minor_fast and dawn <= now < havdala:
                 is_anenu = True
 
             # ---------- עשרת ימי תשובה ----------
@@ -514,9 +525,16 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                     is_ayt_toggle = True
 
             if is_ayt_toggle:
+                # Shabbos ends STRICTLY at havdalah, matching the halachic
+                # date flip (`now >= havdala`) and motzei_shabbos_window
+                # below. With `<=` here, the single tick landing exactly on
+                # havdalah counted as BOTH still-Shabbos (אבינו מלכנו
+                # suppressed) and already-Motzei-Shabbos (אתה חוננתנו
+                # shown) -- contradictory for one minute. Same boundary
+                # class as the fast windows above.
                 shabbos_window = (
                     (now.weekday() == 4 and now >= candle_time)
-                    or (now.weekday() == 5 and now <= havdala)
+                    or (now.weekday() == 5 and now < havdala)
                 )
                 ayt_list = (
                     ["ממעמקים", "זכרינו", "המלך"]
