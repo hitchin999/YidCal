@@ -5,7 +5,11 @@ from datetime import timedelta, datetime
 from collections.abc import Callable
 
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.event import async_track_time_interval, async_track_sunset
+from homeassistant.helpers.event import (
+    async_track_time_interval,
+    async_track_time_change,
+    async_track_sunset,
+)
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
@@ -67,8 +71,26 @@ class YidCalDevice(Entity):
         self._listener_unsubs.append(unsub)
 
     def _register_interval(self, hass, callback, interval: timedelta):
-        """Register an interval callback and remember its unsubscribe."""
-        unsub = async_track_time_interval(hass, callback, interval)
+        """Register a periodic callback and remember its unsubscribe.
+
+        A 1-minute cadence is registered as a wall-clock tick at :00
+        seconds instead of a plain interval. async_track_time_interval
+        fires 60s after REGISTRATION, so its ticks inherit whatever
+        second the entity happened to be set up at (:41, :44, ...).
+        Sensors here compare against zmanim rounded to :00, so the
+        boundary would be crossed on the minute but not EVALUATED until
+        the next tick -- reporting the flip up to 59s late (a state
+        change logged at 20:26:41 for a 20:26:00 shkia cut).
+        async_track_time_change(second=0) evaluates exactly on the
+        minute, matching the rounded zmanim and the sensors that already
+        use that primitive directly. Other cadences (30-minute, hourly)
+        keep the plain interval -- alignment only matters at the
+        minute resolution the zmanim are rounded to.
+        """
+        if interval == timedelta(minutes=1):
+            unsub = async_track_time_change(hass, callback, second=0)
+        else:
+            unsub = async_track_time_interval(hass, callback, interval)
         self._register_listener(unsub)
         return unsub
 
