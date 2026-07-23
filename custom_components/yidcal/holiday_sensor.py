@@ -830,7 +830,10 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # Bedikat Chametz
         if is_bedikat_day:
-            if prev_sunset <= now < dawn:
+            # Floored shkia (was the raw sunset): every other day-boundary
+            # cut in this method uses the floored value, and `dawn` here is
+            # already floored.
+            if prev_sunset_floor <= now < dawn:
                 attrs["ליל בדיקת חמץ"] = True
 
         # Pesach & Erev
@@ -957,7 +960,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Motzei Shabbos, but Chatzos is a common marker for the "erev" mood.
         if is_tisha_on_shabbat and wd == 5 and hd_py.month == 5 and hd_py.day == 9:
             chatzos_shabbos_9av = _compute_chatzos_hayom(self._geo, actual_date, tz)
-            if chatzos_shabbos_9av <= now < actual_sunset:
+            # Floored shkia (was the raw sunset) -- the same fast-onset
+            # anchor used for the ערב תשעה באב -> תשעה באב flip above.
+            if chatzos_shabbos_9av <= now < actual_sunset_floor:
                 attrs["ערב תשעה באב שחל בשבת"] = True
             
          # Tu B'Av (15 Av)
