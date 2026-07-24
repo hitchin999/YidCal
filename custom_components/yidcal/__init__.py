@@ -600,6 +600,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         cached = None
 
+    # Generic supersede check: drop a cached snap that the curated
+    # centroid database would now answer differently.
+    #
+    # The gate below reuses the cache whenever the SOURCE coordinates are
+    # unchanged, so an install whose snap was written before places.py
+    # covered its area -- or before a centroid moved or a radius widened
+    # -- keeps the stale result forever. There is no way to clear it from
+    # the UI: YidCal exposes no location option, so the only other lever
+    # is editing HA's home coordinates to force a source mismatch. That
+    # is exactly the failure the two hand-written migrations above patch,
+    # one community at a time. Re-running find_place on the SOURCE
+    # coordinates catches every case generically, including future
+    # places.py additions, so no new per-community block is needed.
+    #
+    # A None result means the curated DB still has no opinion for these
+    # coordinates, so the cached Nominatim answer stands. Re-resolving
+    # after a hit is cheap and hits no network: find_place is the first
+    # thing resolve_location_from_coordinates tries.
+    if cached:
+        _src_lat = cached.get("source_lat")
+        _src_lon = cached.get("source_lon")
+        if _src_lat is not None and _src_lon is not None:
+            from .yidcal_lib.places import find_place as _find_place
+
+            _snap = _find_place(float(_src_lat), float(_src_lon))
+            if _snap is not None and (
+                _snap[0] != cached.get("city")
+                or _snap[2] != cached.get("lat")
+                or _snap[3] != cached.get("lon")
+            ):
+                _LOGGER.info(
+                    "YidCal: cached snap %s (%s, %s) superseded by curated "
+                    "centroid %s (%s, %s); re-resolving",
+                    cached.get("city"),
+                    cached.get("lat"),
+                    cached.get("lon"),
+                    _snap[0],
+                    _snap[2],
+                    _snap[3],
+                )
+                cached = None
+
     if cached and cached.get("source_lat") == latitude and cached.get("source_lon") == longitude:
         # Use cached location
         city = cached["city"]
