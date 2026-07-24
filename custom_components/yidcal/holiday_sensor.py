@@ -1463,3 +1463,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         self._attr_native_value = picked
         self._attr_extra_state_attributes = attrs
+
+        # Publish immediately, on the aligned :00 tick. Without this the
+        # method only mutates in-memory attributes -- nothing reaches HA
+        # until the entity platform's OWN poll (should_poll defaults to
+        # True, ~30s cadence anchored to platform setup) calls async_update
+        # again and writes. That poll is why flips were logged at :41 /
+        # :44 / :48 instead of the rounded minute. It still runs, harmlessly:
+        # it recomputes the same values and writes no change.
+        if self.hass is not None and self.entity_id:
+            self.async_write_ha_state()
