@@ -78,7 +78,7 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         self._register_listener(
             async_track_time_change(
                 self.hass,
-                self._midnight_update,
+                self._publishing(self._midnight_update),
                 hour=0, minute=0, second=0,
             )
         )
