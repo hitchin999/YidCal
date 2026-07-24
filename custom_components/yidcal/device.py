@@ -1,6 +1,7 @@
 # custom_components/yidcal/device.py
 from __future__ import annotations
 
+import inspect
 from datetime import timedelta, datetime
 from collections.abc import Callable
 
@@ -70,6 +71,42 @@ class YidCalDevice(Entity):
     def _register_listener(self, unsub: Callable[[], None]) -> None:
         self._listener_unsubs.append(unsub)
 
+    def _publishing(self, callback):
+        """Wrap a scheduled callback so the entity PUBLISHES when it finishes.
+
+        Most YidCal entities compute into ``self._attr_*`` inside
+        ``async_update`` and never call ``async_write_ha_state``, leaving
+        publication to the entity platform's own poll (``should_poll``
+        defaults to True, ~30s cadence anchored to platform SETUP time). The
+        value computed on the aligned :00 tick is therefore correct but not
+        VISIBLE until an arbitrary second later -- a 20:26:00 shkia cut
+        showing up in the logbook as 20:26:41, and the recorded second
+        changing on every restart.
+
+        Wrapping here, rather than appending a write inside each
+        ``async_update``, is deliberate: it runs after the callback returns,
+        so it still publishes for update methods that bail out through an
+        early ``return``. Publishing an unchanged state is free -- HA's state
+        machine drops a set whose state and attributes both compare equal --
+        so the platform poll remains a harmless safety net.
+
+        Objects that are not entities (e.g. the zmanim coordinator) have no
+        ``async_write_ha_state`` and are skipped.
+        """
+        async def _wrapped(*args, **kwargs):
+            result = callback(*args, **kwargs)
+            if inspect.isawaitable(result):
+                await result
+            writer = getattr(self, "async_write_ha_state", None)
+            if (
+                writer is not None
+                and getattr(self, "hass", None) is not None
+                and getattr(self, "entity_id", None)
+            ):
+                writer()
+
+        return _wrapped
+
     def _register_interval(self, hass, callback, interval: timedelta):
         """Register a periodic callback and remember its unsubscribe.
 
@@ -88,15 +125,19 @@ class YidCalDevice(Entity):
         minute resolution the zmanim are rounded to.
         """
         if interval == timedelta(minutes=1):
-            unsub = async_track_time_change(hass, callback, second=0)
+            unsub = async_track_time_change(
+                hass, self._publishing(callback), second=0
+            )
         else:
-            unsub = async_track_time_interval(hass, callback, interval)
+            unsub = async_track_time_interval(
+                hass, self._publishing(callback), interval
+            )
         self._register_listener(unsub)
         return unsub
 
     def _register_sunset(self, hass, callback, offset: timedelta | None = None):
         """Register a sunset-based callback and remember its unsubscribe."""
-        unsub = async_track_sunset(hass, callback, offset=offset)
+        unsub = async_track_sunset(hass, self._publishing(callback), offset=offset)
         self._register_listener(unsub)
         return unsub
 
