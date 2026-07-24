@@ -256,8 +256,9 @@ STEPS: dict[str, dict] = {
     # --- config flow ---
     "config.user":     {"kind": "menu", "menu": "language"},
     "config.general":  {"kind": "form", "title": "general",
-                        "fields": _GENERAL_FIELDS,
-                        "descs": ["enable_multiday_candles", "enable_zmanim_lookup"]},
+                        "fields": _GENERAL_FIELDS + ["enable_luach_pdf"],
+                        "descs": ["enable_multiday_candles", "enable_zmanim_lookup",
+                                  "enable_luach_pdf"]},
     "config.yurtzeit": {"kind": "form", "title": "yurtzeit",
                         "fields": _YURTZEIT_FIELDS, "descs": []},
 
