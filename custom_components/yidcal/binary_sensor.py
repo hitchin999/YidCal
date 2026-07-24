@@ -325,8 +325,21 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._last_window: dict[str, datetime] | None = None
 
     def _schedule_update(self, *_args) -> None:
+        # Wrapped in _publishing so the state is written as soon as
+        # async_update finishes, on the aligned :00 tick, rather than on the
+        # entity platform's own ~30s poll (anchored to platform SETUP time
+        # -- the :41 offset).
+        #
+        # Wrapping HERE rather than at the two registration sites is
+        # deliberate: it covers both callers -- the minute tick AND the
+        # sensor.yidcal_holiday state listener -- from one place. And unlike
+        # a write appended to the end of async_update, it still publishes
+        # when that method bails out through its early `if not self._geo`
+        # return.
         self.hass.loop.call_soon_threadsafe(
-            lambda: self.hass.async_create_task(self.async_update())
+            lambda: self.hass.async_create_task(
+                self._publishing(self.async_update)()
+            )
         )
 
     async def async_added_to_hass(self) -> None:
@@ -693,11 +706,19 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         self._geo = await get_geo(self.hass)
         await self.async_update()
 
-        # Recalculate exactly at each new minute (00 seconds)
+        # Recalculate exactly at each new minute (00 seconds).
+        # _publishing writes the state as soon as the tick's async_update
+        # returns, so the flip is VISIBLE on the rounded minute instead of
+        # waiting for the entity platform's own poll (should_poll defaults
+        # to True, ~30s cadence anchored to platform SETUP time -- the :41
+        # offset). The poll still runs, harmlessly: it recomputes the same
+        # values and HA drops a set whose state and attributes both compare
+        # equal. Wrapping also publishes when async_update bails out early
+        # on missing geo, which a write appended to that method would not.
         self._register_listener(
             async_track_time_change(
                 self.hass,
-                self.async_update,
+                self._publishing(self.async_update),
                 second=0,
             )
         )
