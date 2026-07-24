@@ -99,9 +99,18 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         self._geo = await get_geo(self.hass)
         await self.async_update()
 
-        # minute beat
+        # Minute beat. _publishing writes the state as soon as the tick's
+        # async_update returns, so the value lands on the rounded minute
+        # instead of waiting for the entity platform's own poll (~30s,
+        # anchored to platform SETUP time -- the :41 offset). It also
+        # publishes when async_update bails out early on missing geo.
+        # NoMeluchaSensor and ErevHolidaySensor read this sensor's
+        # attributes for the early-start maps, so a late publish here was
+        # delaying them as well.
         self._register_listener(
-            async_track_time_change(self.hass, self.async_update, second=0)
+            async_track_time_change(
+                self.hass, self._publishing(self.async_update), second=0
+            )
         )
 
         # when we later add override selects, this will auto-refresh safely
