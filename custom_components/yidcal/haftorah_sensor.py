@@ -959,11 +959,11 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         
         await self.async_update()
         self._unsub_interval = async_track_time_interval(
-            self.hass, self.async_update, timedelta(minutes=15)
+            self.hass, self._publishing(self.async_update), timedelta(minutes=15)
         )
         # Force flip at midnight (instead of waiting up to 15 minutes)
         self._unsub_midnight = async_track_time_change(
-            self.hass, self.async_update, hour=0, minute=0, second=5
+            self.hass, self._publishing(self.async_update), hour=0, minute=0, second=5
         )
 
     async def async_will_remove_from_hass(self) -> None:
