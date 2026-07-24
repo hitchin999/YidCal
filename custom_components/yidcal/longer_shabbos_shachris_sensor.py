@@ -88,7 +88,7 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
         self._register_listener(
             async_track_time_change(
                 self.hass,
-                self.async_update,
+                self._publishing(self.async_update),
                 second=0,
             )
         )
