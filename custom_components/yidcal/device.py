@@ -102,6 +102,13 @@ class YidCalDevice(Entity):
                 writer is not None
                 and getattr(self, "hass", None) is not None
                 and getattr(self, "entity_id", None)
+                # Set by add_to_platform_start() before async_added_to_hass,
+                # so only real platform-managed entities publish. Bare
+                # instances built for simulation (upcoming_holiday_sensor
+                # constructs HolidaySensor objects to evaluate FUTURE dates)
+                # carry the real entity_id and would otherwise overwrite the
+                # live state with simulated values.
+                and getattr(self, "platform", None) is not None
             ):
                 writer()
 
