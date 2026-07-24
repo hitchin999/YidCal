@@ -660,7 +660,7 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         self._register_listener(
             async_track_time_change(
                 self.hass,
-                self.async_update,
+                self._publishing(self.async_update),
                 second=0,
             )
         )
@@ -719,7 +719,7 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self._register_listener(
             async_track_time_change(
                 self.hass,
-                self.async_update,
+                self._publishing(self.async_update),
                 second=0,
             )
         )
@@ -801,7 +801,7 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
         self._register_listener(
             async_track_time_change(
                 self.hass,
-                self.async_update,
+                self._publishing(self.async_update),
                 second=0,
             )
         )
@@ -876,7 +876,9 @@ class RoshChodeshToday(YidCalDisplayDevice, SensorEntity):
 
         # Minute lockstep like DayType
         self._register_listener(
-            async_track_time_change(self.hass, self.async_update, second=0)
+            async_track_time_change(
+                self.hass, self._publishing(self.async_update), second=0
+            )
         )
 
         # Also re-evaluate at tzeis (sunset + offset)
