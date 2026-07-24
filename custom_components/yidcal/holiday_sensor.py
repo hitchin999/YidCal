@@ -1471,5 +1471,16 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # again and writes. That poll is why flips were logged at :41 /
         # :44 / :48 instead of the rounded minute. It still runs, harmlessly:
         # it recomputes the same values and writes no change.
-        if self.hass is not None and self.entity_id:
+        # `platform` is set by add_to_platform_start() BEFORE
+        # async_added_to_hass, so real platform-managed entities always have
+        # it. Throwaway instances do NOT -- upcoming_holiday_sensor builds
+        # bare HolidaySensor objects and calls async_update(fake_now) to
+        # simulate a FUTURE date. Those carry the real entity_id, so without
+        # this check they would publish simulated attributes onto the live
+        # sensor.yidcal_holiday (and HA logs 'does not have a platform').
+        if (
+            self.hass is not None
+            and self.entity_id
+            and getattr(self, "platform", None) is not None
+        ):
             self.async_write_ha_state()
