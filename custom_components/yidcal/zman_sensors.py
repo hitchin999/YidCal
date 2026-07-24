@@ -613,7 +613,10 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         alos_dt = self._alos_for_date(d)
         self._register_listener(
             async_track_point_in_time(
-                self.hass, self._alos_update, alos_dt,
+                # Same publish-timing fix as the midnight tick above: the
+                # one-shot Alos recompute has to reach HA when it runs, not
+                # on the entity platform's next ~30s poll.
+                self.hass, self._publishing(self._alos_update), alos_dt,
             )
         )
 
