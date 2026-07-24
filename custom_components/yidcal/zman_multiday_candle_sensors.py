@@ -142,7 +142,7 @@ class _MultidayCandleSensorBase(YidCalZmanDevice, RestoreEntity, SensorEntity):
         self._geo = await get_geo(self.hass)
         await self.async_update()
         async_track_time_change(
-            self.hass, self._midnight_update, hour=0, minute=0, second=0
+            self.hass, self._publishing(self._midnight_update), hour=0, minute=0, second=0
         )
 
     async def _midnight_update(self, now: datetime.datetime) -> None:
