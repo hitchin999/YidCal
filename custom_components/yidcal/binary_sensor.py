@@ -75,6 +75,7 @@ from .const import DOMAIN
 from .holiday_sensor import HolidaySensor
 from .config_flow import CONF_INCLUDE_ATTR_SENSORS
 from .device import YidCalDevice
+from .flag_windows import async_get_cache
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -197,10 +198,31 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
     # All attribute mirrors will live under this separate Device
     _ATTR_DEVICE_IDENT = (DOMAIN, "yidcal_holiday_attributes")
 
-    def __init__(self, hass: HomeAssistant, attr_name: str) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        attr_name: str,
+        candle_offset: int | None = None,
+        havdalah_offset: int | None = None,
+    ) -> None:
         super().__init__()
         self.hass = hass
         self.attr_name = attr_name
+        # These offsets feed the simulated HolidaySensor the window scan runs,
+        # so a wrong one is not a missing feature - it is a window a few
+        # minutes out of step with the live sensor, published as fact. Falling
+        # back to the shared config rather than to a literal means a caller
+        # that omits them still agrees with the rest of the integration.
+        cfg = (hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
+        self._candle_offset = (
+            candle_offset if candle_offset is not None else cfg.get("candle", 15)
+        )
+        self._havdalah_offset = (
+            havdalah_offset
+            if havdalah_offset is not None
+            else cfg.get("havdalah_offset", 72)
+        )
+        self._windows = None
 
         self._attr_name = f"{attr_name}"
         slug = SLUG_OVERRIDES.get(attr_name) or (
@@ -235,6 +257,25 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
         last = await self.async_get_last_state()
         if last:
             self._attr_is_on = (last.state == STATE_ON)
+            # keep any window we published last time until the first scan
+            self._attr_extra_state_attributes = {
+                key: value
+                for key, value in (last.attributes or {}).items()
+                if key in ("Window_Start", "Window_End")
+            }
+            self._attr_extra_state_attributes.update({
+                "source_entity": "sensor.yidcal_holiday",
+                "source_attribute": self.attr_name,
+            })
+
+        # Shared across all ~130 mirrors: one forward scan answers every one
+        # of them, so this must not be built per entity.
+        self._windows = async_get_cache(
+            self.hass,
+            lambda: HolidaySensor(
+                self.hass, self._candle_offset, self._havdalah_offset
+            ),
+        )
 
         # 2) One immediate update if source exists
         if self.hass.states.get("sensor.yidcal_holiday"):
@@ -270,6 +311,36 @@ class HolidayAttributeBinarySensor(YidCalDevice, RestoreEntity, BinarySensorEnti
         src = self.hass.states.get("sensor.yidcal_holiday")
         val = src.attributes.get(self.attr_name, False) if src else False
         self._attr_is_on = str(val).lower() == "true"
+
+        # When this flag next turns on and off. The row of flags only says
+        # what is true *now*; anything scheduling around one of them needs to
+        # know when that stops being true, and nothing else publishes it.
+        # Read from a shared cache, so 130 mirrors on the same minute tick
+        # cost one scan and 129 dictionary lookups.
+        if self._windows is not None:
+            try:
+                window = await self._windows.async_windows_for(
+                    self.attr_name, now or dt_util.now()
+                )
+            except Exception:  # noqa: BLE001 - a window is a nicety, the state is not
+                _LOGGER.debug(
+                    "No flag window for %s", self.attr_name, exc_info=True
+                )
+            else:
+                # published even when blank: a mirror with no attributes at all
+                # looks identical to a broken scan, and most of the year most
+                # flags legitimately have no edge inside the horizon
+                #
+                # `source_entity` / `source_attribute` say which flag this
+                # mirrors. Anything watching that flag on the row it came from
+                # -- where there is no window, only ~106 booleans -- can follow
+                # the declaration here and get the real minute instead of
+                # guessing at the next day boundary.
+                self._attr_extra_state_attributes = {
+                    **window,
+                    "source_entity": "sensor.yidcal_holiday",
+                    "source_attribute": self.attr_name,
+                }
 
         # Publish immediately, on the aligned :00 tick. Without this the
         # method only mutates in-memory attributes -- nothing reaches HA
@@ -998,6 +1069,8 @@ async def async_setup_entry(
             allowed = [n for n in allowed if n not in {"שמיני עצרת", "שמחת תורה"}]
 
         for name in allowed:
-            entities.append(HolidayAttributeBinarySensor(hass, name))
+            entities.append(
+                HolidayAttributeBinarySensor(hass, name, candle, havdalah)
+            )
 
     async_add_entities(entities, update_before_add=False)
