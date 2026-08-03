@@ -25,7 +25,7 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
-from .erev_motzei_extra import compute_erev_motzei_flags, EXTRA_ATTRS
+from .erev_motzei_extra import compute_erev_motzei_flags_and_windows, EXTRA_ATTRS
 from .zman_sensors import get_geo
 from .yidcal_lib import halacha_events as he
 
@@ -407,6 +407,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # initial state + full attrs
         self._attr_native_value: str = ""
         self._attr_extra_state_attributes: dict[str, bool | str] = {}
+        # flag -> (start, end) for whatever is on, filled in by async_update
+        self._flag_windows: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
         cfg = hass.data.get(DOMAIN, {}).get("config", {})
         self._diaspora = cfg.get("diaspora", True)
 
@@ -1166,10 +1168,20 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             return default_w
 
         # Filter attrs by windows
+        #
+        # The resolved window is recorded as it goes. It is computed here
+        # anyway to decide the flag, and it is the only place that knows the
+        # answer *after* _dynamic_window's overrides -- so anything wanting
+        # "when does this flag start and end" (the mirror binary sensors, a
+        # luach range, a countdown card) reads it from here rather than
+        # working it out again and drifting from this.
+        _flag_windows: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
         for name, on in list(attrs.items()):
             if not on:
                 continue
             w = _dynamic_window(name, self.WINDOW_TYPE.get(name))
+            if w in _wins:
+                _flag_windows[name] = _wins[w]
             if w == "candle_havdalah" and not (candle_havdalah_start <= now < candle_havdalah_end):
                 attrs[name] = False
             elif w == "havdalah_havdalah" and not (havdalah_havdalah_start <= now < havdalah_havdalah_end):
@@ -1189,10 +1201,30 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             elif w == "candle_candle" and not (candle_candle_start <= now < candle_candle_end):
                 attrs[name] = False
             # others stay full day
-            
+
+        def _span_from(name: str, sources) -> None:
+            """An aggregate's window for this day: the span of what it covers.
+
+            An aggregate is `any(...)` of other flags, so it has no window type
+            of its own and its real run is not one of the nine shapes either -
+            Sukkos as a whole is eight days. Recording one day's span is enough,
+            because a consumer walking day by day unions them back into the
+            whole run, exactly as it does for Rosh Chodesh or Chanukah.
+            """
+            spans = [
+                _flag_windows[n]
+                for n in sources
+                if attrs.get(n) and n in _flag_windows
+            ]
+            if spans:
+                _flag_windows[name] = (
+                    min(start for start, _ in spans),
+                    max(end for _, end in spans),
+                )
+
         # ─── Aggregate flags & Shabbos Chol HaMoed (attributes only) ────────
         # "סוכות (כל חג)": 1st two days + entire Chol HaMoed through הושענא רבה
-        attrs["סוכות (כל חג)"] = any(attrs.get(n) for n in [
+        _sukkos_all = [
             "סוכות א׳",
             "סוכות ב׳",
             "א׳ דחול המועד סוכות",
@@ -1201,7 +1233,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             "ד׳ דחול המועד סוכות",
             "ה׳ דחול המועד סוכות",
             "הושענא רבה",
-        ])
+        ]
+        attrs["סוכות (כל חג)"] = any(attrs.get(n, False) for n in _sukkos_all)
+        _span_from("סוכות (כל חג)", _sukkos_all)
 
         # Single flag for both days: שמיני עצרת/שמחת תורה
         attrs["שמיני עצרת/שמחת תורה"] = bool(
@@ -1209,7 +1243,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         )
 
         # "פסח (כל חג)": 1st two days + entire Chol HaMoed + שביעי + (אחרון בגלות)
-        attrs["פסח (כל חג)"] = any(attrs.get(n) for n in [
+        _pesach_all = [
             "פסח א׳",
             "פסח ב׳",
             "א׳ דחול המועד פסח",
@@ -1219,7 +1253,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             "ה׳ דחול המועד פסח",
             "שביעי של פסח",
             "אחרון של פסח",
-        ])
+        ]
+        attrs["פסח (כל חג)"] = any(attrs.get(n, False) for n in _pesach_all)
+        _span_from("פסח (כל חג)", _pesach_all)
 
         # Single flag for both: שביעי/אחרון של פסח (diaspora only)
         if self._diaspora:
@@ -1319,7 +1355,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs.update(getattr(motzi, "_attr_extra_state_attributes", {}))
 
         # --- Extra Erev/Motzei windows (8 flags) ---
-        extra_flags = compute_erev_motzei_flags(
+        extra_flags, extra_windows = compute_erev_motzei_flags_and_windows(
             now=now,
             tz=tz,
             geo=self._geo,
@@ -1327,6 +1363,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             candle_offset=self._candle_offset,
             havdalah_offset=self._havdalah_offset,
         )
+        _flag_windows.update(extra_windows)
         for name, val in extra_flags.items():
             # Only attach if this name is known for the current mode
             if name in attrs:
@@ -1443,20 +1480,33 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # two-day YT there is ראש השנה, and שמיני עצרת/שמחת תורה
         # share one day, which would raise both flags at once.
         if self._diaspora:
-            attrs["א׳ דיום טוב"] = any(attrs.get(n, False) for n in (
+            _yt_day1 = [
                 "ראש השנה א׳", "סוכות א׳", "שמיני עצרת",
                 "פסח א׳", "שביעי של פסח", "שבועות א׳",
-            ))
-            attrs["ב׳ דיום טוב"] = any(attrs.get(n, False) for n in (
+            ]
+            attrs["א׳ דיום טוב"] = any(attrs.get(n, False) for n in _yt_day1)
+            _span_from("א׳ דיום טוב", _yt_day1)
+            _yt_day2 = [
                 "ראש השנה ב׳", "סוכות ב׳", "שמחת תורה",
                 "פסח ב׳", "אחרון של פסח", "שבועות ב׳",
-            ))
+            ]
+            attrs["ב׳ דיום טוב"] = any(attrs.get(n, False) for n in _yt_day2)
+            _span_from("ב׳ דיום טוב", _yt_day2)
 
         # Prune to mode after all flags are computed
         attrs = self._prune_attrs_for_mode(attrs)
 
         # Keep raw bools for internal consumers (e.g. upcoming_holiday_sensor)
         self._bool_attrs = dict(attrs)
+        # ... and, beside them, the window each of those flags is on for. Every
+        # entry came from the code that decided the flag - the window filter,
+        # the aggregate spans, or the erev/motzei extras - so nothing
+        # downstream has to re-derive a zman to know when a flag starts or ends.
+        self._flag_windows = {
+            name: window
+            for name, window in _flag_windows.items()
+            if attrs.get(name)
+        }
 
         # Convert bool attrs to lowercase strings for HA state condition compatibility
         attrs = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in attrs.items()}
