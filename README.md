@@ -22,9 +22,11 @@ A custom Home Assistant integration that provides a full Yiddish/Hebrew Jewish c
 
 **Setup** — [Requirements](#requirements) · [Installation](#installation) · [Configuration Options](#configuration-options) · [Language](#language-setup--options-screens) · [Location Resolution](#location-resolution) · [Early Shabbos & Yom Tov](#early-shabbos--early-yom-tov)
 
+**Calendars** — [Calendar entities](#calendar-entities) · [What each calendar publishes](#what-each-calendar-publishes) · [Zmanim calendars](#zmanim-calendars)
+
 **Sensors** — [Devices / Services layout](#devices--services-layout) · [Core binary sensors](#core-binary-sensors) · [Holiday attributes](#holiday-sensor-attributes-list-updated) · [Key daily sensors](#key-daily-sensors) · [Special Sensors](#special-sensors) · [Upcoming sensors](#upcoming-sensors) · [Display device extras](#display-device-extras) · [Yurtzeit sensors](#yurtzeit-sensors)
 
-**Zmanim** — [Overview & algorithm](#zmanim) · [Zman Erev / candle lighting](#zman-erev-candle-lighting) · [Night 2 / Night 3](#night-2--night-3-candle-lighting-optional) · [Zman Motzi / havdalah](#zman-motzi-havdalah) · [Upcoming Shabbos](#upcoming-shabbos-zmanim) · [Upcoming Yom Tov](#upcoming-yom-tov-zmanim) · [Zmanim Lookup](#zmanim-lookup-optional) · [Time format](#simple-zmanim-time-format)
+**Zmanim** — [Overview & algorithm](#zmanim) · [Alos HaShachar opinions](#alos-hashachar-opinions) · [Zman Erev / candle lighting](#zman-erev-candle-lighting) · [Night 2 / Night 3](#night-2--night-3-candle-lighting-optional) · [Zman Motzi / havdalah](#zman-motzi-havdalah) · [Upcoming Shabbos](#upcoming-shabbos-zmanim) · [Upcoming Yom Tov](#upcoming-yom-tov-zmanim) · [Zmanim Lookup](#zmanim-lookup-optional) · [Time format](#simple-zmanim-time-format)
 
 **Timing notes** — [Erev / Motzi](#erev--motzi-sensors-timing-notes) · [Day Type](#day-type-timing-notes)
 
@@ -41,6 +43,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **YidCal — Holiday Attribute Sensors** — sensors created from Holiday sensor attributes (only if enabled)
 * **YidCal — Special Sensors** — special sensors such as Slichos, Eruv Tavshilin, Kiddush Levunah, etc.
 * **YidCal — Zmanim** — all zmanim sensors
+* **YidCal — Calendars** — all calendar entities (only if enabled; see [Calendar entities](#calendar-entities))
 
 *(Existing entity IDs stay the same; grouping is for organization.)*
 
@@ -252,6 +255,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 * **Chodesh** (`sensor.yidcal_chodesh`) — current Hebrew month
 * **Yom L’Chodesh** (`sensor.yidcal_yom_lchodesh`) — current Hebrew day-of-month
+* **Day Label Hebrew Full** (`sensor.yidcal_day_label_hebrew_full`) — the weekday written out in full: `יום ראשון`, `יום שני` … `יום שישי`, switching to `ערב שבת` Friday midday, `שבת קודש` from candle-lighting, and `מוצאי שבת` after havdalah. The flip times are identical to `sensor.yidcal_day_label_hebrew` — only the wording differs — so the two are interchangeable in **Full Display**.
+  *Attributes:* `Hebrew_Date`, `Weekday`, `Full` (label + Hebrew date joined, e.g. `יום ראשון י״ג אב תשפ״ו`), `possible_states`
 
 ---
 
@@ -362,6 +367,62 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 > **Astronomical algorithm:** YidCal computes sunrise, sunset, and all derived zmanim using Rabbi Yissocher Dov Grossmann's algorithm from קונטרס קו לקו (the booklet documenting the computational basis of his "Zmanim Grossman" software). This matches the printed Kiryas Joel luach at minute precision across the full year for sunrise, sunset, candle lighting, and motzei. The algorithm is mathematically equivalent to the standard NOAA/Meeus algorithm but with two intentional simplifications that make it closely track the published Chassidic luachs in use across the United States, Europe, and Israel.
 >
 > **Community location snapping:** YidCal includes a curated database of known communities (Kiryas Joel, Monsey, Williamsburg, Boro Park, Flatbush, Lakewood, and many others) with coordinates aligned to the published luach for that community. If your configured Home Assistant location is within about 5 km of one of these communities, zmanim are computed from that community's luach-aligned centroid so they match the printed local luach. If you are **not** near a listed community, the same algorithm is applied directly to your own Home Assistant latitude, longitude, and timezone (with no snapping). Because neighboring communities each have their own centroid, two nearby communities (e.g. Williamsburg vs. Boro Park) can correctly show slightly different times from each other.
+
+### Alos HaShachar opinions
+
+By default `sensor.yidcal_alos` is **72 fixed minutes before sunrise**, which is what
+every existing install has always used and what stays unless you change it.
+
+**Settings → Devices & Services → YidCal → gear icon → עלות השחר און טלית ותפילין**
+lets you pick a different opinion, in three families:
+
+| Family | What it means | Options |
+| ------ | ------------- | ------- |
+| **Fixed minutes** | A flat number of clock minutes before sunrise. | 60, **72 (default)**, 90, 96, 120 |
+| **Zmanis minutes** | The same numbers as *proportional* minutes — one zmanis minute is 1/60 of a GRA שעה זמנית, so the interval stretches in summer and shrinks in winter. | 72, 90, 96, 120 |
+| **Degrees** | The sun a given number of degrees below the horizon. 16.1° is the classic equivalent of 72 minutes at the Jerusalem equinox; 19.8° corresponds to 120. | 16.1°, 18°, 19°, 19.8°, 26° |
+
+> **This dropdown cannot shift your luach.** It changes the **Alos sensor** only — and
+> Talis & Tefilin, if that is set to follow it. Every other MGA zman (סוף זמן ק"ש,
+> תפילה, מנחה גדולה/קטנה, פלג) stays anchored to sunrise minus 72 regardless.
+
+**Every opinion is always available as an attribute** on `sensor.yidcal_alos`, whichever
+one you select: `Alos_60_Minutes`, `Alos_72_Minutes`, `Alos_90_Minutes`, `Alos_96_Minutes`,
+`Alos_120_Minutes`, `Alos_72_Zmanis`, `Alos_90_Zmanis`, `Alos_96_Zmanis`, `Alos_120_Zmanis`,
+`Alos_16_1_Degrees`, `Alos_18_Degrees`, `Alos_19_Degrees`, `Alos_19_8_Degrees`,
+`Alos_26_Degrees`.
+
+**Optional extra Alos sensors.** On the same page, `צולייגען עקסטערע עלות סענסארס` lets
+you tick any of the opinions to get its own standalone timestamp sensor — handy if you
+want to graph or compare two of them side by side:
+
+```
+sensor.yidcal_alos_60_minutes
+sensor.yidcal_alos_72_minutes
+sensor.yidcal_alos_90_minutes
+sensor.yidcal_alos_96_minutes
+sensor.yidcal_alos_120_minutes
+sensor.yidcal_alos_72_zmanis
+sensor.yidcal_alos_90_zmanis
+sensor.yidcal_alos_96_zmanis
+sensor.yidcal_alos_120_zmanis
+sensor.yidcal_alos_16_1_degrees
+sensor.yidcal_alos_18_degrees
+sensor.yidcal_alos_19_degrees
+sensor.yidcal_alos_19_8_degrees
+sensor.yidcal_alos_26_degrees
+```
+
+Each one carries the same `Alos_Simple` / `Tomorrows_Simple` / `Yesterdays_Simple`
+attributes as the main sensor.
+
+**Which Alos Talis & Tefilin counts from.** `פון וועלכן עלות זאל גערעכנט ווערן טלית ותפילין`
+defaults to **פאלג דעם הויפט עלות** — follow whatever the primary Alos is set to, so
+changing the opinion above carries the Talis time with it. Pick any specific opinion
+instead to pin it independently of the primary.
+
+> ⚠️ Unticking an extra Alos sensor later does **not** auto-delete the entity. Remove it
+> manually via **Settings → Entities**.
 
 ### Zman Erev (Candle Lighting)
 
@@ -563,6 +624,84 @@ ISO/With-Seconds timestamps remain controlled by Home Assistant’s global date/
 
 ---
 
+## Calendar entities
+
+YidCal's sensors answer **"what is true right now."** A calendar answers a different
+question — **"when"** — which is the language the Home Assistant calendar panel, the
+`calendar.get_events` service, and any automation that schedules against an upcoming
+event all speak.
+
+Calendars are **off by default.** Turn them on at **Settings → Devices & Services →
+YidCal → gear icon → קאלענדערס**, then tick the ones you want. Everything you pick lands
+on one device, **YidCal — Calendars**, which only exists while the master toggle is on —
+switch it off and there is a single device to delete rather than entries scattered
+across five others.
+
+Nothing here computes a new zman, parsha or holiday rule. Each calendar is a thin front
+end over the same functions the matching sensor already uses, so a correction to a rule
+reaches the calendar without being copied.
+
+### What each calendar publishes
+
+| Pick | Entity | What the events are |
+| ---- | ------ | ------------------- |
+| דעיט | `calendar.yidcal_date` | The Hebrew date, plus the Yom Tov when there is one. All-day. |
+| יום טוב | `calendar.yidcal_holiday` | One event per holiday attribute, spanning **exactly** the window it is active — from 9:35 until whenever — rather than an all-day block. |
+| דעי טייפ | `calendar.yidcal_day_type` | The Day Type label for each day. |
+| שבת מברכים | `calendar.yidcal_shabbos_mevorchim` | Shabbos Mevorchim, with the full **Molad** announcement in the event description. |
+| עמוד היומי | `calendar.yidcal_amud_hayomi` | The day's Amud. |
+| דף היומי | `calendar.yidcal_daf_hayomi` | The day's Daf. |
+| ספירת העומר (קורץ) | `calendar.yidcal_sefirah_short` | The short Omer count. |
+| ספעציעלע שבת | `calendar.yidcal_special_shabbos` | שקלים, זכור, פרה, החודש, הגדול, שובה, חזון, נחמו … |
+| סוף זמן קידוש לבנה | `calendar.yidcal_sof_kiddush_levana` | The Kiddush Levunah deadline. |
+| לענגערע שחרית | `calendar.yidcal_longer_shachris` | The same window as the binary sensor. |
+| לענגערע שבת שחרית | `calendar.yidcal_longer_shabbos_shachris` | The same window as the binary sensor. |
+
+**Two extras for the Date calendar.** `צולייגען צו די דעיט קאלענדאר` decorates the Date
+calendar's event titles:
+
+* **פרשה** — `י"ג אב תשפ"ו - פרשת צו`
+* **וואכנטאג** — `י"ג אב תשפ"ו - ג' צו`
+
+Tick both and you get the weekday and the parsha together.
+
+### Zmanim calendars
+
+`וועלכע זמנים זאלן באקומען א באזונדערן קאלענדאר` gives any zman you tick its own
+calendar entity, with one timed event per day at that zman:
+
+| Pick | Entity | Notes |
+| ---- | ------ | ----- |
+| עלות השחר | `calendar.yidcal_zman_alos` |  |
+| זמן טלית ותפילין | `calendar.yidcal_zman_talis_tefilin` |  |
+| הנץ החמה | `calendar.yidcal_zman_netz` |  |
+| סוף זמן קריאת שמע מג״א | `calendar.yidcal_zman_krias_shma_mga` |  |
+| סוף זמן קריאת שמע גר״א | `calendar.yidcal_zman_krias_shma_gra` |  |
+| סוף זמן תפילה מג״א | `calendar.yidcal_zman_tefilah_mga` |  |
+| סוף זמן תפילה גר״א | `calendar.yidcal_zman_tefilah_gra` |  |
+| חצות היום | `calendar.yidcal_zman_chatzos_hayom` |  |
+| מנחה גדולה | `calendar.yidcal_zman_mincha_gedola` |  |
+| מנחה קטנה | `calendar.yidcal_zman_mincha_ketana` |  |
+| פלג המנחה גר״א | `calendar.yidcal_zman_plag_gra` |  |
+| פלג המנחה מג״א | `calendar.yidcal_zman_plag_mga` |  |
+| שקיעת החמה | `calendar.yidcal_zman_shkia` |  |
+| צאת הכוכבים | `calendar.yidcal_zman_tzeis` |  |
+| זמן מעריב 60 | `calendar.yidcal_zman_maariv_60` |  |
+| זמן מעריב ר״ת | `calendar.yidcal_zman_maariv_rt` |  |
+| חצות הלילה | `calendar.yidcal_zman_chatzos_haleila` |  |
+| הדלקת נרות | `calendar.yidcal_zman_candle_lighting` | only on the days it applies |
+| מוצאי שבת/יום טוב | `calendar.yidcal_zman_havdalah` | only on the days it applies |
+
+> **Cost note:** the calendar component polls about once a minute. Each entity keeps a
+> window of events around "now" and rebuilds it every few hours, so a poll is a list
+> scan rather than a month of recomputation. Scrolling the panel computes on demand for
+> the range you're looking at.
+
+> ⚠️ Unticking a calendar later does **not** auto-delete the entity. Remove it manually
+> via **Settings → Entities**.
+
+---
+
 ## Upcoming sensors
 
 * **Upcoming Yom Tov Sensor** (`binary_sensor.yidcal_upcoming_yomtov`)
@@ -595,6 +734,7 @@ ISO/With-Seconds timestamps remain controlled by Home Assistant’s global date/
 * **Minhag selection:** controlled by the config-flow option **`הפטרה סענסאר מנהג`**:
   * אשכנזי (default)
   * ספרדי
+* **Both minhagim are always published.** The option only picks which one becomes the sensor's **state**; the `אשכנזי` and `ספרדי` attributes carry both readings on every Shabbos and weekday, so a dashboard can show the other minhag without changing the setting.
 
 ### Fast countdown sensors
 
@@ -693,7 +833,8 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `צולייגען באזונדערע סענסאָרס פאר די ימים טובים`            | `true`      | Add/remove individual binary sensors for each holiday (holidays always remain as attributes).                                           |
 | `Full Display Sensor צולייגען די קורצע ספירת העומר - ח' בעומר צום` | `false` | Append the short Sefiras HaOmer count (e.g. `ח׳ בעומר`) to **Full Display** during Sefirah. Auto-hidden on ל״ג בעומר to avoid duplicating the holiday sensor. |
 | `צולייגען באזונדערע הדלקת הנרות סענסאָרס פאר 2טע/3טע נאכט` | `false`     | Add Night 2 / Night 3 candle lighting sensors. When enabled, Zman Erev becomes Night 1 only. See above.                                 |
-| `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די` | `yiddish`   | Choose Yiddish (`זונטאג, מאנטאג`) or Hebrew (`יום א׳, יום ב׳`) day labels.                                                              |
+| `Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די` | `yiddish`   | Which day label **Full Display** uses: `זונטאג, מאנטאג` (Yiddish), `יום א', יום ב` (Hebrew short), or `יום ראשון, יום שני` (Hebrew full). |
+| `אין וועלכע שפראך זאל דער מולד סענסאר ווייזן`              | `אידיש`     | Language for the **Molad** sensor's state: Yiddish, Hebrew, or English. Only picks the state — all three renderings are always published as the `English` / `Hebrew` attributes. |
 | `צייט־פארמאט (נאר פאר Simple Zmanim)`                      | `12-hour`   | Format for **Simple** Zmanim attributes only: **12-hour (AM/PM)** or **24-hour**.                                                       |
 | `ווען זאל זיך די סליחות טאג טוישן`                         | `זמן הבדלה` | When the Selichos label advances: `havdalah` (after sunset + offset) or `midnight` (12 AM).                                             |
 | `ווען הייבט זיך אן קידוש לבנה - ג' אדער ז' שלימים`         | `ז' שלימים` | Which start drives the **Kiddush Levunah** binary sensor: `ג' שלימים` (molad + 3 days) or `ז' שלימים` (molad + 7 days). Both opinions stay available as attributes either way. |
@@ -703,6 +844,10 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `?ליינט מען קרבנות אום שלוש עשרה מדות`                     | `false`     | Include **קרבנות** in the Krias HaTorah sensor at מנחה on **שלוש עשרה מדות** days if your shul leins it from the בימה.                |
 | `?ליינט מען משנה תורה הושענא רבה ביינאכט`                  | `false`     | Include **משנה תורה** in the Krias HaTorah sensor for **הושענא רבה ביינאכט** if your minhag is to lein it (not just say it privately). |
 | `צולייגען די זמנים Lookup & service call sensors`         | `false`     | Create `sensor.yidcal_zmanim_lookup` and the `yidcal.check_zmanim` service. The service accepts **up to 10 dates** in a single call (primary + 9 optional), so you can look up a full week or a Yom Tov plus surrounding Shabbosos at once. Off by default. See the **Zmanim Lookup** section above. |
+| `עקטיוועט די קאלענדערס`                                    | `false`     | Master switch for the **Calendars** page. When on, creates the **YidCal — Calendars** device holding every calendar you tick; when off, no calendar entities and no device are created. See **[Calendar entities](#calendar-entities)**. |
+| `לויט וועלכע שיטה זאל גערעכנט ווערן עלות השחר`             | `72 מינוט פאר נץ` | Which opinion `sensor.yidcal_alos` follows — fixed minutes, zmanis minutes, or degrees below the horizon. Affects the Alos sensor only. See **[Alos HaShachar opinions](#alos-hashachar-opinions)**. |
+| `צולייגען עקסטערע עלות סענסארס`                            | *(none)*    | Give any additional Alos opinion its own sensor, e.g. `sensor.yidcal_alos_16_1_degrees`. |
+| `פון וועלכן עלות זאל גערעכנט ווערן טלית ותפילין`           | `פאלג דעם הויפט עלות` | Which Alos the Talis & Tefilin offset counts from. Defaults to following the primary Alos setting; pick a specific opinion to pin it independently. |
 | `צולייגען די לוח PDF סערוויס`                             | `true`      | Create the `yidcal.generate_luach` service, which writes a printable luach **(PDF)** under `/config/www/yidcal-data/`. **On by default** — uncheck it here if you don't need it. See the **[Generate Luach (PDF)](#generate-luach-pdf-beta)** section below. *(beta)* |
 
 > ⚠️ **Important:** If you previously enabled separate holiday binary sensors and later disable them in Options, those entities will **not** auto-delete. Remove them manually via **Settings → Entities**, or delete and re-add the integration with the option turned off.
