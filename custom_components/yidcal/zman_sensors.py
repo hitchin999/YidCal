@@ -166,6 +166,22 @@ def lighting_event_for_day(
 
     return (None, "none")
 
+def round_lighting_for_kind(
+    dt_local: datetime.datetime, kind: str
+) -> datetime.datetime:
+    """Round a candle-lighting time the way YidCal displays it.
+
+    After-tzeis lightings (2nd-night Yom Tov, Motzei Shabbos into Yom
+    Tov) round UP as a chumrah; before-sunset ones use half-up, matching
+    the printed luach. ``lighting_event_for_day`` returns the raw
+    instant, so every display path has to come through here or it will
+    disagree with the Zman Erev sensor by a minute.
+    """
+    if kind in ("between_yt_after_tzeis", "motzaei_shabbos_after_tzeis"):
+        return ceil_minute(dt_local)
+    return half_up(dt_local)
+
+
 def label_for_kind_and_context(d: datetime.date, kind: str, *, diaspora: bool) -> str:
     """
     Human label for dashboards (short, clear).
@@ -247,11 +263,8 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             today + timedelta(days=1), datetime.time(0), tzinfo=self._tz
         )
 
-        def round_for_kind(dt_local: datetime.datetime, kind: str) -> datetime.datetime:
-            """After-tzeis candle lighting rounds up (chumrah); before-sunset uses half-up."""
-            if kind in ("between_yt_after_tzeis", "motzaei_shabbos_after_tzeis"):
-                return ceil_minute(dt_local)
-            return half_up(dt_local)
+        # Module-level since the calendar needs the identical rule.
+        round_for_kind = round_lighting_for_kind
 
         sunset_today = sunset_for_date(geo=self._geo, tz=self._tz, base_date=today)
         candle_today_std = sunset_today - timedelta(minutes=self._candle)
