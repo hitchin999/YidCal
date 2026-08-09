@@ -162,6 +162,28 @@ SEFIRA_SHORT: list[str] = ["ספירת העומר"] + [
 ]
 
 
+def raw_omer_day(for_date: date) -> int:
+    """Omer day (1..49) of the DAYTIME Hebrew date of ``for_date``; 0 if
+    the Omer isn't being counted then.
+
+    Pure — no sunset boundary, no HA. The sensors apply the sunset flip
+    themselves before calling this; the Sefirah calendar wants the plain
+    daytime answer, since its events are whole civil days.
+    """
+    jdn = gdate_to_jdn(for_date)
+    heb = HebrewDate.from_jdn(jdn)
+    month_name = str(heb.month)
+    day = heb.day
+
+    if month_name == "ניסן" and day >= 16:
+        return day - 15
+    if month_name == "אייר":
+        return 15 + day
+    if month_name == "סיון" and day <= 5:
+        return 44 + day
+    return 0
+
+
 class SfirahHelper:
     """
     Compute Omer count and corresponding Hebrew texts based on Hebrew date
@@ -213,18 +235,7 @@ class SfirahHelper:
         return _round_ceil(raw)
 
     def _get_raw_omer_day(self, for_date: date) -> int:
-        jdn = gdate_to_jdn(for_date)
-        heb = HebrewDate.from_jdn(jdn)
-        month_name = str(heb.month)
-        day = heb.day
-
-        if month_name == "ניסן" and day >= 16:
-            return day - 15
-        if month_name == "אייר":
-            return 15 + day
-        if month_name == "סיון" and day <= 5:
-            return 44 + day
-        return 0
+        return raw_omer_day(for_date)
 
     def get_effective_omer_day(self) -> int:
         now = dt_util.now().astimezone(self._tz)
