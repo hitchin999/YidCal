@@ -87,6 +87,9 @@ LABELS = {
     "lbl_mishne_torah_hoshana_rabba": {"yi": "?ליינט מען משנה תורה הושענא רבה ביינאכט", "he": "האם יש קריאת משנה תורה בליל הושענא רבה?", "en": "Is Mishneh Torah read on the night of Hoshana Rabba?"},
     "lbl_day_label_language": {"yi": "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די", "he": "כיצד להציג את שם היום בחיישן התצוגה המלאה (Full Display Sensor)", "en": "Day label language for the Full Display sensor"},
     "lbl_haftorah_minhag": {"yi": "הפטרה סענסאר מנהג", "he": "מנהג ההפטרה", "en": "Haftorah sensor minhag"},
+    "dsc_haftorah_minhag": {"yi": "דאס טוישט נאר דעם סטעיט; ביידע מנהגים ווערן אלעמאל געוויזן ביי די אשכנזי / ספרדי אטריביוטן.", "he": "בוחר רק את המצב (state); שני המנהגים תמיד זמינים בתכונות אשכנזי / ספרדי.", "en": "Only picks the sensor's state — both minhagim are always published as the אשכנזי / ספרדי attributes."},
+    "lbl_molad_language": {"yi": "אין וועלכע שפראך זאל דער מולד סענסאר ווייזן", "he": "באיזו שפה יוצג חיישן המולד", "en": "Language for the Molad sensor"},
+    "dsc_molad_language": {"yi": "דאס טוישט נאר דעם סטעיט; ענגליש און Hebrew זענען אלעמאל דא ביי די English / Hebrew אטריביוטן.", "he": "בוחר רק את המצב (state); אנגלית ועברית תמיד זמינות בתכונות English / Hebrew.", "en": "Only picks the sensor's state — English and Hebrew renderings are always published as the English / Hebrew attributes."},
     "lbl_parsha_metzora_display": {"yi": "פרשת מצורע אדער פרשת טהרה", "he": "כיצד להציג את פרשת מצורע", "en": "How to display parshas Metzora"},
     "lbl_time_format": {"yi": "צייט־פארמאט (נאר פאר Simple Zmanim)", "he": "פורמט שעה (לזמני Simple Zmanim בלבד)", "en": "Time format (For Simple Zmanim only)"},
     "lbl_include_date": {"yi": "Full Display Sensor צולייגען די דעיט - ג׳ תמוז תשפ״ה צום", "he": "להוסיף את התאריך (לדוגמה: ג׳ תמוז תשפ״ה) לחיישן התצוגה המלאה (Full Display Sensor)", "en": "Include Hebrew date on the Full Display sensor"},
@@ -117,6 +120,25 @@ LABELS = {
     "dsc_enable_multiday_candles": {"yi": "ווען דאס איז אנגעצינדן, בלייבט דער זמן ערב סענסאר אויף די ערשטע נאכט, און טוישט זיך הערשט 12 ביינאכט מוצאי.", "he": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי", "en": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night"},
     "dsc_enable_zmanim_lookup": {"yi": "צולייגען א sensor.yidcal_zmanim_lookup מיט א סערוויס yidcal.check_zmanim וואס מען קען רופן מיט א דאטום און עס וועט ווייזן די זמנים פון דעם טאג.", "he": "מוסיף את החיישן sensor.yidcal_zmanim_lookup ואת השירות yidcal.check_zmanim. ניתן להפעיל את השירות עם כל תאריך (עד ±100 שנים) והחיישן יתמלא בזמנים של אותו יום ובתווית יום עברית.", "en": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label."},
     "dsc_enable_luach_pdf": {"yi": "לייגט צו די 'yidcal.generate_luach' סערוויס, וואס מאכט א לוח (PDF) פאר א געוויסע צייט און לייגט עס אריין אלץ א /config/www/yidcal-data/.", "he": "מוסיף את השירות yidcal.generate_luach שיוצר לוח להדפסה (PDF) עבור טווח תאריכים, ושומר אותו תחת /config/www/yidcal-data/.", "en": "Adds the yidcal.generate_luach service, which creates a printable luach (PDF) for a given date range and writes it under /config/www/yidcal-data/."},
+    # ---- Calendars ----------------------------------------------------
+    "lbl_enable_calendars": {"yi": "עקטיוועט די קאלענדערס", "he": "הפעלת לוחות השנה", "en": "Enable calendars"},
+    "dsc_enable_calendars": {"yi": "ווען דאס איז אנגעצינדן ווערט געשאפן א באזונדערע דעווייס — YidCal — Calendars — מיט אלע קאלענדערס וואס איר האט אויסגעקליבן דא אונטן. ווען עס איז אויסגעלאשן ווערט די דעווייס נישט אנגעצינדן.", "he": "כאשר מופעל נוצר מכשיר נפרד — YidCal — Calendars — עם כל הלוחות שבחרת למטה. כאשר כבוי, המכשיר אינו נוצר כלל.", "en": "Creates a separate \"YidCal — Calendars\" device holding every calendar you pick below. When off, no calendar entities and no device are created."},
+    "lbl_calendars": {"yi": "וועלכע קאלענדערס", "he": "אילו לוחות", "en": "Which calendars"},
+    "dsc_calendars": {"yi": "דעיט ווייזט די Hebrew דעיט מיטן יום טוב ווען עס איז דא. יום טוב מאכט פון יעדן יום־טוב אטריביוט אן עווענט מיט די פונקטליכע צייט — פון 9:35 ביז ... — נישט קיין גאנצן־טאג עווענט.", "he": "\"תאריך\" מציג את התאריך העברי ואת החג כשיש. \"חגים\" הופך כל תכונת חג לאירוע בזמן המדויק שבו היא פעילה — מ-9:35 עד ... — ולא אירוע יום־שלם.", "en": "Date shows the Hebrew date plus the holiday when there is one. Holiday turns every holiday attribute into an event spanning exactly the time it is active — from 9:35 until … — not an all-day event."},
+    "lbl_calendar_date_extras": {"yi": "צולייגען צו די דעיט קאלענדאר", "he": "תוספות ללוח התאריך", "en": "Add to the Date calendar"},
+    "dsc_calendar_date_extras": {"yi": "ביידע צוזאמען גיט: י\"ג אב תשפ\"ו - ג' פרשת צו", "he": "שניהם יחד נותנים: י\"ג אב תשפ\"ו - ג' פרשת צו", "en": "Both together give \"י\"ג אב תשפ\"ו - ג' פרשת צו\"."},
+    "lbl_calendar_zmanim": {"yi": "וועלכע זמנים זאלן באקומען א באזונדערן קאלענדאר", "he": "אילו זמנים יקבלו לוח נפרד", "en": "Which zmanim should get their own calendar"},
+    "dsc_calendar_zmanim": {"yi": "יעדער זמן וואס איר קלויבט אויס באקומט זיין אייגענעם קאלענדאר מיט א טעגליכן עווענט אויף דער צייט.", "he": "כל זמן שתבחר יקבל לוח משלו עם אירוע יומי בשעה של אותו זמן.", "en": "Each zman you pick gets its own calendar entity with one timed event per day."},
+    "menu_calendars": {"yi": "קאלענדערס", "he": "לוחות שנה", "en": "Calendars"},
+
+    # ---- Alos HaShachar -----------------------------------------------
+    "menu_zmanim": {"yi": "עלות השחר און טלית ותפילין", "he": "עלות השחר וטלית ותפילין", "en": "Alos HaShachar & Talis/Tefilin"},
+    "lbl_alos_method": {"yi": "לויט וועלכע שיטה זאל גערעכנט ווערן עלות השחר", "he": "לפי איזו שיטה לחשב את עלות השחר", "en": "Which opinion Alos HaShachar follows"},
+    "dsc_alos_method": {"yi": "דאס טוישט נאר דעם עלות סענסאר און — אויב עס פאלגט — טלית ותפילין. אלע אנדערע מג\"א זמנים (סוף זמן ק\"ש, תפילה, מנחה גדולה/קטנה, פלג) בלייבן געראכנט פון נץ מינוס 72, אזוי אז די דראפדאון קען נישט אונטערשטעלן דיין לוח. אלע שיטות ווערן סיי ווי געוויזן אלץ אטריביוטן ביים עלות סענסאר.", "he": "משנה רק את חיישן העלות ואת טלית ותפילין (אם הוא עוקב אחריו). כל שאר זמני מג\"א (סוף זמן ק\"ש, תפילה, מנחה גדולה/קטנה, פלג) ממשיכים להיחשב מנץ פחות 72, כך שהבחירה כאן אינה משנה את הלוח. כל השיטות מוצגות בכל מקרה כתכונות בחיישן העלות.", "en": "Changes the Alos sensor only — and Talis & Tefilin, if it follows. Every other MGA zman (Sof Zman Krias Shma, Tefilah, Mincha Gedola/Ketana, Plag) stays anchored to sunrise minus 72, so this dropdown cannot shift your luach. All opinions are published as attributes on the Alos sensor regardless."},
+    "lbl_alos_extra_sensors": {"yi": "צולייגען עקסטערע עלות סענסארס", "he": "הוספת חיישני עלות נוספים", "en": "Extra Alos sensors"},
+    "dsc_alos_extra_sensors": {"yi": "יעדע שיטה וואס איר קלויבט אויס באקומט איר א אייגענעם סענסאר, למשל sensor.yidcal_alos_16_1_degrees.", "he": "כל שיטה שתבחר תקבל חיישן משלה, לדוגמה sensor.yidcal_alos_16_1_degrees.", "en": "Each opinion you pick gets its own sensor, e.g. sensor.yidcal_alos_16_1_degrees."},
+    "lbl_tallis_tefilin_base": {"yi": "פון וועלכן עלות זאל גערעכנט ווערן טלית ותפילין", "he": "מאיזה עלות לחשב את זמן טלית ותפילין", "en": "Which Alos the Talis & Tefilin offset counts from"},
+    "sel_alos_follow_primary": {"yi": "פאלג דעם הויפט עלות", "he": "לפי עלות הראשי", "en": "Follow the main Alos setting"},
     "menu_general": {"yi": "אלגעמיינע סעטינגס", "he": "הגדרות כלליות", "en": "General settings"},
     "menu_yurtzeit": {"yi": "יארצייטן סענסאָרס", "he": "חיישני יארצייט", "en": "Yahrtzeit sensors"},
     "menu_early": {"yi": "פריער שבת / יום טוב", "he": "שבת / יום טוב מוקדמים", "en": "Early Shabbos / Yom Tov"},
@@ -132,6 +154,8 @@ LABELS = {
 # ---------------------------------------------------------------------------
 TITLES = {
     "general": LABELS["menu_general"],
+    "zmanim": LABELS["menu_zmanim"],
+    "calendars": LABELS["menu_calendars"],
     "yurtzeit": LABELS["menu_yurtzeit"],
     "early_shabbos_yt": LABELS["menu_early"],
     "early_shabbos": LABELS["menu_early_shabbos"],
@@ -141,7 +165,7 @@ TITLES = {
 #: Menu step headings (menus have no title -- see module docstring).
 MENU_DESC = {
     "language": {
-        "yi": "**קלייבט אויס א שפראך פאר די סעטינגס**",
+        "yi": "**קלויבט אויס א שפראך פאר די סעטינגס**",
         "he": "**בחר שפה עבור מסך ההגדרות**",
         "en": "**Choose the language for these settings**",
     },
@@ -180,6 +204,13 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
     "day_label_language": [
         ("yiddish", {"yi": "זונטאג, מאנטאג", "he": "זונטאג, מאנטאג", "en": "Yiddish — זונטאג, מאנטאג"}),
         ("hebrew",  {"yi": "יום א', יום ב", "he": "יום א', יום ב", "en": "Hebrew — יום א', יום ב"}),
+        # Backed by sensor.yidcal_day_label_hebrew_full (full weekday).
+        ("hebrew_full", {"yi": "יום ראשון, יום שני", "he": "יום ראשון, יום שני", "en": "Hebrew full — יום ראשון, יום שני"}),
+    ],
+    "molad_language": [
+        ("yiddish", {"yi": "אידיש", "he": "אידיש", "en": "Yiddish"}),
+        ("hebrew",  {"yi": "עברית", "he": "עברית", "en": "Hebrew"}),
+        ("english", {"yi": "English", "he": "English", "en": "English"}),
     ],
     "haftorah_minhag": [
         ("ashkenazi", {"yi": "אשכנזי", "he": "אשכנזי", "en": "Ashkenazi"}),
@@ -240,12 +271,28 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
 # ---------------------------------------------------------------------------
 _GENERAL_FIELDS = [
     "is_in_israel", "strip_nikud", "candlelighting_offset", "havdalah_offset",
-    "tallis_tefilin_offset", "korbanos_yud_gimmel_midos", "mishne_torah_hoshana_rabba",
-    "day_label_language", "haftorah_minhag", "parsha_metzora_display", "time_format",
+    "korbanos_yud_gimmel_midos", "mishne_torah_hoshana_rabba",
+    "day_label_language", "haftorah_minhag", "molad_language",
+    "parsha_metzora_display", "time_format",
     "include_date", "include_attribute_sensors", "include_sefirah_short_in_full",
     "enable_multiday_candles", "enable_daf_hayomi", "slichos_label_rollover",
     "kiddush_levana_start", "upcoming_lookahead_days", "enable_zmanim_lookup",
 ]
+_GENERAL_DESCS = [
+    "haftorah_minhag", "molad_language",
+    "enable_multiday_candles", "enable_zmanim_lookup",
+]
+_CALENDAR_FIELDS = [
+    "enable_calendars", "calendars", "calendar_date_extras", "calendar_zmanim",
+]
+_CALENDAR_DESCS = [
+    "enable_calendars", "calendars", "calendar_date_extras", "calendar_zmanim",
+]
+_ZMANIM_FIELDS = [
+    "alos_method", "alos_extra_sensors",
+    "tallis_tefilin_offset", "tallis_tefilin_base",
+]
+_ZMANIM_DESCS = ["alos_method", "alos_extra_sensors"]
 _YURTZEIT_FIELDS = ["enable_yurtzeit_daily", "enable_weekly_yurtzeit", "yurtzeit_databases"]
 
 #: Every error token, attached to every form step so an error re-render can
@@ -257,8 +304,11 @@ STEPS: dict[str, dict] = {
     "config.user":     {"kind": "menu", "menu": "language"},
     "config.general":  {"kind": "form", "title": "general",
                         "fields": _GENERAL_FIELDS + ["enable_luach_pdf"],
-                        "descs": ["enable_multiday_candles", "enable_zmanim_lookup",
-                                  "enable_luach_pdf"]},
+                        "descs": _GENERAL_DESCS + ["enable_luach_pdf"]},
+    "config.zmanim":   {"kind": "form", "title": "zmanim",
+                        "fields": _ZMANIM_FIELDS, "descs": _ZMANIM_DESCS},
+    "config.calendars": {"kind": "form", "title": "calendars",
+                         "fields": _CALENDAR_FIELDS, "descs": _CALENDAR_DESCS},
     "config.yurtzeit": {"kind": "form", "title": "yurtzeit",
                         "fields": _YURTZEIT_FIELDS, "descs": []},
 
@@ -267,8 +317,11 @@ STEPS: dict[str, dict] = {
     "options.language": {"kind": "menu", "menu": "language"},
     "options.general":  {"kind": "form", "title": "general",
                          "fields": _GENERAL_FIELDS + ["enable_luach_pdf"],
-                         "descs": ["enable_multiday_candles", "enable_zmanim_lookup",
-                                   "enable_luach_pdf"]},
+                         "descs": _GENERAL_DESCS + ["enable_luach_pdf"]},
+    "options.zmanim":   {"kind": "form", "title": "zmanim",
+                         "fields": _ZMANIM_FIELDS, "descs": _ZMANIM_DESCS},
+    "options.calendars": {"kind": "form", "title": "calendars",
+                          "fields": _CALENDAR_FIELDS, "descs": _CALENDAR_DESCS},
     "options.yurtzeit": {"kind": "form", "title": "yurtzeit",
                          "fields": _YURTZEIT_FIELDS, "descs": []},
     "options.early_shabbos_yt": {"kind": "menu", "menu": "early_shabbos_yt"},
@@ -304,6 +357,58 @@ def sel(key: str, lang: str) -> list[dict[str, str]]:
 
 def unit_days(lang: str) -> str:
     return _pick(UNIT_DAYS, lang)
+
+
+def _pair_label(table: dict[str, tuple[str, str]], key: str, lang: str) -> str:
+    """Label for a (hebrew, english) pair table keyed by option value.
+
+    These lists live in const.py so the config flow and the platforms can
+    share one definition, which is why they are here rather than in
+    SELECTORS. yi/he take the Hebrew label as-is; English shows its own
+    wording with the Hebrew alongside it.
+    """
+    heb, eng = table.get(key, (key, key))
+    if lang != "en":
+        return heb
+    return f"{eng} — {heb}" if heb and heb != eng else eng
+
+
+def zman_label(key: str, lang: str) -> str:
+    """Label for one entry of ``const.ZMAN_CALENDAR_CHOICES``."""
+    from .const import ZMAN_CALENDAR_BY_KEY
+
+    return _pair_label(ZMAN_CALENDAR_BY_KEY, key, lang)
+
+
+def calendar_label(key: str, lang: str) -> str:
+    """Label for one entry of ``const.CALENDAR_CHOICES``.
+
+    Unlike a zman, a calendar's Hebrew label is a translation rather than
+    its canonical name, so the English one stands alone — appending the
+    Hebrew would just make an already-descriptive row twice as long.
+    """
+    from .const import CALENDAR_BY_KEY
+
+    heb, eng = CALENDAR_BY_KEY.get(key, (key, key))
+    return eng if lang == "en" else heb
+
+
+def calendar_extra_label(key: str, lang: str) -> str:
+    """Label for one entry of ``const.CALENDAR_DATE_EXTRA_CHOICES``."""
+    from .const import CALENDAR_DATE_EXTRA_BY_KEY
+
+    heb, eng = CALENDAR_DATE_EXTRA_BY_KEY.get(key, (key, key))
+    return eng if lang == "en" else heb
+
+
+def alos_label(option, lang: str) -> str:
+    """Label for one ``alos_options.AlosOption``."""
+    return option.english if lang == "en" else option.hebrew
+
+
+def alos_follow_primary(lang: str) -> str:
+    """Label for the Talis-base 'follow the main Alos' choice."""
+    return t("sel_alos_follow_primary", lang)
 
 
 def menu_language(lang: str) -> str:
