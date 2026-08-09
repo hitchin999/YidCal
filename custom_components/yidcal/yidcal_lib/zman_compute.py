@@ -45,6 +45,7 @@ from zoneinfo import ZoneInfo
 from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
+from .alos_options import DEFAULT_ALOS_OPTION, get_option, resolve_tallis_base
 from .grossman_calculator import GrossmanCalculator
 
 
@@ -53,6 +54,14 @@ from .grossman_calculator import GrossmanCalculator
 DEFAULT_TALLIS_TEFILIN_OFFSET = 22
 
 # MGA Alos offset in minutes before sunrise (0°50′ ≈ 72 min).
+#
+# THIS IS THE MGA *SHA'AH ZMANIS* ANCHOR, and it is deliberately NOT the
+# user's Alos opinion. The MGA day here spans (sunrise − 72) → (sunset +
+# 72), and every MGA zman — Krias Shma, Tefilah, Mincha Gedola/Ketana,
+# Plag — is a twelfth of it. Letting a displayed-Alos preference move
+# that anchor would silently shift six other zmanim, the Longer Shachris
+# windows and the printed luach for anyone who ever opens the new
+# dropdown. The Alos *shown* is configurable; the MGA hour is not.
 _ALOS_OFFSET_MIN = 72
 
 
@@ -166,11 +175,20 @@ def compute_zmanim_for_date(
     base_date: date_cls,
     tallis_offset: int = DEFAULT_TALLIS_TEFILIN_OFFSET,
     havdalah_offset: int = 72,
+    alos_option: str = DEFAULT_ALOS_OPTION,
+    tallis_base: str | None = None,
 ) -> list[ZmanEntry]:
     """Return all daily zmanim for `base_date` in chronological order.
 
     `havdalah_offset` is the user's Tzies offset in minutes (sunset + N).
     `tallis_offset` is minutes after Alos for Talis & Tefilin.
+
+    `alos_option` picks which Alos opinion the עלות השחר row SHOWS (see
+    ``alos_options``); `tallis_base` picks which one the Talis & Tefilin
+    offset counts from, defaulting to whatever `alos_option` is. Neither
+    touches the MGA sha'ah zmanis — that stays anchored to sunrise−72 /
+    sunset+72, so no other zman on this list moves when the Alos opinion
+    changes. See the note on ``_ALOS_OFFSET_MIN``.
 
     Chatzos HaLaila uses the tzeis-R"T night window (sunset+72 → next
     day's dawn), per existing zman_chatzos_haleila.py.
@@ -187,8 +205,17 @@ def compute_zmanim_for_date(
     # GRA "day": sunrise → sunset
     gra_hour = (sunset - sunrise) / 12
 
-    # Talis & Tefilin = Alos + user offset
-    talis = dawn + timedelta(minutes=tallis_offset)
+    # The Alos actually displayed, and the one Talis & Tefilin hangs off.
+    # Both collapse to `dawn` on the default option, so an install that
+    # never opens the new dropdown produces byte-identical output.
+    alos = alos_for_date(geo=geo, tz=tz, base_date=base_date, option=alos_option)
+    talis_anchor = alos_for_date(
+        geo=geo, tz=tz, base_date=base_date,
+        option=resolve_tallis_base(tallis_base, alos_option),
+    )
+
+    # Talis & Tefilin = its Alos + user offset
+    talis = talis_anchor + timedelta(minutes=tallis_offset)
 
     # Chatzos HaYom: Grossmann's true solar transit (mean noon + EoT),
     # NOT the sunrise/sunset midpoint — matches the printed luach. (Cached.)
@@ -209,7 +236,7 @@ def compute_zmanim_for_date(
     # havdalah=50 → Tzies before). Sorting by dt makes the display stable
     # regardless of config.
     items: list[ZmanEntry] = [
-        ZmanEntry("עלות השחר",              _half_up(dawn),                              dawn),
+        ZmanEntry("עלות השחר",              _half_up(alos),                              alos),
         ZmanEntry("זמן טלית ותפילין",        _half_up(talis),                             talis),
         ZmanEntry("הנץ החמה",               _half_up(sunrise),                           sunrise),
         ZmanEntry("סוף זמן קריאת שמע מג״א",  _floor(dawn + mga_hour * 3),                 dawn + mga_hour * 3),
@@ -690,6 +717,110 @@ def dawn_for_date(
     return sunrise_for_date(
         geo=geo, tz=tz, base_date=base_date
     ) - timedelta(minutes=offset_min)
+
+
+@lru_cache(maxsize=_SUN_CACHE_SIZE)
+def _alos_degrees_utc(
+    lat: float, lon: float, elev: float, tzname: str, ordinal: int, degrees: float,
+) -> datetime | None:
+    """Sunrise depressed ``degrees`` below the horizon, as a UTC instant.
+
+    ``None`` when the sun never reaches that depression on that date —
+    a real outcome at high latitude in summer (26° never happens above
+    roughly 50°N in June), not an error. Callers fall back to the
+    72-minute figure.
+
+    Elevation adjustment is deliberately off: a degree-based zman is
+    defined by the sun's position, and adding a horizon dip for altitude
+    on top of it would double-count. This matches KosherJava.
+    """
+    geo = GeoLocation(
+        name="YidCal", latitude=lat, longitude=lon,
+        time_zone=tzname, elevation=elev,
+    )
+    d = date_cls.fromordinal(ordinal)
+    cal = ZmanimCalendar(geo_location=geo, date=d)
+    zenith = 90.0 + degrees
+
+    # python-zmanim's own helper, which handles the date-wrap bookkeeping.
+    try:
+        moment = cal.sunrise_offset_by_degrees(zenith)
+    except Exception:  # noqa: BLE001 - polar dates, or an older API
+        moment = None
+
+    if moment is None:
+        # Fall back to the calculator directly — the same UTC-hours →
+        # datetime pattern _grossman_transit uses for chatzos. Reaching
+        # here means either the sun genuinely never gets that low, or
+        # python-zmanim renamed the helper above; the calculator's
+        # utc_sunrise is the stable half of the interface.
+        acalc = getattr(cal, "astronomical_calculator", None)
+        if acalc is None:
+            return None
+        try:
+            hours = acalc.utc_sunrise(d, geo, zenith, False)
+        except Exception:  # noqa: BLE001
+            return None
+        if hours is None or hours != hours:  # None or NaN
+            return None
+        moment = (
+            datetime.combine(d, time_cls(0), tzinfo=timezone.utc)
+            + timedelta(hours=hours)
+        )
+
+    return moment.astimezone(timezone.utc)
+
+
+def alos_for_date(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    option: str = DEFAULT_ALOS_OPTION,
+) -> datetime:
+    """RAW (unrounded) Alos HaShachar for one opinion, aware in ``tz``.
+
+    Never raises and never returns None: an opinion that cannot be
+    computed for this date and latitude — which only happens to the
+    degree-based ones, near the poles in summer — falls back to the
+    72-minute figure rather than leaving the sensor blank.
+    """
+    opt = get_option(option)
+    sunrise, sunset = sun_events_for_date(geo=geo, tz=tz, base_date=base_date)
+
+    if opt.kind == "fixed":
+        return sunrise - timedelta(minutes=opt.value)
+
+    if opt.kind == "zmanis":
+        # One zmanis minute = 1/60 of a GRA sha'ah zmanis.
+        shaah = (sunset - sunrise) / 12
+        return sunrise - (shaah / 60) * opt.value
+
+    lat, lon, elev = _geo_cache_key(geo)
+    tzname = getattr(tz, "key", None) or str(tz)
+    utc = _alos_degrees_utc(
+        lat, lon, elev, tzname, base_date.toordinal(), float(opt.value)
+    )
+    if utc is None:
+        return sunrise - timedelta(minutes=_ALOS_OFFSET_MIN)
+    return utc.astimezone(tz)
+
+
+def all_alos_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> dict[str, datetime]:
+    """Every Alos opinion for ``base_date``, keyed by its option key.
+
+    What ``sensor.yidcal_alos`` publishes as its per-opinion timestamp
+    attributes. All of them share one cached sun-event lookup, so the
+    whole table costs about as much as computing any single one.
+    """
+    from .alos_options import ALOS_OPTIONS
+
+    return {
+        opt.key: alos_for_date(geo=geo, tz=tz, base_date=base_date, option=opt.key)
+        for opt in ALOS_OPTIONS
+    }
 
 
 def nightfall_for_date(
