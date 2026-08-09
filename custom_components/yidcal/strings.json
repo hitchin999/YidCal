@@ -16,11 +16,11 @@
           "strip_nikud": "{lbl_strip_nikud}",
           "candlelighting_offset": "{lbl_candlelighting_offset}",
           "havdalah_offset": "{lbl_havdalah_offset}",
-          "tallis_tefilin_offset": "{lbl_tallis_tefilin_offset}",
           "korbanos_yud_gimmel_midos": "{lbl_korbanos_yud_gimmel_midos}",
           "mishne_torah_hoshana_rabba": "{lbl_mishne_torah_hoshana_rabba}",
           "day_label_language": "{lbl_day_label_language}",
           "haftorah_minhag": "{lbl_haftorah_minhag}",
+          "molad_language": "{lbl_molad_language}",
           "parsha_metzora_display": "{lbl_parsha_metzora_display}",
           "time_format": "{lbl_time_format}",
           "include_date": "{lbl_include_date}",
@@ -35,9 +35,41 @@
           "enable_luach_pdf": "{lbl_enable_luach_pdf}"
         },
         "data_description": {
+          "haftorah_minhag": "{dsc_haftorah_minhag}",
+          "molad_language": "{dsc_molad_language}",
           "enable_multiday_candles": "{dsc_enable_multiday_candles}",
           "enable_zmanim_lookup": "{dsc_enable_zmanim_lookup}",
           "enable_luach_pdf": "{dsc_enable_luach_pdf}"
+        }
+      },
+      "zmanim": {
+        "title": "{title}",
+        "description": "{desc}",
+        "data": {
+          "alos_method": "{lbl_alos_method}",
+          "alos_extra_sensors": "{lbl_alos_extra_sensors}",
+          "tallis_tefilin_offset": "{lbl_tallis_tefilin_offset}",
+          "tallis_tefilin_base": "{lbl_tallis_tefilin_base}"
+        },
+        "data_description": {
+          "alos_method": "{dsc_alos_method}",
+          "alos_extra_sensors": "{dsc_alos_extra_sensors}"
+        }
+      },
+      "calendars": {
+        "title": "{title}",
+        "description": "{desc}",
+        "data": {
+          "enable_calendars": "{lbl_enable_calendars}",
+          "calendars": "{lbl_calendars}",
+          "calendar_date_extras": "{lbl_calendar_date_extras}",
+          "calendar_zmanim": "{lbl_calendar_zmanim}"
+        },
+        "data_description": {
+          "enable_calendars": "{dsc_enable_calendars}",
+          "calendars": "{dsc_calendars}",
+          "calendar_date_extras": "{dsc_calendar_date_extras}",
+          "calendar_zmanim": "{dsc_calendar_zmanim}"
         }
       },
       "yurtzeit": {
@@ -73,11 +105,11 @@
           "strip_nikud": "{lbl_strip_nikud}",
           "candlelighting_offset": "{lbl_candlelighting_offset}",
           "havdalah_offset": "{lbl_havdalah_offset}",
-          "tallis_tefilin_offset": "{lbl_tallis_tefilin_offset}",
           "korbanos_yud_gimmel_midos": "{lbl_korbanos_yud_gimmel_midos}",
           "mishne_torah_hoshana_rabba": "{lbl_mishne_torah_hoshana_rabba}",
           "day_label_language": "{lbl_day_label_language}",
           "haftorah_minhag": "{lbl_haftorah_minhag}",
+          "molad_language": "{lbl_molad_language}",
           "parsha_metzora_display": "{lbl_parsha_metzora_display}",
           "time_format": "{lbl_time_format}",
           "include_date": "{lbl_include_date}",
@@ -92,9 +124,41 @@
           "enable_luach_pdf": "{lbl_enable_luach_pdf}"
         },
         "data_description": {
+          "haftorah_minhag": "{dsc_haftorah_minhag}",
+          "molad_language": "{dsc_molad_language}",
           "enable_multiday_candles": "{dsc_enable_multiday_candles}",
           "enable_zmanim_lookup": "{dsc_enable_zmanim_lookup}",
           "enable_luach_pdf": "{dsc_enable_luach_pdf}"
+        }
+      },
+      "zmanim": {
+        "title": "{title}",
+        "description": "{desc}",
+        "data": {
+          "alos_method": "{lbl_alos_method}",
+          "alos_extra_sensors": "{lbl_alos_extra_sensors}",
+          "tallis_tefilin_offset": "{lbl_tallis_tefilin_offset}",
+          "tallis_tefilin_base": "{lbl_tallis_tefilin_base}"
+        },
+        "data_description": {
+          "alos_method": "{dsc_alos_method}",
+          "alos_extra_sensors": "{dsc_alos_extra_sensors}"
+        }
+      },
+      "calendars": {
+        "title": "{title}",
+        "description": "{desc}",
+        "data": {
+          "enable_calendars": "{lbl_enable_calendars}",
+          "calendars": "{lbl_calendars}",
+          "calendar_date_extras": "{lbl_calendar_date_extras}",
+          "calendar_zmanim": "{lbl_calendar_zmanim}"
+        },
+        "data_description": {
+          "enable_calendars": "{dsc_enable_calendars}",
+          "calendars": "{dsc_calendars}",
+          "calendar_date_extras": "{dsc_calendar_date_extras}",
+          "calendar_zmanim": "{dsc_calendar_zmanim}"
         }
       },
       "yurtzeit": {
