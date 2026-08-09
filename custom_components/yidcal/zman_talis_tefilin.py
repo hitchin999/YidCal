@@ -9,6 +9,13 @@ import homeassistant.util.dt as dt_util
 from .const import DOMAIN
 from .device import YidCalZmanDevice
 from .zmanim_coordinator import get_zmanim_coordinator
+from .yidcal_lib.alos_options import (
+    DEFAULT_ALOS_OPTION,
+    FOLLOW_PRIMARY,
+    get_option,
+    resolve_tallis_base,
+)
+from .yidcal_lib.zman_compute import alos_for_date
 from . import DEFAULT_TALLIS_TEFILIN_OFFSET
 
 # Two engine labels: the Alos this is measured from, and the
@@ -57,6 +64,18 @@ class ZmanTalisTefilinSensor(YidCalZmanDevice, SensorEntity):
         self._offset = cfg.get(
             "tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET
         )
+        # Which Alos opinion that offset counts FROM. The coordinator
+        # applies the same resolution when it builds the target, so the
+        # attribute below always describes the value in the state.
+        self._primary_key = get_option(
+            cfg.get("alos_method", DEFAULT_ALOS_OPTION)
+        ).key
+        self._base = get_option(
+            resolve_tallis_base(
+                cfg.get("tallis_tefilin_base", FOLLOW_PRIMARY),
+                self._primary_key,
+            )
+        )
 
     @property
     def available(self) -> bool:
@@ -100,11 +119,32 @@ class ZmanTalisTefilinSensor(YidCalZmanDevice, SensorEntity):
         self._attr_native_value = e_today.dt_local.astimezone(timezone.utc)
 
         # Two raw values: unrounded Alos, unrounded Talis target.
-        alos_iso_today = (
-            a_today.dt_raw_local.isoformat()
-            if (a_today is not None and a_today.dt_raw_local is not None)
-            else (a_today.dt_local.isoformat() if a_today is not None else "")
-        )
+        #
+        # The Alos reported here is the one the offset is measured FROM,
+        # which is only the coordinator's עלות השחר row when the Talis
+        # base follows the primary opinion. When the user pinned it to a
+        # different opinion, that row is the wrong Alos — and
+        # Alos_With_Seconds + Offset_Minutes would not add up to
+        # Tallis_With_Seconds. Recomputing costs nothing (the sun events
+        # behind it are already cached by the coordinator's own pass).
+        base_alos = None
+        if self._base.key != self._primary_key:
+            try:
+                base_alos = alos_for_date(
+                    geo=win.geo, tz=win.tz, base_date=today,
+                    option=self._base.key,
+                )
+            except Exception:  # noqa: BLE001 - fall back to the row below
+                base_alos = None
+
+        if base_alos is not None:
+            alos_iso_today = base_alos.isoformat()
+        else:
+            alos_iso_today = (
+                a_today.dt_raw_local.isoformat()
+                if (a_today is not None and a_today.dt_raw_local is not None)
+                else (a_today.dt_local.isoformat() if a_today is not None else "")
+            )
         target_iso_today = (
             e_today.dt_raw_local.isoformat()
             if e_today.dt_raw_local is not None
@@ -129,4 +169,7 @@ class ZmanTalisTefilinSensor(YidCalZmanDevice, SensorEntity):
             "Offset_Minutes": self._offset,
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
+            # Which Alos the Offset_Minutes above is counted from.
+            "Offset_From": self._base.english,
+            "Offset_From_Key": self._base.key,
         }
