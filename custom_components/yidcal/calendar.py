@@ -140,6 +140,27 @@ def _timed(
     return CalendarEvent(start=start, end=end, summary=summary, description=description)
 
 
+def _instant(
+    moment: dt.datetime,
+    summary: str,
+    description: str | None = None,
+) -> CalendarEvent:
+    """A zero-length event at ``moment``.
+
+    A zman is an instant, not a span, and every other Jewish calendar
+    shows it as one (7:45 PM - 7:45 PM). HA accepts it: its
+    MIN_EVENT_DURATION is 0 and the guard is ``duration < minimum``, so
+    start == end validates. The all-day fixup that widens start == end
+    to a full day only applies to ``date`` values, not ``datetime``.
+
+    Kept separate from ``_timed``, which stays strict — for the span
+    calendars a zero or backwards window really is a bug.
+    """
+    return CalendarEvent(
+        start=moment, end=moment, summary=summary, description=description
+    )
+
+
 def _merge_spans(spans: list[list[dt.datetime]]) -> list[tuple[dt.datetime, dt.datetime]]:
     """Coalesce overlapping or touching [start, end] pairs."""
     if not spans:
@@ -896,6 +917,13 @@ class LongerShabbosShachrisCalendar(YidCalCalendar):
 
 # ────────────────────────────── Zman calendars ──────────────────────────
 
+#: Event title for a candle lighting. Deliberately NOT the label used to
+#: look the time up — ``compute_erev_motzi`` and ``compute_zmanim_for_date``
+#: both key on "הדלקת נרות" and the printed luach uses that wording, so the
+#: display title is kept separate from the lookup key.
+CANDLE_LIGHTING_SUMMARY = "הדלקת הנרות"
+
+
 class ZmanCalendar(YidCalCalendar):
     """One zman, one short event per day at exactly that time.
 
@@ -907,9 +935,6 @@ class ZmanCalendar(YidCalCalendar):
     on the day the time actually falls on, which is also what keeps a
     three-day Yom Tov from producing three identical candle-lightings.
     """
-
-    #: A zman is an instant; HA needs an end after the start.
-    _DURATION = dt.timedelta(minutes=1)
 
     # Daily zmanim land every day. Candle lighting / havdalah do not, but
     # never go more than a week without one either.
@@ -927,6 +952,8 @@ class ZmanCalendar(YidCalCalendar):
         self._tallis = int(cfg.get("tallis_tefilin_offset", 22))
 
     async def _async_build(self, start, end):
+        if self._key == "candle_lighting":
+            return await self._build_candle_lighting(start, end)
         if self._key in ZMAN_CALENDAR_EREV_MOTZI_KEYS:
             return await self._build_erev_motzi(start, end)
         return await self._build_daily(start, end)
@@ -956,11 +983,74 @@ class ZmanCalendar(YidCalCalendar):
             )
             if moment is None or not (start <= moment < end):
                 continue
-            event = _timed(
-                moment, moment + self._DURATION, self._hebrew, self._english
+            events.append(_instant(moment, self._hebrew, self._english))
+        return events
+
+    async def _build_candle_lighting(self, start, end):
+        """Every candle lighting, not just the one that opens a block.
+
+        ``compute_erev_motzi`` answers "when does this no-melucha block
+        get lit into", which is the right question for the Erev sensor
+        but the wrong one here: it deliberately drops the 2nd-night Yom
+        Tov and Motzei-Shabbos-into-Yom-Tov lightings, because those are
+        mid-block. On a calendar you want all of them — a 2-day Yom Tov
+        has two lightings and the second one is the one people look up.
+
+        ``lighting_event_for_day`` is the per-day primitive underneath
+        that helper and already distinguishes all four cases, so this
+        just asks it once per civil day.
+        """
+        from .zman_sensors import (
+            label_for_kind_and_context,
+            lighting_event_for_day,
+            round_lighting_for_kind,
+        )
+
+        events: list[CalendarEvent] = []
+        for index, day in enumerate(_days(start - dt.timedelta(days=1), end)):
+            if index and index % _YIELD_EVERY == 0:
+                await asyncio.sleep(0)
+            try:
+                moment, kind = lighting_event_for_day(
+                    day,
+                    diaspora=self._diaspora,
+                    tz=self._tz,
+                    geo=self._geo,
+                    candle_offset=self._candle,
+                    havdalah_offset=self._havdalah,
+                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "YidCal zman calendar %s: %s failed", self._key, day, exc_info=True
+                )
+                continue
+
+            if moment is None or kind == "none":
+                continue
+            # The primitive is raw; round it exactly as the Zman Erev
+            # sensor does, or the calendar shows 6:59 where the sensor
+            # and the luach both say 7:00.
+            moment = round_lighting_for_kind(moment, kind)
+            # An after-tzeis lighting can land past midnight at extreme
+            # latitude; keep it on the day it actually falls on so it
+            # cannot be emitted twice.
+            if moment.date() != day:
+                continue
+            if not (start <= moment < end):
+                continue
+
+            # "Yom Tov - Night 2" / "Motzi Shabbos -> Yom Tov" etc., so the
+            # event says which lighting it is rather than just "Candle
+            # Lighting" three nights running.
+            context = label_for_kind_and_context(
+                day, kind, diaspora=self._diaspora
             )
-            if event:
-                events.append(event)
+            description = (
+                f"{self._english} - {context}"
+                if context and context != "\u2014"
+                else self._english
+            )
+            events.append(_instant(moment, CANDLE_LIGHTING_SUMMARY, description))
         return events
 
     async def _build_erev_motzi(self, start, end):
@@ -987,7 +1077,7 @@ class ZmanCalendar(YidCalCalendar):
                 continue
 
             if wanted_candle:
-                picked = [("הדלקת נרות", found.get("הדלקת נרות"))]
+                picked = [(CANDLE_LIGHTING_SUMMARY, found.get("הדלקת נרות"))]
             else:
                 picked = [
                     (label, found.get(label))
@@ -1003,11 +1093,7 @@ class ZmanCalendar(YidCalCalendar):
                     continue
                 if not (start <= moment < end):
                     continue
-                event = _timed(
-                    moment, moment + self._DURATION, label, self._english
-                )
-                if event:
-                    events.append(event)
+                events.append(_instant(moment, label, self._english))
         return events
 
 
