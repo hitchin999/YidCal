@@ -27,7 +27,7 @@ ZMAN_CALENDAR_CHOICES: list[tuple[str, str, str]] = [
     ("maariv_60",       "זמן מעריב 60",            "Zman Maariv 60"),
     ("maariv_rt",       "זמן מעריב ר״ת",           "Zman Maariv R\"T"),
     ("chatzos_haleila", "חצות הלילה",              "Chatzos HaLaila"),
-    ("candle_lighting", "הדלקת נרות",              "Candle Lighting"),
+    ("candle_lighting", "הדלקת הנרות",             "Candle Lighting"),
     ("havdalah",        "מוצאי שבת/יום טוב",        "Havdalah (Motzi)"),
 ]
 
