@@ -200,6 +200,24 @@ class YidCalSpecialDevice(YidCalDevice):
     )
 
 
+class YidCalCalendarDevice(YidCalDevice):
+    """Every calendar entity lives under its own device.
+
+    Kept separate from the sensor devices so a user who turns the
+    calendars on gets one tidy device holding all of them, and turning
+    them back off leaves a single device to delete rather than entries
+    scattered across five others.
+    """
+
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, "yidcal_calendars")},
+        name="YidCal — Calendars",
+        manufacturer="Yoel Goldstein/Vaayer LLC",
+        model="Calendars",
+        entry_type="service",
+    )
+
+
 class YidCalEarlyDevice(YidCalDevice):
     _attr_device_info = DeviceInfo(
         identifiers={(DOMAIN, "yidcal_early_shabbos_yt")},
