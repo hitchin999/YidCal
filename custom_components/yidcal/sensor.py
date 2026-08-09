@@ -44,6 +44,7 @@ import pyluach.dates as pdates
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .yidcal_lib.helper import YidCalHelper, MoladDetails
+from .yidcal_lib import molad_text as MT
 from .yidcal_lib.sfirah_helper import SfirahHelper
 from .sfirah_sensor import SefirahCounter, SefirahCounterMiddos, SefirahCounterShort
 from .special_shabbos_sensor import SpecialShabbosSensor
@@ -68,7 +69,7 @@ from .special_prayer_sensor import SpecialPrayerSensor
 from .zman_sensors import ZmanErevSensor, ZmanMotziSensor
 from .zman_krias_shma_mga import SofZmanKriasShmaMGASensor
 from .zman_chatzos_hayom import ChatzosHayomSensor
-from .zman_alos import AlosSensor
+from .zman_alos import AlosSensor, AlosVariantSensor
 from .zman_tefilah_mga import SofZmanTefilahMGASensor
 from .zman_netz import NetzSensor
 from .zman_tefilah_gra import SofZmanTefilahGRASensor
@@ -85,6 +86,7 @@ from .zman_chatzos_haleila import ChatzosHaLailaSensor
 from .tehilim_daily_sensor import TehilimDailySensor
 from .tehilim_daily_pupa_sensor import TehilimDailyPupaSensor
 from .day_label_hebrew import DayLabelHebrewSensor
+from .day_label_hebrew_full import DayLabelHebrewFullSensor
 from .ishpizin_sensor import IshpizinSensor
 from .day_type import DayTypeSensor
 from .zman_tzeis import ZmanTziesSensor
@@ -149,27 +151,123 @@ ENG2HEB = {
     "Adar II": "אדר ב",   # leap year month 13
 }
 
-def _molad_time_of_day_jerusalem(jer_dt: datetime, jer_tzeis: datetime) -> str:
+def _molad_tod_key_jerusalem(jer_dt: datetime, jer_tzeis: datetime) -> str:
     """
-    Yiddish time-of-day label based on JERUSALEM clock.
+    Time-of-day BUCKET based on the JERUSALEM clock.
 
     - AM: hour buckets (Jerusalem hour).
-    - PM: 'ביינאכט' only after Jerusalem tzeis; before that is 'נאכמיטאג'.
+    - PM: night only after Jerusalem tzeis; before that is afternoon.
+
+    Returns one of ``molad_text``'s TOD_* keys rather than a label — the
+    rule that picks the bucket belongs here, next to the Jerusalem geo it
+    depends on, while the wording for each language lives in molad_text.
     """
     hour = jer_dt.hour
 
     # Morning side (Jerusalem)
     if hour < 12:
         if hour < 6:
-            return "פארטאגס"
+            return MT.TOD_DAWN
         if hour < 9:
-            return "אינדערפרי"
-        return "פארמיטאג"
+            return MT.TOD_MORNING
+        return MT.TOD_LATE_MORNING
 
     # PM side (Jerusalem)
     if jer_dt < jer_tzeis:
-        return "נאכמיטאג"
-    return "ביינאכט"
+        return MT.TOD_AFTERNOON
+    return MT.TOD_NIGHT
+
+
+def molad_context(
+    *,
+    helper: YidCalHelper,
+    havdalah_offset: int,
+    today: date,
+) -> dict:
+    """Every piece the molad sentence needs, for the month announced on ``today``.
+
+    Split out of ``MoladSensor.async_update`` so the Shabbos Mevorchim
+    calendar can quote the identical announcement instead of re-deriving
+    it. Returns the raw ingredients (English weekday, digits, time-of-day
+    key, month names, Rosh Chodesh weekdays) — turning those into a
+    sentence is ``yidcal_lib.molad_text``'s job.
+    """
+    jdn = gdate_to_jdn(today)
+    heb = HHebrewDate.from_jdn(jdn)
+
+    # Before the 3rd of the month the announcement still refers to THIS
+    # month's molad; from the 3rd on it refers to the next one. The -15d
+    # step lands the helper inside the previous month either way.
+    base_date = (today - timedelta(days=15)) if heb.day < 3 else today
+    details: MoladDetails = helper.get_molad(base_date)
+    m = details.molad
+
+    # Motzei Shabbos / Friday-night phrasing is decided on the JERUSALEM
+    # clock, since the molad is announced in Jerusalem time.
+    jer_tz = ZoneInfo("Asia/Jerusalem")
+    jer_sunset = sunset_for_date(geo=_JERUSALEM_GEO, tz=jer_tz, base_date=m.date)
+    jer_tzeis = jer_sunset + timedelta(minutes=havdalah_offset)
+
+    is_special = False
+    if m.day == "Shabbos" and m.dt >= jer_tzeis:
+        is_special = True
+    elif m.day == "Sunday":
+        four_am = datetime(m.date.year, m.date.month, m.date.day, 4, 0, tzinfo=jer_tz)
+        if m.dt < four_am:
+            is_special = True
+
+    friday_night = (
+        not is_special
+        and m.dt.weekday() == 4        # Friday in Jerusalem
+        and m.dt >= jer_tzeis          # after Jerusalem tzeis
+    )
+
+    if is_special:
+        tod_key = MT.TOD_MOTZASH
+    elif friday_night:
+        tod_key = MT.TOD_FRIDAY_NIGHT
+    else:
+        tod_key = _molad_tod_key_jerusalem(m.dt, jer_tzeis)
+
+    # Which Hebrew month this molad belongs to — same rollover rules the
+    # helper uses, so the month name can never disagree with the digits.
+    hd = PHebrewDate.from_pydate(today)
+    if hd.day < 3:
+        target_year, target_month = hd.year, hd.month
+    else:
+        nxt = helper.get_next_numeric_month_year(today)
+        target_year, target_month = nxt["year"], nxt["month"]
+    first_of_month = PHebrewDate(target_year, target_month, 1)
+
+    rc = details.rosh_chodesh
+    return {
+        "details": details,
+        "molad": m,
+        "day_english": m.day,
+        "hours": m.hours,
+        "minutes": m.minutes,
+        "chalakim": m.chalakim,
+        "tod_key": tod_key,
+        "is_special": is_special,
+        "month_hebrew": first_of_month.month_name(True),
+        "month_english": first_of_month.month_name(False),
+        "rosh_chodesh_days_english": list(rc.days),
+        "rosh_chodesh_gdays": list(rc.gdays),
+    }
+
+
+def molad_texts(ctx: dict) -> dict[str, dict[str, str]]:
+    """``{language: {'short', 'full'}}`` for a ``molad_context`` result."""
+    return MT.all_languages(
+        day_english=ctx["day_english"],
+        hours=ctx["hours"],
+        minutes=ctx["minutes"],
+        chalakim=ctx["chalakim"],
+        tod_key=ctx["tod_key"],
+        month_hebrew=ctx["month_hebrew"],
+        month_english=ctx["month_english"],
+        rosh_chodesh_days_english=ctx["rosh_chodesh_days_english"],
+    )
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -265,6 +363,7 @@ async def async_setup_entry(
         TehilimDailySensor(hass, yidcal_helper),
         TehilimDailyPupaSensor(hass, yidcal_helper),
         DayLabelHebrewSensor(hass, candle_offset, havdalah_offset),
+        DayLabelHebrewFullSensor(hass, candle_offset, havdalah_offset),
         SofZmanAchilasChumetzSensor(hass, candle_offset, havdalah_offset),
         SofZmanSriefesChumetzSensor(hass, candle_offset, havdalah_offset),
         IshpizinSensor(hass, candle_offset, havdalah_offset),
@@ -307,6 +406,18 @@ async def async_setup_entry(
         )
         sensors.append(Night2CandleLightingSensor(hass, candle_offset, havdalah_offset))
         sensors.append(Night3CandleLightingSensor(hass, candle_offset, havdalah_offset))
+
+    # ─────────────────────────────────────────────────────────────
+    # Extra Alos sensors (optional, one per opinion picked)
+    # ─────────────────────────────────────────────────────────────
+    from .config_flow import CONF_ALOS_EXTRA_SENSORS
+    from .yidcal_lib.alos_options import ALOS_BY_KEY
+
+    for _alos_key in (opts.get(CONF_ALOS_EXTRA_SENSORS) or []):
+        if _alos_key in ALOS_BY_KEY:
+            sensors.append(AlosVariantSensor(hass, _alos_key))
+        else:
+            _LOGGER.warning("YidCal: unknown Alos option %r — skipped", _alos_key)
 
     # ─────────────────────────────────────────────────────────────
     # Daf HaYomi (optional)
@@ -396,6 +507,14 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         self._attr_extra_state_attributes: dict[str, any] = {}
         self._geo: GeoLocation | None = None
 
+        # Which language the STATE is written in. English and Hebrew are
+        # published as attributes regardless, so this only picks the
+        # headline. Historical behaviour (and the default) is Yiddish.
+        from .config_flow import CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE
+        cfg = hass.data.get(DOMAIN, {}).get("config", {}) or {}
+        lang = cfg.get(CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE)
+        self._language = lang if lang in MT.LANGUAGES else DEFAULT_MOLAD_LANGUAGE
+
     async def _handle_minute_tick(self, now):
         """Called every minute by async_track_time_interval."""
         await self.async_update()
@@ -426,21 +545,17 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         if not self._geo:
             self._geo = await get_geo(self.hass)
 
-        jdn = gdate_to_jdn(today)
-        heb = HHebrewDate.from_jdn(jdn)
-
-        # Choose base_date exactly as before (ONLY for molad/RC context)
-        if heb.day < 3:
-            base_date = today - timedelta(days=15)
-        else:
-            base_date = today
-
         try:
-            details: MoladDetails = self.helper.get_molad(base_date)
+            ctx = molad_context(
+                helper=self.helper,
+                havdalah_offset=self._havdalah_offset,
+                today=today,
+            )
         except Exception as e:
             _LOGGER.error("Molad update failed: %s", e)
             self._attr_native_value = None
             return
+        details: MoladDetails = ctx["details"]
 
         # ─── Shabbos Mevorchim: ON for the full Shabbos window (Fri candle → Sat havdalah) ───
         # Identify this Shabbos' Friday/Saturday and the window edges, then ask helper
@@ -470,97 +585,30 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
         else:
             is_upcoming_today = self.helper.is_upcoming_shabbos_mevorchim(today)
 
-        m = details.molad
-        h, mi = m.hours, m.minutes
-        chal = m.chalakim
-        chal_txt = "חלק" if chal == 1 else "חלקים"
+        h, mi, chal = ctx["hours"], ctx["minutes"], ctx["chalakim"]
+        is_special = ctx["is_special"]
+        molad_month_name = ctx["month_hebrew"]
 
-        # Check if molad time is during motzei Shabbos (after havdalah) till Sunday 4am (Israel)
-        is_special = False
-        jer_tz = ZoneInfo("Asia/Jerusalem")
-        jer_sunset = sunset_for_date(geo=_JERUSALEM_GEO, tz=jer_tz, base_date=m.date)
-        jer_tzeis = jer_sunset + timedelta(minutes=self._havdalah_offset)
-
-        # Dynamic time-of-day label in Jerusalem
-        tod_jer = _molad_time_of_day_jerusalem(m.dt, jer_tzeis)
-
-        hav_end = jer_tzeis  # same boundary you were using, now named
-        if m.day == "Shabbos" and m.dt >= hav_end:
-            is_special = True
-        elif m.day == "Sunday":
-            four_am = datetime(
-                m.date.year, m.date.month, m.date.day,
-                4, 0,
-                tzinfo=jer_tz
-            )
-            if m.dt < four_am:
-                is_special = True
-
-        # Friday-night special phrasing (JERUSALEM):
-        # Jerusalem Friday after Jerusalem tzeis → "פרייטאג צונאכטס"
-        friday_night = (
-            not is_special
-            and m.dt.weekday() == 4        # Friday in Jerusalem
-            and m.dt >= jer_tzeis          # after Jerusalem tzeis
-        )
-
-        hh12 = h  # molad hour in Jerusalem
-        if is_special:
-            day_yd = 'מוצש"ק'
-            tod_for_state = ""
-        elif friday_night:
-            day_yd = "פרייטאג"
-            tod_for_state = "צונאכטס"
-        else:
-            day_yd = DAY_MAPPING.get(m.day, m.day)
-            tod_for_state = tod_jer
-
-        chal_phrase = "" if chal == 0 else f" און {chal} {'חלק' if chal == 1 else 'חלקים'}"
-
-        if is_special:
-            state = f"מולד {day_yd}, {mi} מינוט{chal_phrase} נאך {hh12}"
-        else:
-            state = f"מולד {day_yd} {tod_for_state}, {mi} מינוט{chal_phrase} נאך {hh12}"
+        # All three renderings, every update. The configured language
+        # becomes the state; the other two ride along as attributes, so a
+        # dashboard can show English or Hebrew without changing the state
+        # anything else is matching on.
+        texts = molad_texts(ctx)
+        state = texts[self._language]["short"]
+        full_molad = texts[self._language]["full"]
 
         self._attr_native_value = state
 
+        # Yiddish day / time-of-day labels are kept as their own attributes
+        # for back-compat — templates were reading them before the sensor
+        # learned other languages.
+        day_yd = MT.day_label(ctx["day_english"], "yiddish") if not is_special else 'מוצש"ק'
+        tod_for_state = MT.tod_label(ctx["tod_key"], "yiddish")
+
         # 2) Rosh Chodesh attributes (unchanged)
         rc = details.rosh_chodesh
-        rc_mid = [f"{gd.isoformat()}T00:00:00Z" for gd in rc.gdays]
-
-        rc_night = []
-        for gd in rc.gdays:
-            prev = gd - timedelta(days=1)
-            prev_sunset = sunset_for_date(geo=self._geo, tz=tz, base_date=prev)
-            rc_night.append((prev_sunset + timedelta(minutes=self._havdalah_offset)).isoformat())
-
         rc_days = [DAY_MAPPING.get(d, d) for d in rc.days]
         rc_text = rc_days[0] if len(rc_days) == 1 else " & ".join(rc_days)
-
-        # 3) Compute the molad’s Hebrew month name using the same rollover rules as helper
-        hd = PHebrewDate.from_pydate(today)
-        if hd.day < 3:
-            target_year, target_month = hd.year, hd.month
-        else:
-            # Use helper’s next-month logic so we don’t mis-bump the year
-            nxt = self.helper.get_next_numeric_month_year(today)
-            target_year, target_month = nxt["year"], nxt["month"]
-
-        molad_month_name = PHebrewDate(target_year, target_month, 1).month_name(True)
-        
-        # 4) Add Full_Molad attribute (use the same Yiddish phrasing as state)
-        chal_phrase = "" if chal == 0 else f" און {chal} {'חלק' if chal == 1 else 'חלקים'}"
-
-        if is_special:
-            molad_part = f"מוצש\"ק, {mi} מינוט{chal_phrase} נאך {h}"
-        else:
-            molad_part = f"{day_yd} {tod_for_state}, {mi} מינוט{chal_phrase} נאך {h}"
-
-        rc_text_yd = rc_days[0] if len(rc_days) == 1 else " און ".join(rc_days)
-        if rc_days:
-            full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part} - ראש חודש, {rc_text_yd}"
-        else:
-            full_molad = f"מולד חודש {molad_month_name} יהיה: {molad_part}"
 
         self._attr_extra_state_attributes = {
             "Day": day_yd,
@@ -569,8 +617,6 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             "Time_Of_Day": "" if is_special else tod_for_state,
             "Chalakim": chal,
             "Friendly": state,
-            # "Rosh_Chodesh_Midnight": rc_mid,
-            #"Rosh_Chodesh_Nightfall": rc_night,
             "Rosh_Chodesh": rc_text,
             "Rosh_Chodesh_Days": rc_days,
             # True for the ENTIRE Shabbos window only when it's a Mevorchim Shabbos
@@ -578,6 +624,13 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
             "Is_Upcoming_Shabbos_Mevorchim": is_upcoming_today,
             "Month_Name": molad_month_name,
             "Full_Molad": full_molad,
+            # The two always-on renderings, whatever the state's language is.
+            "English": texts["english"]["short"],
+            "Hebrew": texts["hebrew"]["short"],
+            "Yiddish": texts["yiddish"]["short"],
+            "Full_Molad_English": texts["english"]["full"],
+            "Full_Molad_Hebrew": texts["hebrew"]["full"],
+            "Full_Molad_Yiddish": texts["yiddish"]["full"],
         }
 
     def update(self) -> None:
