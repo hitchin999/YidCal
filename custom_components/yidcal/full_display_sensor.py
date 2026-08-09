@@ -23,6 +23,17 @@ from .yidcal_lib.zman_compute import (
     sunset_for_date,
 )
 
+#: day_label_language option value -> the entity supplying that label.
+_DAY_LABEL_ENTITIES = {
+    "yiddish": "sensor.yidcal_day_label_yiddish",
+    "hebrew": "sensor.yidcal_day_label_hebrew",
+    "hebrew_full": "sensor.yidcal_day_label_hebrew_full",
+    # Pre-0.8.4 option value, kept so an entry saved before the rename
+    # keeps its day label instead of silently going blank.
+    "day_name_hebrew": "sensor.yidcal_day_label_hebrew_full",
+}
+
+
 class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
     """
     Combines day label Yiddish, parsha, holiday (from YOUR list via yidcal_holiday attrs),
@@ -105,8 +116,14 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
 
         text = ""
 
-        # 1) Day label (Yiddish or Hebrew per user choice)
-        label_entity = f"sensor.yidcal_day_label_{self._day_label_language}"
+        # 1) Day label (Yiddish, Hebrew short, or Hebrew full per user
+        # choice). All three are day_label_* entities; the third is
+        # sensor.yidcal_day_label_hebrew_full, whose state is the full
+        # weekday (יום ראשון, יום שני …) and so slots in here unchanged.
+        label_entity = _DAY_LABEL_ENTITIES.get(
+            self._day_label_language,
+            f"sensor.yidcal_day_label_{self._day_label_language}",
+        )
         day = self.hass.states.get(label_entity)
         if day and _ok(day.state):
             text = day.state.strip()
