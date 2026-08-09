@@ -1204,13 +1204,63 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             return False
         return reason.startswith(self._YOMTOV_REASON_PREFIXES)
 
+    # Both minhagim are published on every reading, whichever one the
+    # ``haftorah_minhag`` option selected for the state. These are the two
+    # attribute names they appear under.
+    _ATTR_ASHKENAZI = "אשכנזי"
+    _ATTR_SEPHARDI = "ספרדי"
+
+    @staticmethod
+    def _minhag_key(minhag: str) -> str:
+        """Normalize any spelling of the two minhagim to its data key."""
+        return (
+            "sephardi"
+            if str(minhag).lower() in ("sephardi", "sefardi", "sephardic", "sefard")
+            else "ashkenazi"
+        )
+
+    @staticmethod
+    def _weekday_display(weekday_haftorah: dict, minhag_key: str) -> str:
+        """The display line one minhag reads on a weekday; '' if absent."""
+        haft = weekday_haftorah.get(minhag_key) or {}
+        name = haft.get("name_hebrew", "")
+        if not name:
+            return ""
+        source = haft.get("source", "")
+        return f"{name} ({source})" if source else name
+
+    def _shabbos_display(
+        self, shabbos_date: date, is_in_israel: bool, minhag: str
+    ) -> str:
+        """The display line one minhag reads on ``shabbos_date``; '' if none.
+
+        Same assembly as ``_show_shabbos_haftorah`` — name, source in
+        parentheses, and any מוסיפים addition — so the two attributes and
+        the state can never be built differently from each other.
+        """
+        try:
+            resolved = _get_resolver().resolve(
+                shabbos_date, israel=is_in_israel, minhag=minhag
+            )
+        except Exception:  # noqa: BLE001 - an extra minhag is a nicety
+            return ""
+        if not resolved:
+            return ""
+        display = resolved.display_name or ""
+        if display and "(" not in display and resolved.source_ref:
+            display = f"{display} ({resolved.source_ref})"
+        add_pesukim_text = (resolved.extra or {}).get("add_pesukim", "")
+        if add_pesukim_text:
+            display = f"{display} - {add_pesukim_text}"
+        return display
+
     def _show_weekday_haftorah(self, weekday_haftorah: dict, reason: str, tefilah: str, minhag: str) -> None:
         """Display a weekday haftorah."""
-        minhag_key = "sephardi" if minhag.lower() in ("sephardi", "sefardi", "sephardic") else "ashkenazi"
+        minhag_key = self._minhag_key(minhag)
         haft_data = weekday_haftorah.get(minhag_key, weekday_haftorah.get("ashkenazi", {}))
-        
+
         display = f"{haft_data.get('name_hebrew', '')} ({haft_data.get('source', '')})"
-        
+
         self._state = display
         self._attrs = {
             "Haftarah_ID": "weekday",
@@ -1221,8 +1271,10 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             "Reason": reason,
             "Tefilah": tefilah,
             "Type": "weekday",
+            self._ATTR_ASHKENAZI: self._weekday_display(weekday_haftorah, "ashkenazi"),
+            self._ATTR_SEPHARDI: self._weekday_display(weekday_haftorah, "sephardi"),
         }
-    
+
     def _show_shabbos_haftorah(
         self,
         shabbos_date: date,
@@ -1249,6 +1301,8 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
                 "shabbos_date": shabbos_date.isoformat(),
                 "is_in_israel": is_in_israel,
                 "minhag": minhag,
+                self._ATTR_ASHKENAZI: "",
+                self._ATTR_SEPHARDI: "",
             }
             return
 
@@ -1290,6 +1344,18 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
         
         self._state = display if display else None
 
+        # Both minhagim, always — the state follows the configured one, but
+        # a household that davens the other nusach (or a card showing both)
+        # should not have to change the option to see its reading. The
+        # selected minhag reuses the line already built above rather than
+        # resolving a second time.
+        selected_key = self._minhag_key(minhag)
+        other_key = "sephardi" if selected_key == "ashkenazi" else "ashkenazi"
+        by_key = {
+            selected_key: display,
+            other_key: self._shabbos_display(shabbos_date, is_in_israel, other_key),
+        }
+
         self._attrs = {
             "Haftarah_ID": resolved.haftarah_id,
             "Full_Name": resolved.full_name,
@@ -1300,4 +1366,6 @@ class HaftorahSensor(YidCalDisplayDevice, SensorEntity):
             "Type": type_label,
             **({"Tefilah": tefilah} if tefilah else {}),
             **extra,
+            self._ATTR_ASHKENAZI: by_key["ashkenazi"],
+            self._ATTR_SEPHARDI: by_key["sephardi"],
         }
