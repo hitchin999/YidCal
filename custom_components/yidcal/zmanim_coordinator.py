@@ -70,6 +70,7 @@ import homeassistant.util.dt as dt_util
 from zmanim.util.geo_location import GeoLocation
 
 from .const import DOMAIN
+from .yidcal_lib.alos_options import DEFAULT_ALOS_OPTION, FOLLOW_PRIMARY
 from .yidcal_lib.zman_compute import (
     compute_zmanim_for_date,
     ZmanEntry,
@@ -174,6 +175,11 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
         self._unsub_tick = None
         self._tallis_offset = DEFAULT_TALLIS_TEFILIN_OFFSET
         self._havdalah_offset = 72
+        # Which Alos opinion the עלות השחר row shows, and which one the
+        # Talis & Tefilin offset counts from. Both default to the
+        # historical 72-minute figure. See yidcal_lib/alos_options.py.
+        self._alos_option = DEFAULT_ALOS_OPTION
+        self._tallis_base = FOLLOW_PRIMARY
         # Crossing-detection memory. The minute tick is cheap; it only
         # triggers a real recompute when one of these changes vs the
         # last successful window:
@@ -225,6 +231,8 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
             cfg.get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)
         )
         self._havdalah_offset = int(cfg.get("havdalah_offset", 72))
+        self._alos_option = cfg.get("alos_method", DEFAULT_ALOS_OPTION)
+        self._tallis_base = cfg.get("tallis_tefilin_base", FOLLOW_PRIMARY)
 
         await self.async_refresh()
         self._capture_crossing_state()
@@ -292,6 +300,8 @@ class ZmanimCoordinator(DataUpdateCoordinator[ZmanimWindow]):
                 base_date=d,
                 tallis_offset=self._tallis_offset,
                 havdalah_offset=self._havdalah_offset,
+                alos_option=self._alos_option,
+                tallis_base=self._tallis_base,
             )
             days[d] = {e.label: e for e in entries}
 
