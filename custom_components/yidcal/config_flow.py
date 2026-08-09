@@ -3,7 +3,17 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CALENDAR_CHOICES,
+    CALENDAR_DATE_EXTRA_CHOICES,
+    ZMAN_CALENDAR_CHOICES,
+)
+from .yidcal_lib.alos_options import (
+    ALOS_OPTIONS,
+    DEFAULT_ALOS_OPTION,
+    FOLLOW_PRIMARY,
+)
 from . import ui_strings as S
 from .ui_strings import CONF_UI_LANGUAGE
 
@@ -51,8 +61,65 @@ CONF_ENABLE_LUACH_PDF = "enable_luach_pdf"
 DEFAULT_ENABLE_LUACH_PDF = True
 
 # ============ Haftorah Minhag ============
+# Selects which minhag the Haftorah sensor's STATE follows. Both
+# minhagim are always published as the אשכנזי / ספרדי attributes, so
+# this only picks the headline reading.
 CONF_HAFTORAH_MINHAG = "haftorah_minhag"
 DEFAULT_HAFTORAH_MINHAG = "ashkenazi"
+
+# ============ Molad display language ============
+# Which language sensor.yidcal_molad's STATE is written in. English and
+# Hebrew renderings are always available as attributes regardless, so
+# this only picks the headline. Default keeps the historical Yiddish.
+CONF_MOLAD_LANGUAGE = "molad_language"
+DEFAULT_MOLAD_LANGUAGE = "yiddish"
+
+# ============ Calendars ============
+# Four fields, not fifteen. The first draft asked a separate yes/no
+# question per calendar, which turned the page into a wall of switches
+# nobody wants to read. Picking from a list says the same thing in one
+# glance, and stays one screen tall however many calendars get added.
+#
+# Master switch. When off, the calendar platform adds nothing and the
+# "YidCal — Calendars" device never appears.
+CONF_ENABLE_CALENDARS = "enable_calendars"
+DEFAULT_ENABLE_CALENDARS = False
+
+# Multi-select of calendar keys — see const.CALENDAR_CHOICES.
+CONF_CALENDARS = "calendars"
+DEFAULT_CALENDARS: list[str] = ["date"]
+
+# Multi-select of decorations on the Date calendar's event titles —
+# see const.CALENDAR_DATE_EXTRA_CHOICES.
+#   parsha  → "י״ג אב תשפ״ו - פרשת צו"
+#   weekday → "י״ג אב תשפ״ו - ג׳ צו"
+#   both    → "י״ג אב תשפ״ו - ג׳ פרשת צו"
+CONF_CAL_DATE_EXTRAS = "calendar_date_extras"
+DEFAULT_CAL_DATE_EXTRAS: list[str] = []
+
+# Multi-select of zman keys (see const.ZMAN_CALENDAR_CHOICES). Each
+# selected zman becomes its own calendar entity.
+CONF_CAL_ZMANIM = "calendar_zmanim"
+DEFAULT_CAL_ZMANIM: list[str] = []
+
+# ============ Alos HaShachar ============
+# Which opinion sensor.yidcal_alos SHOWS. Every opinion is published as
+# an attribute regardless, so this only picks the state. The default is
+# the historical 72 fixed minutes before sunrise.
+#
+# Deliberately does NOT move the MGA sha'ah zmanis — see the note on
+# zman_compute._ALOS_OFFSET_MIN.
+CONF_ALOS_METHOD = "alos_method"
+DEFAULT_ALOS_METHOD = DEFAULT_ALOS_OPTION
+
+# Extra Alos sensors, one per opinion picked.
+CONF_ALOS_EXTRA_SENSORS = "alos_extra_sensors"
+DEFAULT_ALOS_EXTRA_SENSORS: list[str] = []
+
+# Which Alos the Talis & Tefilin offset counts from. "primary" follows
+# CONF_ALOS_METHOD; any option key pins it independently.
+CONF_TALLIS_TEFILIN_BASE = "tallis_tefilin_base"
+DEFAULT_TALLIS_TEFILIN_BASE = FOLLOW_PRIMARY
 
 # ============ Parsha Metzora display ============
 # "metzora" (default) shows "מצורע"; "tahara" shows "טהרה".
@@ -173,7 +240,8 @@ def _general_schema(lang, get, *, include_luach_pdf: bool):
         vol.Optional("strip_nikud", default=get("strip_nikud", False)): bool,
         vol.Optional("candlelighting_offset", default=get("candlelighting_offset", DEFAULT_CANDLELIGHT_OFFSET)): int,
         vol.Optional("havdalah_offset", default=get("havdalah_offset", DEFAULT_HAVDALAH_OFFSET)): int,
-        vol.Optional("tallis_tefilin_offset", default=get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET)): int,
+        # tallis_tefilin_offset moved to the Zmanim step, next to the
+        # Alos opinion it is measured from.
         vol.Optional(
             CONF_KORBANOS_YUD_GIMMEL_MIDOS,
             default=get(CONF_KORBANOS_YUD_GIMMEL_MIDOS, DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS),
@@ -190,6 +258,10 @@ def _general_schema(lang, get, *, include_luach_pdf: bool):
             CONF_HAFTORAH_MINHAG,
             default=get(CONF_HAFTORAH_MINHAG, DEFAULT_HAFTORAH_MINHAG),
         ): selector({"select": {"options": S.sel("haftorah_minhag", lang)}}),
+        vol.Optional(
+            CONF_MOLAD_LANGUAGE,
+            default=get(CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE),
+        ): selector({"select": {"options": S.sel("molad_language", lang)}}),
         vol.Optional(
             CONF_PARSHA_METZORA_DISPLAY,
             default=get(CONF_PARSHA_METZORA_DISPLAY, DEFAULT_PARSHA_METZORA_DISPLAY),
@@ -250,6 +322,76 @@ def _general_schema(lang, get, *, include_luach_pdf: bool):
             )
         ] = bool
     return vol.Schema(fields)
+
+
+def _calendars_schema(lang, get):
+    """One switch and three pick-lists.
+
+    Nothing is created until ``enable_calendars`` is on; after that,
+    every calendar comes from the lists below. All of them land on the
+    single "YidCal — Calendars" device.
+    """
+    return vol.Schema({
+        vol.Optional(
+            CONF_ENABLE_CALENDARS,
+            default=get(CONF_ENABLE_CALENDARS, DEFAULT_ENABLE_CALENDARS),
+        ): bool,
+        vol.Optional(
+            CONF_CALENDARS,
+            default=get(CONF_CALENDARS, DEFAULT_CALENDARS),
+        ): selector({"select": {"multiple": True, "options": [
+            {"value": key, "label": S.calendar_label(key, lang)}
+            for key, _heb, _eng in CALENDAR_CHOICES
+        ]}}),
+        vol.Optional(
+            CONF_CAL_DATE_EXTRAS,
+            default=get(CONF_CAL_DATE_EXTRAS, DEFAULT_CAL_DATE_EXTRAS),
+        ): selector({"select": {"multiple": True, "options": [
+            {"value": key, "label": S.calendar_extra_label(key, lang)}
+            for key, _heb, _eng in CALENDAR_DATE_EXTRA_CHOICES
+        ]}}),
+        vol.Optional(
+            CONF_CAL_ZMANIM,
+            default=get(CONF_CAL_ZMANIM, DEFAULT_CAL_ZMANIM),
+        ): selector({"select": {"multiple": True, "options": [
+            {"value": key, "label": S.zman_label(key, lang)}
+            for key, _heb, _eng in ZMAN_CALENDAR_CHOICES
+        ]}}),
+    })
+
+
+def _zmanim_schema(lang, get):
+    """Alos HaShachar, and what hangs off it.
+
+    ``tallis_tefilin_offset`` lives here rather than on the General page
+    because it is meaningless without knowing which Alos it counts from,
+    and that question is right below it.
+    """
+    alos_options = [
+        {"value": opt.key, "label": S.alos_label(opt, lang)}
+        for opt in ALOS_OPTIONS
+    ]
+    return vol.Schema({
+        vol.Optional(
+            CONF_ALOS_METHOD,
+            default=get(CONF_ALOS_METHOD, DEFAULT_ALOS_METHOD),
+        ): selector({"select": {"options": alos_options}}),
+        vol.Optional(
+            CONF_ALOS_EXTRA_SENSORS,
+            default=get(CONF_ALOS_EXTRA_SENSORS, DEFAULT_ALOS_EXTRA_SENSORS),
+        ): selector({"select": {"multiple": True, "options": alos_options}}),
+        vol.Optional(
+            "tallis_tefilin_offset",
+            default=get("tallis_tefilin_offset", DEFAULT_TALLIS_TEFILIN_OFFSET),
+        ): int,
+        vol.Optional(
+            CONF_TALLIS_TEFILIN_BASE,
+            default=get(CONF_TALLIS_TEFILIN_BASE, DEFAULT_TALLIS_TEFILIN_BASE),
+        ): selector({"select": {"options": (
+            [{"value": FOLLOW_PRIMARY, "label": S.alos_follow_primary(lang)}]
+            + alos_options
+        )}}),
+    })
 
 
 def _yurtzeit_schema(lang, daily, weekly, dbs):
@@ -348,10 +490,32 @@ class YidCalConfigFlow(_LangFlowMixin, config_entries.ConfigFlow, domain=DOMAIN)
 
         # Stash general config for the final entry
         self._general_data = dict(user_input)
+        return await self.async_step_zmanim()
+
+    async def async_step_zmanim(self, user_input=None):
+        """Step 3: Alos HaShachar & Talis/Tefilin."""
+        if user_input is None:
+            return self._form(
+                "zmanim",
+                _zmanim_schema(self._lang, lambda k, d: d),
+            )
+
+        self._zmanim_data = dict(user_input)
+        return await self.async_step_calendars()
+
+    async def async_step_calendars(self, user_input=None):
+        """Step 4: Calendars."""
+        if user_input is None:
+            return self._form(
+                "calendars",
+                _calendars_schema(self._lang, lambda k, d: d),
+            )
+
+        self._calendars_data = dict(user_input)
         return await self.async_step_yurtzeit()
 
     async def async_step_yurtzeit(self, user_input=None):
-        """Step 3: Yurtzeit settings."""
+        """Step 5: Yurtzeit settings."""
         if user_input is None:
             return self._form(
                 "yurtzeit",
@@ -375,6 +539,8 @@ class YidCalConfigFlow(_LangFlowMixin, config_entries.ConfigFlow, domain=DOMAIN)
         # Merge and create entry
         data = {
             **getattr(self, "_general_data", {}),
+            **getattr(self, "_zmanim_data", {}),
+            **getattr(self, "_calendars_data", {}),
             CONF_ENABLE_YURTZEIT_DAILY: enable_daily,
             CONF_ENABLE_WEEKLY_YURTZEIT: enable_weekly,
             CONF_YURTZEIT_DATABASES: dbs,
@@ -420,6 +586,8 @@ class OptionsFlowHandler(_LangFlowMixin, config_entries.OptionsFlow):
         menu = S.menu_labels(
             {
                 "general": "menu_general",
+                "zmanim": "menu_zmanim",
+                "calendars": "menu_calendars",
                 "yurtzeit": "menu_yurtzeit",
                 "early_shabbos_yt": "menu_early",
             },
@@ -443,6 +611,20 @@ class OptionsFlowHandler(_LangFlowMixin, config_entries.OptionsFlow):
                 "general",
                 _general_schema(self._lang, self._get, include_luach_pdf=True),
             )
+        return self._save({**(self._config_entry.options or {}), **user_input})
+
+    # -- zmanim / alos ---------------------------------------------------
+    async def async_step_zmanim(self, user_input=None):
+        self._resolve_lang()
+        if user_input is None:
+            return self._form("zmanim", _zmanim_schema(self._lang, self._get))
+        return self._save({**(self._config_entry.options or {}), **user_input})
+
+    # -- calendars -------------------------------------------------------
+    async def async_step_calendars(self, user_input=None):
+        self._resolve_lang()
+        if user_input is None:
+            return self._form("calendars", _calendars_schema(self._lang, self._get))
         return self._save({**(self._config_entry.options or {}), **user_input})
 
     # -- yurtzeit --------------------------------------------------------
