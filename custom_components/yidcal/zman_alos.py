@@ -8,7 +8,18 @@ import homeassistant.util.dt as dt_util
 
 from .const import DOMAIN
 from .device import YidCalZmanDevice
+from .zman_sensors import get_geo
 from .zmanim_coordinator import get_zmanim_coordinator
+from .yidcal_lib.alos_options import (
+    ALOS_OPTIONS,
+    DEFAULT_ALOS_OPTION,
+    get_option,
+)
+from .yidcal_lib.zman_compute import (
+    alos_for_date,
+    all_alos_for_date,
+    round_half_up as _round_half_up,
+)
 
 # Engine label this sensor reads from the coordinator window. Must match
 # zman_compute.compute_zmanim_for_date exactly.
@@ -42,6 +53,10 @@ class AlosSensor(YidCalZmanDevice, SensorEntity):
         self._coordinator = get_zmanim_coordinator(hass)
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._option = get_option(cfg.get("alos_method", DEFAULT_ALOS_OPTION))
+        # Needed only for the every-opinion attribute table; the state
+        # still comes from the coordinator.
+        self._geo = None
 
     @property
     def available(self) -> bool:
@@ -52,6 +67,7 @@ class AlosSensor(YidCalZmanDevice, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        self._geo = await get_geo(self.hass)
         if self._coordinator is not None:
             self.async_on_remove(
                 self._coordinator.async_add_listener(
@@ -101,9 +117,99 @@ class AlosSensor(YidCalZmanDevice, SensorEntity):
             if e_yest is not None else ""
         )
 
-        self._attr_extra_state_attributes = {
+        attrs = {
             "Alos_With_Seconds": full_iso_today,
             "Alos_Simple": human_today,
             "Tomorrows_Simple": human_tom,
             "Yesterdays_Simple": human_yest,
+            # Which opinion the STATE above follows.
+            "Method": self._option.english,
+            "Method_Key": self._option.key,
+        }
+        attrs.update(self._all_opinions(today))
+        self._attr_extra_state_attributes = attrs
+
+    def _all_opinions(self, day) -> dict[str, str]:
+        """Today's Alos under every opinion, as ISO timestamps.
+
+        Published whatever the configured method is, so a dashboard can
+        show a second opinion — or a household can compare them before
+        choosing — without adding a sensor. All fourteen share one cached
+        sun-event lookup, so the whole table is about as expensive as any
+        single one of them.
+        """
+        if self._geo is None:
+            return {}
+        try:
+            table = all_alos_for_date(geo=self._geo, tz=self._tz, base_date=day)
+        except Exception:  # noqa: BLE001 - the state must not depend on this
+            return {}
+        return {
+            opt.attr: _round_half_up(table[opt.key]).isoformat()
+            for opt in ALOS_OPTIONS
+            if opt.key in table
+        }
+
+
+class AlosVariantSensor(YidCalZmanDevice, SensorEntity):
+    """One extra Alos sensor for a second opinion.
+
+    Created per entry in the ``alos_extra_sensors`` option. Unlike the
+    main Alos sensor these do not go through the coordinator — the
+    coordinator caches one Alos row (the configured one), and adding a
+    row per opinion to a shared four-day window to serve an optional
+    sensor would cost every install for the benefit of a few. The
+    underlying sun events are cached anyway, so computing here is
+    effectively free and keeps the coordinator's contract unchanged.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:weather-sunset-up"
+
+    def __init__(self, hass: HomeAssistant, option_key: str) -> None:
+        super().__init__()
+        opt = get_option(option_key)
+        self._option = opt
+        self._attr_unique_id = f"yidcal_alos_{opt.slug}"
+        self.entity_id = f"sensor.yidcal_alos_{opt.slug}"
+        self._attr_name = f"Alos HaShachar ({opt.english})"
+
+        self.hass = hass
+        cfg = hass.data[DOMAIN]["config"]
+        self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
+        self._geo = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._geo = await get_geo(self.hass)
+        await self.async_update()
+        # Civil-midnight rollover, same as the main Alos sensor, on the
+        # shared aligned :00 tick.
+        self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
+
+    async def async_update(self, now=None) -> None:
+        if self._geo is None:
+            return
+        today = dt_util.now().astimezone(self._tz).date()
+
+        def raw(day):
+            return alos_for_date(
+                geo=self._geo, tz=self._tz, base_date=day, option=self._option.key
+            )
+
+        try:
+            today_raw = raw(today)
+            tom_raw = raw(today + timedelta(days=1))
+            yest_raw = raw(today - timedelta(days=1))
+        except Exception:  # noqa: BLE001
+            return
+
+        self._attr_native_value = _round_half_up(today_raw).astimezone(timezone.utc)
+        self._attr_extra_state_attributes = {
+            "Alos_With_Seconds": today_raw.isoformat(),
+            "Alos_Simple": self._format_simple_time(_round_half_up(today_raw)),
+            "Tomorrows_Simple": self._format_simple_time(_round_half_up(tom_raw)),
+            "Yesterdays_Simple": self._format_simple_time(_round_half_up(yest_raw)),
+            "Method": self._option.english,
+            "Method_Key": self._option.key,
         }
