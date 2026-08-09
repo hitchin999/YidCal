@@ -104,11 +104,93 @@ from .config_flow import (
     CONF_ENABLE_LUACH_PDF,
     DEFAULT_ENABLE_LUACH_PDF,
 
+    # Molad display language (NEW)
+    CONF_MOLAD_LANGUAGE,
+    DEFAULT_MOLAD_LANGUAGE,
+
+    # Calendars (NEW)
+    CONF_ENABLE_CALENDARS, DEFAULT_ENABLE_CALENDARS,
+    CONF_CALENDARS, DEFAULT_CALENDARS,
+    CONF_CAL_DATE_EXTRAS, DEFAULT_CAL_DATE_EXTRAS,
+    CONF_CAL_ZMANIM, DEFAULT_CAL_ZMANIM,
+
+    # Alos HaShachar (NEW)
+    CONF_ALOS_METHOD, DEFAULT_ALOS_METHOD,
+    CONF_ALOS_EXTRA_SENSORS, DEFAULT_ALOS_EXTRA_SENSORS,
+    CONF_TALLIS_TEFILIN_BASE, DEFAULT_TALLIS_TEFILIN_BASE,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SELECT, Platform.TIME]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SELECT,
+    Platform.TIME,
+    Platform.CALENDAR,
+]
+
+#: Calendar + Alos option keys paired with their defaults, read as one
+#: block in async_setup_entry. The list-valued ones are copied before
+#: being stored, so a mutable module-level default can never be shared
+#: into hass.data.
+_LIST_OPTIONS = frozenset({CONF_CALENDARS, CONF_CAL_DATE_EXTRAS,
+                           CONF_CAL_ZMANIM, CONF_ALOS_EXTRA_SENSORS})
+
+_EXTRA_OPTIONS: tuple[tuple[str, object], ...] = (
+    (CONF_ENABLE_CALENDARS, DEFAULT_ENABLE_CALENDARS),
+    (CONF_CALENDARS, DEFAULT_CALENDARS),
+    (CONF_CAL_DATE_EXTRAS, DEFAULT_CAL_DATE_EXTRAS),
+    (CONF_CAL_ZMANIM, DEFAULT_CAL_ZMANIM),
+    (CONF_ALOS_METHOD, DEFAULT_ALOS_METHOD),
+    (CONF_ALOS_EXTRA_SENSORS, DEFAULT_ALOS_EXTRA_SENSORS),
+    (CONF_TALLIS_TEFILIN_BASE, DEFAULT_TALLIS_TEFILIN_BASE),
+)
+
+#: The first draft of the calendars page asked one boolean per calendar.
+#: Those keys may already be sitting in someone's config entry, so they
+#: are folded into the list form once rather than silently ignored.
+_LEGACY_CALENDAR_BOOLS: tuple[tuple[str, str], ...] = (
+    ("calendar_date", "date"),
+    ("calendar_holiday", "holiday"),
+    ("calendar_day_type", "day_type"),
+    ("calendar_shabbos_mevorchim", "shabbos_mevorchim"),
+    ("calendar_amud_hayomi", "amud_hayomi"),
+    ("calendar_daf_hayomi", "daf_hayomi"),
+    ("calendar_sefirah_short", "sefirah_short"),
+    ("calendar_special_shabbos", "special_shabbos"),
+    ("calendar_sof_kiddush_levana", "sof_kiddush_levana"),
+    ("calendar_longer_shachris", "longer_shachris"),
+    ("calendar_longer_shabbos_shachris", "longer_shabbos_shachris"),
+)
+_LEGACY_DATE_EXTRA_BOOLS: tuple[tuple[str, str], ...] = (
+    ("calendar_date_parsha", "parsha"),
+    ("calendar_date_weekday", "weekday"),
+)
+
+
+def _migrate_legacy_calendar_bools(stored: dict, opts: dict, initial: dict) -> None:
+    """Fold any per-calendar booleans into the two multi-selects.
+
+    Only applies when the list key itself was never written — once the
+    user has saved the new page, that answer wins outright.
+    """
+    for list_key, pairs in (
+        (CONF_CALENDARS, _LEGACY_CALENDAR_BOOLS),
+        (CONF_CAL_DATE_EXTRAS, _LEGACY_DATE_EXTRA_BOOLS),
+    ):
+        if list_key in opts or list_key in initial:
+            continue
+        legacy = [
+            value for key, value in pairs
+            if opts.get(key, initial.get(key)) is True
+        ]
+        if legacy:
+            stored[list_key] = legacy
+            _LOGGER.info(
+                "YidCal: migrated legacy calendar switches into %s=%s",
+                list_key, legacy,
+            )
 
 DEFAULT_CANDLELIGHT_OFFSET = 15
 DEFAULT_HAVDALAH_OFFSET = 72
@@ -563,6 +645,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial.get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
     )
 
+    molad_language = opts.get(
+        CONF_MOLAD_LANGUAGE,
+        initial.get(CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE),
+    )
+
+    # Calendars + Alos: one dict, read the same way as everything above.
+    extra_opts: dict = {}
+    for key, default in _EXTRA_OPTIONS:
+        value = opts.get(key, initial.get(key, default))
+        extra_opts[key] = list(value or []) if key in _LIST_OPTIONS else value
+    _migrate_legacy_calendar_bools(extra_opts, opts, initial)
+
     # Resolve and store geo+tz config (with caching to avoid repeated API calls)
     latitude = hass.config.latitude
     longitude = hass.config.longitude
@@ -751,6 +845,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
         CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
+        CONF_MOLAD_LANGUAGE: molad_language,
+        **extra_opts,
     }
 
     # Store global config for sensors
@@ -798,6 +894,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
         CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
+        CONF_MOLAD_LANGUAGE: molad_language,
+        **extra_opts,
     }
 
     # Register the yidcal.check_zmanim service if the Zmanim Lookup sensor
