@@ -29,11 +29,19 @@ ZMAN_CALENDAR_CHOICES: list[tuple[str, str, str]] = [
     ("chatzos_haleila", "חצות הלילה",              "Chatzos HaLaila"),
     ("candle_lighting", "הדלקת הנרות",             "Candle Lighting"),
     ("havdalah",        "מוצאי שבת/יום טוב",        "Havdalah (Motzi)"),
+    ("chometz",         "זמני חמץ",               "Chometz deadlines (Erev Pesach)"),
 ]
 
 #: Keys of the two Erev/Motzi entries above, which are NOT produced by
 #: compute_zmanim_for_date and are resolved through compute_erev_motzi.
 ZMAN_CALENDAR_EREV_MOTZI_KEYS = ("candle_lighting", "havdalah")
+
+#: Erev-Pesach chometz deadlines. Like the Erev/Motzi pair above these
+#: are not daily zmanim; they come from ``compute_chametz_zmanim`` and
+#: exist on one or two days a year. Event summaries, in emit order:
+CHOMETZ_ACHILAS_LABEL = "סוף זמן אכילת חמץ"
+CHOMETZ_SRIEFES_LABEL = "סוף זמן שריפת חמץ"
+CHOMETZ_BIUR_LABEL = "סוף זמן ביעור חמץ"
 
 #: key -> (hebrew_label, english_label)
 ZMAN_CALENDAR_BY_KEY: dict[str, tuple[str, str]] = {
