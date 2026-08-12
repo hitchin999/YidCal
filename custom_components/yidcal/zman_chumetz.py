@@ -92,8 +92,9 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         """Compute dawn + hours × sha'ah zmanit for a given civil date.
 
         Returns (rounded_local_dt, raw_iso_string).
-        round_half_up=False (default) → floor to minute (machmir for deadlines).
-        round_half_up=True            → ≥30s rounds up, <30s floors.
+        ``round_half_up`` selects WHICH deadline is returned, not the
+        rounding: False → achilas (4th hour), True → sriefes (5th).
+        Both are floored to the minute — see ``sriefes_round`` below.
 
         The rounded value comes from the shared compute_chametz_zmanim
         helper (achilas = 4h/floored, sriefes = 5h/half-up — built to
@@ -101,13 +102,19 @@ class _BaseChumetzSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         are (4.0, False) and (5.0, True) — exactly what the two
         sensors pass.
         """
-        # Rounded deadlines from the shared helper (achilas = dawn + 4h
-        # FLOORED, sriefes = dawn + 5h HALF-UP, its default sriefes_round).
+        # Rounded deadlines from the shared helper, both FLOORED
+        # (achilas = dawn + 4h, sriefes = dawn + 5h).
         achilas, sriefes = compute_chametz_zmanim(
             geo=self._geo,
             tz=self._tz,
             base_date=civil_date,
             havdalah_offset=self._havdalah,
+            # FLOOR, not the engine default. The burning/owning deadline
+            # is a chumrah — be done before the nominal halachic minute —
+            # and this is what the printed KY/Brooklyn luach shows, so the
+            # sensor, the lookup, the calendar and the PDF now all agree.
+            # (Achilas floors either way; only sriefes moves.)
+            sriefes_round="floor",
         )
         rounded = sriefes if round_half_up else achilas
 
