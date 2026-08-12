@@ -8,7 +8,6 @@
   "entity": {
     "select": {
       "early_shabbos_override": {
-        "name": "עקיפת שבת מוקדמת",
         "state": {
           "auto": "אוטומטי",
           "force_early": "כפה מוקדם",
@@ -16,7 +15,6 @@
         }
       },
       "early_yomtov_override": {
-        "name": "עקיפת יום טוב מוקדם",
         "state": {
           "auto": "אוטומטי",
           "force_early": "כפה מוקדם",
@@ -24,7 +22,6 @@
         }
       },
       "early_shabbos_method": {
-        "name": "שיטת שבת מוקדמת",
         "state": {
           "auto": "אוטומטי",
           "force_plag": "כפה פלג",
@@ -32,20 +29,11 @@
         }
       },
       "early_yomtov_method": {
-        "name": "שיטת יום טוב מוקדם",
         "state": {
           "auto": "אוטומטי",
           "force_plag": "כפה פלג",
           "force_fixed": "כפה זמן קבוע"
         }
-      }
-    },
-    "time": {
-      "early_shabbos_fixed_time": {
-        "name": "זמן קבוע — שבת מוקדמת"
-      },
-      "early_yomtov_fixed_time": {
-        "name": "זמן קבוע — יום טוב מוקדם"
       }
     }
   }
