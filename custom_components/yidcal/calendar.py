@@ -415,7 +415,12 @@ class DateCalendar(YidCalCalendar):
             if parsha:
                 details.append(f"פרשה: {parsha}")
             if holiday:
-                details.append(f"יום טוב: {holiday}")
+                # NOT "יום טוב" — sensor.yidcal_holiday emits fasts,
+                # erev/motzei days, chol hamoed and יום כיפור קטן from
+                # the same field, and labelling צום שבעה עשר בתמוז a
+                # יום טוב is both wrong and jarring on a somber day.
+                # This label has to be true for all ~65 of its states.
+                details.append(f"היום: {holiday}")
 
             events.append(_all_day(day, " - ".join(parts), "\n".join(details)))
         return events
