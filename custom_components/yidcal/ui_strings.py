@@ -210,7 +210,7 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
     "molad_language": [
         ("yiddish", {"yi": "אידיש", "he": "אידיש", "en": "Yiddish"}),
         ("hebrew",  {"yi": "עברית", "he": "עברית", "en": "Hebrew"}),
-        ("english", {"yi": "English", "he": "English", "en": "English"}),
+        ("english", {"yi": "ענגליש", "he": "אנגלית", "en": "English"}),
     ],
     "haftorah_minhag": [
         ("ashkenazi", {"yi": "אשכנזי", "he": "אשכנזי", "en": "Ashkenazi"}),
@@ -222,7 +222,7 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
     ],
     "slichos_label_rollover": [
         ("havdalah", {"yi": "זמן הבדלה", "he": "זמן הבדלה", "en": "Havdalah time"}),
-        ("midnight", {"yi": "12 AM", "he": "12 AM", "en": "Midnight (12 AM)"}),
+        ("midnight", {"yi": "חצות הלילה (12 AM)", "he": "חצות הלילה (12 AM)", "en": "Midnight (12 AM)"}),
     ],
     "kiddush_levana_start": [
         ("gimmel", {"yi": "ג' שלימים", "he": "ג' שלימים", "en": "3 (Gimmel) Shleimim"}),
@@ -231,34 +231,34 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
 
     # ---- NEEDS-YI-HE --------------------------------------------------
     "time_format": [
-        ("12", _same("12-hour (AM/PM)")),
-        ("24", _same("24-hour")),
+        ("12", {"yi": "12 שעה (AM/PM)", "he": "12 שעות (AM/PM)", "en": "12-hour (AM/PM)"}),
+        ("24", {"yi": "24 שעה", "he": "24 שעות", "en": "24-hour"}),
     ],
     "yurtzeit_databases": [
-        ("standard", _same("Standard")),
-        ("satmar",   _same("Satmar")),
+        ("standard", {"yi": "סטאנדארד", "he": "רגיל", "en": "Standard"}),
+        ("satmar", {"yi": "סאטמאר", "he": "סאטמאר", "en": "Satmar"}),
     ],
     "early_mode": [
-        ("plag",     _same("By Plag Hamincha (weekly)")),
-        ("fixed",    _same("Fixed time (clock)")),
-        ("disabled", _same("Disabled (manual only)")),
+        ("plag", {"yi": "לויט פלג המנחה (וועכנטליך)", "he": "לפי פלג המנחה (שבועי)", "en": "By Plag Hamincha (weekly)"}),
+        ("fixed", {"yi": "א געוויסע צייט (זייגער)", "he": "שעה קבועה (שעון)", "en": "Fixed time (clock)"}),
+        ("disabled", {"yi": "אויסגעלאשן (נאר מאנועל)", "he": "מושבת (ידני בלבד)", "en": "Disabled (manual only)"}),
     ],
     "early_plag_method": [
-        ("gra", _same("GRA (default)")),
-        ("ma",  _same("Magen Avraham (advanced)")),
+        ("gra", {"yi": "גר״א (default)", "he": "גר״א (ברירת מחדל)", "en": "GRA (default)"}),
+        ("ma", {"yi": "מגן אברהם (advanced)", "he": "מגן אברהם (מתקדם)", "en": "Magen Avraham (advanced)"}),
     ],
     "early_shabbos_apply_rule": [
-        ("every_friday", _same("Every Friday")),
-        ("sunset_after", _same("Only when sunset is after…")),
+        ("every_friday", {"yi": "יעדן פרייטאג", "he": "כל יום שישי", "en": "Every Friday"}),
+        ("sunset_after", {"yi": "נאר ווען שקיעה איז נאך…", "he": "רק כאשר השקיעה אחרי…", "en": "Only when sunset is after…"}),
     ],
     "early_yomtov_include": [
-        ("rosh_hashana",     _same("Rosh Hashana (Day 1 only)")),
-        ("yom_kippur",       _same("Yom Kippur")),
-        ("sukkos",           _same("Sukkos (Day 1 only)")),
-        ("shemini_atzeres",  _same("Shemini Atzeres (first day only)")),
-        ("pesach_last_days", _same("Last days of Pesach (Shvi'i only)")),
-        ("pesach_first_day", _same("Pesach Day 1 (accept early; seder at night)")),
-        ("shavuos",          _same("Shavuos (advanced)")),
+        ("rosh_hashana", {"yi": "ראש השנה (נאר ערשטן טאג)", "he": "ראש השנה (יום א' בלבד)", "en": "Rosh Hashana (Day 1 only)"}),
+        ("yom_kippur", {"yi": "יום כיפור", "he": "יום כיפור", "en": "Yom Kippur"}),
+        ("sukkos", {"yi": "סוכות (נאר ערשטן טאג)", "he": "סוכות (יום א' בלבד)", "en": "Sukkos (Day 1 only)"}),
+        ("shemini_atzeres", {"yi": "שמיני עצרת (נאר ערשטן טאג)", "he": "שמיני עצרת (יום א' בלבד)", "en": "Shemini Atzeres (first day only)"}),
+        ("pesach_last_days", {"yi": "לעצטע טעג פסח (נאר שביעי)", "he": "ימים אחרונים של פסח (שביעי בלבד)", "en": "Last days of Pesach (Shvi'i only)"}),
+        ("pesach_first_day", {"yi": "פסח ערשטן טאג (פריער אננעמען; סדר ביינאכט)", "he": "פסח יום א' (לקבל מוקדם; הסדר בלילה)", "en": "Pesach Day 1 (accept early; seder at night)"}),
+        ("shavuos", {"yi": "שבועות (advanced)", "he": "שבועות (מתקדם)", "en": "Shavuos (advanced)"}),
     ],
     # -------------------------------------------------------------------
 }
