@@ -163,6 +163,9 @@ class ZmanimLookupSensor(YidCalZmanDevice, SensorEntity):
             tz=eff_tz,
             base_date=target,
             havdalah_offset=self._havdalah,
+            # Floor the burning deadline, matching the printed luach and
+            # sensor.yidcal_sof_zman_sriefes_chumetz.
+            sriefes_round="floor",
         )
         fmt = self._get_time_format()
         return {
