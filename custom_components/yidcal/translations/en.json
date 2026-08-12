@@ -202,7 +202,6 @@
   "entity": {
     "select": {
       "early_shabbos_override": {
-        "name": "Early Shabbos Override",
         "state": {
           "auto": "Auto",
           "force_early": "Force early",
@@ -210,7 +209,6 @@
         }
       },
       "early_yomtov_override": {
-        "name": "Early Yom Tov Override",
         "state": {
           "auto": "Auto",
           "force_early": "Force early",
@@ -218,7 +216,6 @@
         }
       },
       "early_shabbos_method": {
-        "name": "Early Shabbos Method",
         "state": {
           "auto": "Auto",
           "force_plag": "Force Plag",
@@ -226,20 +223,11 @@
         }
       },
       "early_yomtov_method": {
-        "name": "Early Yom Tov Method",
         "state": {
           "auto": "Auto",
           "force_plag": "Force Plag",
           "force_fixed": "Force Fixed"
         }
-      }
-    },
-    "time": {
-      "early_shabbos_fixed_time": {
-        "name": "Early Shabbos Fixed Time"
-      },
-      "early_yomtov_fixed_time": {
-        "name": "Early Yom Tov Fixed Time"
       }
     }
   }
