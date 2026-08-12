@@ -1772,6 +1772,43 @@ def is_tisha_bav_nidche(hyear: int) -> bool:
     return PHebrewDate(hyear, 5, 9).to_pydate().weekday() == 5
 
 
+def erev_pesach_on_shabbos(hyear: int) -> bool:
+    """True when 14 Nisan falls on Shabbos, so the chometz deadlines
+    split across two days.
+    """
+    return PHebrewDate(hyear, 1, 14).to_pydate().weekday() == 5
+
+
+def chometz_deadline_days(hyear: int) -> dict[str, date_cls]:
+    """Which civil day each Erev-Pesach chometz deadline is computed on.
+
+    Normal year — everything is 14 Nisan:
+        achilas   eating,  end of the 4th hour
+        sriefes   burning, end of the 5th hour
+
+    14 Nisan on Shabbos — the burning moves back to Friday, while
+    eating stays on Shabbos morning and a separate biur (bitul)
+    deadline sits at the 5th hour of Shabbos:
+        achilas   14 Nisan (Shabbos)
+        sriefes   13 Nisan (Friday)
+        biur      14 Nisan (Shabbos)
+
+    ``biur`` is absent in a normal year, where it coincides with
+    sriefes. Times come from ``zman_compute.compute_chametz_zmanim``;
+    this answers only WHICH DAY each is computed on. Mirrors the rules
+    in zman_chumetz.py, which is where these deadlines were first
+    implemented.
+    """
+    fourteen = PHebrewDate(hyear, 1, 14).to_pydate()
+    if fourteen.weekday() != 5:
+        return {"achilas": fourteen, "sriefes": fourteen}
+    return {
+        "achilas": fourteen,
+        "sriefes": PHebrewDate(hyear, 1, 13).to_pydate(),
+        "biur": fourteen,
+    }
+
+
 def taanis_esther_observed(hyear: int) -> date_cls:
     """Observed civil date of Ta'anis Esther: 13 of the real Adar,
     moved BACKWARD to Thursday 11 Adar when 13 Adar is Shabbos (the
