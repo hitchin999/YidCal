@@ -52,6 +52,9 @@ from homeassistant.util import dt as dt_util
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .const import (
+    CHOMETZ_ACHILAS_LABEL,
+    CHOMETZ_BIUR_LABEL,
+    CHOMETZ_SRIEFES_LABEL,
     DOMAIN,
     ZMAN_CALENDAR_BY_KEY,
     ZMAN_CALENDAR_EREV_MOTZI_KEYS,
@@ -159,6 +162,21 @@ def _instant(
     return CalendarEvent(
         start=moment, end=moment, summary=summary, description=description
     )
+
+
+def _zman_summary(label: str) -> str:
+    """Event title for an instant: the label, prefixed with זמן.
+
+    A zman calendar publishes a moment; a span calendar publishes the
+    period around it, and the two often share a name. With both on, the
+    Holiday calendar's מוצאי שבת run and the Havdalah zman's single
+    moment sit next to each other reading like a duplicate. The prefix
+    separates them: מוצאי שבת is the period, זמן מוצאי שבת is the time.
+
+    Labels that already say זמן — סוף זמן קריאת שמע, זמן מעריב ר״ת, the
+    chometz deadlines — are returned unchanged rather than doubled up.
+    """
+    return label if "זמן" in label else f"זמן {label}"
 
 
 def _merge_spans(spans: list[list[dt.datetime]]) -> list[tuple[dt.datetime, dt.datetime]]:
@@ -955,8 +973,16 @@ class ZmanCalendar(YidCalCalendar):
         self._english = english
         cfg = (hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
         self._tallis = int(cfg.get("tallis_tefilin_offset", 22))
+        if key == "chometz":
+            # Once a year, so the default week-long cache would leave
+            # this entity empty for eleven months. Widening is cheap:
+            # the scan does nothing on any day but 13/14 Nisan.
+            self._live_lookahead = dt.timedelta(days=400)
+            self._live_lookback = dt.timedelta(days=2)
 
     async def _async_build(self, start, end):
+        if self._key == "chometz":
+            return await self._build_chometz(start, end)
         if self._key == "candle_lighting":
             return await self._build_candle_lighting(start, end)
         if self._key in ZMAN_CALENDAR_EREV_MOTZI_KEYS:
@@ -988,7 +1014,66 @@ class ZmanCalendar(YidCalCalendar):
             )
             if moment is None or not (start <= moment < end):
                 continue
-            events.append(_instant(moment, self._hebrew, self._english))
+            events.append(
+                _instant(moment, _zman_summary(self._hebrew), self._english)
+            )
+        return events
+
+    async def _build_chometz(self, start, end):
+        """The Erev-Pesach chometz deadlines.
+
+        Two zmanim in a normal year, three when 14 Nisan is Shabbos and
+        they split across Friday and Shabbos. Which deadline lands on
+        which day is a halachic question, so it is answered by
+        ``halacha_events.chometz_deadline_days`` rather than worked out
+        again here; the times come from ``compute_chametz_zmanim`` with
+        both deadlines floored, which is the chumrah the printed luach
+        uses and what the chometz sensors and the zmanim lookup now use
+        too — so every surface shows the same minute.
+
+        These are instants, like candle lighting.
+        """
+        from .yidcal_lib.halacha_events import chometz_deadline_days
+        from .yidcal_lib.zman_compute import compute_chametz_zmanim
+
+        #: deadline key -> (event summary, index into the returned pair)
+        _WHICH = {
+            "achilas": (CHOMETZ_ACHILAS_LABEL, 0),
+            "sriefes": (CHOMETZ_SRIEFES_LABEL, 1),
+            "biur": (CHOMETZ_BIUR_LABEL, 1),
+        }
+
+        events: list[CalendarEvent] = []
+        for index, day in enumerate(_days(start, end)):
+            if index and index % _YIELD_EVERY == 0:
+                await asyncio.sleep(0)
+            try:
+                heb = PHebrewDate.from_pydate(day)
+                if heb.month != 1 or heb.day not in (13, 14):
+                    continue
+                schedule = chometz_deadline_days(heb.year)
+                due = [k for k, d in schedule.items() if d == day]
+                if not due:
+                    continue
+
+                pair = compute_chametz_zmanim(
+                    geo=self._geo, tz=self._tz, base_date=day,
+                    havdalah_offset=self._havdalah,
+                    sriefes_round="floor",
+                )
+                wanted = [(_WHICH[k][0], pair[_WHICH[k][1]]) for k in due]
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "YidCal chometz calendar: %s failed", day, exc_info=True
+                )
+                continue
+
+            for label, moment in wanted:
+                if not (start <= moment < end):
+                    continue
+                events.append(
+                    _instant(moment, _zman_summary(label), self._english)
+                )
         return events
 
     async def _build_candle_lighting(self, start, end):
@@ -1055,7 +1140,9 @@ class ZmanCalendar(YidCalCalendar):
                 if context and context != "\u2014"
                 else self._english
             )
-            events.append(_instant(moment, CANDLE_LIGHTING_SUMMARY, description))
+            events.append(_instant(
+                moment, _zman_summary(CANDLE_LIGHTING_SUMMARY), description
+            ))
         return events
 
     async def _build_erev_motzi(self, start, end):
@@ -1098,7 +1185,9 @@ class ZmanCalendar(YidCalCalendar):
                     continue
                 if not (start <= moment < end):
                     continue
-                events.append(_instant(moment, label, self._english))
+                events.append(
+                    _instant(moment, _zman_summary(label), self._english)
+                )
         return events
 
 
