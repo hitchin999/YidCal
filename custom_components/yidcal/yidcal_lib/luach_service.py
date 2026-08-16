@@ -42,6 +42,14 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
+# Service responses (``return_response``) landed in HA 2023.7 — the same
+# floor hacs.json declares. Guarded anyway so a very old core degrades to
+# the previous fire-and-forget registration instead of failing to set up.
+try:  # pragma: no cover - trivial import guard
+    from homeassistant.core import SupportsResponse
+except ImportError:  # pragma: no cover
+    SupportsResponse = None  # type: ignore[assignment]
+
 from zmanim.util.geo_location import GeoLocation
 
 from ..const import DOMAIN, WEEKLY_LUACH_ENABLED
@@ -180,6 +188,13 @@ _SCHEMA = vol.Schema({
     # ``.json`` extension) carrying the structured luach data, so a
     # dashboard/card can be built off the data instead of the PDF.
     vol.Optional("emit_json"): cv.boolean,
+    # When True, skip BOTH persistent notifications (the "luach generated"
+    # one and the auto-cleanup one). The file is still written and the
+    # service response still carries every path, so a caller that shows
+    # the result itself -- a dashboard card, an automation that notifies
+    # its own way -- isn't also leaving a notification behind. Defaults
+    # off, so every existing caller is unaffected.
+    vol.Optional("no_notification"): cv.boolean,
     # When True, SKIP the PDF render and write ONLY the sidecar JSON
     # (forces emit_json on). Yearly styles only; runs quietly. Internal
     # to the built-in Erev-RH auto-export -- intentionally NOT a UI
@@ -296,12 +311,22 @@ def async_register_service(hass: HomeAssistant) -> None:
     integration reload (without a full HA restart) picks up the
     latest schema/handler from this module, rather than keeping the
     version registered on the previous load.
-    """
-    async def _handle(call: ServiceCall) -> None:
-        await _async_generate_luach(hass, call)
 
+    Registered with ``SupportsResponse.OPTIONAL`` so a caller that asks
+    for a response (a Lovelace card, a script with
+    ``response_variable:``) gets back where the file landed — see
+    ``_async_generate_luach``'s return value. Callers that don't ask are
+    completely unaffected, which keeps every existing automation and the
+    Erev-RH auto-export working exactly as before.
+    """
+    async def _handle(call: ServiceCall):
+        return await _async_generate_luach(hass, call)
+
+    _kwargs = {}
+    if SupportsResponse is not None:
+        _kwargs["supports_response"] = SupportsResponse.OPTIONAL
     hass.services.async_register(
-        DOMAIN, SERVICE_GENERATE_LUACH, _handle, schema=_SCHEMA,
+        DOMAIN, SERVICE_GENERATE_LUACH, _handle, schema=_SCHEMA, **_kwargs,
     )
     _LOGGER.debug("YidCal: registered service %s.%s", DOMAIN, SERVICE_GENERATE_LUACH)
     if WEEKLY_LUACH_ENABLED:
@@ -316,9 +341,16 @@ def async_remove_service(hass: HomeAssistant) -> None:
         hass.services.async_remove(DOMAIN, SERVICE_GENERATE_LUACH)
 
 
-async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
+async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> dict:
     """Service handler body. Runs on the HA event loop; offloads the
     blocking PDF generation to the executor.
+
+    Returns a small JSON-safe dict describing what was written (paths,
+    ``/local/...`` URLs, the resolved range and location). Home
+    Assistant hands it to callers that pass ``return_response: true``
+    and silently drops it for everyone else, so this is purely
+    additive — the persistent notification, the files, and every
+    existing caller behave identically.
     """
     style = call.data.get("style") or "weekly_yidcal"
 
@@ -526,6 +558,10 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         "lat": lat, "lon": lon, "tzname": tzname,
         "name": loc_name or "",
     }
+
+    # Suppress both persistent notifications for this call (see the
+    # schema note). json_only mode was already silent.
+    no_notification = bool(call.data.get("no_notification", False))
 
     # Offload to the executor: build_luach, mkdir, and PDF rendering
     # are blocking ops that would stall the event loop on a Pi.
@@ -817,7 +853,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
     # notification_id) so it sits alongside the "saved" one.
     # Skipped silently when nothing was deleted (no spammy
     # zero-count noises).
-    if _pruned_names and not json_only:
+    if _pruned_names and not json_only and not no_notification:
         from homeassistant.components import (
             persistent_notification as _pn_del,
         )
@@ -841,6 +877,28 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             notification_id="yidcal_luach_pruned",
         )
 
+    # Shared bits of the service response (see the docstring). Kept
+    # JSON-safe — dates as ISO strings, paths as plain strings.
+    _json_path = _sidecar_json_path(out_path) if emit_json else None
+    _resp: dict = {
+        "ok": True,
+        "style": style,
+        "start_date": start_d.isoformat(),
+        "end_date": end_d.isoformat(),
+        "hebrew_year": (
+            int(eff_hebrew_year) if eff_hebrew_year is not None else None
+        ),
+        "location": loc_name or "",
+        "diaspora": diaspora,
+        "time_format": time_fmt,
+        "json_filename": _json_path.name if _json_path else None,
+        "json_path": str(_json_path) if _json_path else None,
+        "json_url": (
+            f"/local/yidcal-data/{_json_path.name}" if _json_path else None
+        ),
+        "pruned": list(_pruned_names),
+    }
+
     # ── JSON-only: no PDF to link to — log the data file and stop ──
     if json_only:
         _json_rel = _sidecar_json_path(out_path).name
@@ -850,7 +908,14 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             _sidecar_json_path(out_path),
             _json_rel,
         )
-        return
+        return {
+            **_resp,
+            "json_only": True,
+            "filename": None,
+            "pdf_path": None,
+            "pdf_url": None,
+            "pdf_absolute_url": None,
+        }
 
     # ── Notify the user with a download link ──
     # The clickable anchor uses the RELATIVE ``/local/...`` URL on
@@ -927,6 +992,19 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
             f"\n\nData (JSON) for a dashboard/card:\n`{_json_url}`"
         )
 
+    if no_notification:
+        # Asked to stay quiet. The response below still carries every
+        # path, which is what the caller that asked for silence is using.
+        _LOGGER.info("YidCal: generated luach → %s", out_path)
+        return {
+            **_resp,
+            "json_only": False,
+            "filename": rel,
+            "pdf_path": str(out_path),
+            "pdf_url": rel_url,
+            "pdf_absolute_url": full_url,
+        }
+
     persistent_notification.async_create(
         hass,
         message=(
@@ -957,6 +1035,19 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> None:
         notification_id=f"yidcal_luach_{rel}",
     )
     _LOGGER.info("YidCal: generated luach → %s", out_path)
+
+    return {
+        **_resp,
+        "json_only": False,
+        "filename": rel,
+        "pdf_path": str(out_path),
+        # Relative on purpose — resolves against whatever origin the
+        # caller is on (LAN, DDNS, tunnel), same reasoning as the
+        # notification link above. ``pdf_absolute_url`` is the shareable
+        # one, best-effort.
+        "pdf_url": rel_url,
+        "pdf_absolute_url": full_url,
+    }
 
 
 # ── Date range resolution ─────────────────────────────────────────────
