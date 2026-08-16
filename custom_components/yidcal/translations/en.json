@@ -32,14 +32,18 @@
           "kiddush_levana_start": "{lbl_kiddush_levana_start}",
           "upcoming_lookahead_days": "{lbl_upcoming_lookahead_days}",
           "enable_zmanim_lookup": "{lbl_enable_zmanim_lookup}",
-          "enable_luach_pdf": "{lbl_enable_luach_pdf}"
+          "enable_luach_pdf": "{lbl_enable_luach_pdf}",
+          "luach_json_multiyear": "{lbl_luach_json_multiyear}",
+          "luach_json_years_ahead": "{lbl_luach_json_years_ahead}"
         },
         "data_description": {
           "haftorah_minhag": "{dsc_haftorah_minhag}",
           "molad_language": "{dsc_molad_language}",
           "enable_multiday_candles": "{dsc_enable_multiday_candles}",
           "enable_zmanim_lookup": "{dsc_enable_zmanim_lookup}",
-          "enable_luach_pdf": "{dsc_enable_luach_pdf}"
+          "enable_luach_pdf": "{dsc_enable_luach_pdf}",
+          "luach_json_multiyear": "{dsc_luach_json_multiyear}",
+          "luach_json_years_ahead": "{dsc_luach_json_years_ahead}"
         }
       },
       "zmanim": {
@@ -121,14 +125,18 @@
           "kiddush_levana_start": "{lbl_kiddush_levana_start}",
           "upcoming_lookahead_days": "{lbl_upcoming_lookahead_days}",
           "enable_zmanim_lookup": "{lbl_enable_zmanim_lookup}",
-          "enable_luach_pdf": "{lbl_enable_luach_pdf}"
+          "enable_luach_pdf": "{lbl_enable_luach_pdf}",
+          "luach_json_multiyear": "{lbl_luach_json_multiyear}",
+          "luach_json_years_ahead": "{lbl_luach_json_years_ahead}"
         },
         "data_description": {
           "haftorah_minhag": "{dsc_haftorah_minhag}",
           "molad_language": "{dsc_molad_language}",
           "enable_multiday_candles": "{dsc_enable_multiday_candles}",
           "enable_zmanim_lookup": "{dsc_enable_zmanim_lookup}",
-          "enable_luach_pdf": "{dsc_enable_luach_pdf}"
+          "enable_luach_pdf": "{dsc_enable_luach_pdf}",
+          "luach_json_multiyear": "{dsc_luach_json_multiyear}",
+          "luach_json_years_ahead": "{dsc_luach_json_years_ahead}"
         }
       },
       "zmanim": {
