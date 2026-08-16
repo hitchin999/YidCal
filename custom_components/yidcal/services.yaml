@@ -110,6 +110,16 @@ set_yurtzeit_custom:
 generate_luach:
   name: Generate Luach (PDF)
   description: Generate a luach PDF — Weekly YidCal card, yearly multi-page, or yearly sheet.
+  # Supports an optional response. Call it with `response_variable:` (or
+  # return_response from a dashboard card) and you get back where the file
+  # landed — pdf_url / pdf_path / json_url, plus the resolved date range,
+  # location and Hebrew year. Callers that don't ask are unaffected.
+  #
+  #   - action: yidcal.generate_luach
+  #     data: {style: weekly_yidcal}
+  #     response_variable: luach
+  #   - action: notify.mobile_app_phone
+  #     data: {message: "Luach ready: {{ luach.pdf_url }}"}
   fields:
     style:
       name: Style
@@ -224,6 +234,16 @@ generate_luach:
         constant:
           value: true
           label: Write the JSON file
+    no_notification:
+      name: Don't create a notification
+      description: >-
+        Generate the luach without posting the "luach generated" or
+        auto-cleanup notifications. The file is still written and the
+        service still returns its path -- for callers that show the result
+        themselves, like the YidCal Luach Print card.
+      required: false
+      selector:
+        boolean:
     # NOTE: the handler also accepts two params — `json_only` and
     # `include_weekly` — used ONLY by the background Erev-Rosh-Hashanah
     # JSON auto-export. They are intentionally NOT exposed as UI fields, so
