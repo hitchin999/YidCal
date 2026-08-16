@@ -689,8 +689,18 @@ calendar entity, with one timed event per day at that zman:
 | זמן מעריב 60 | `calendar.yidcal_zman_maariv_60` |  |
 | זמן מעריב ר״ת | `calendar.yidcal_zman_maariv_rt` |  |
 | חצות הלילה | `calendar.yidcal_zman_chatzos_haleila` |  |
-| הדלקת נרות | `calendar.yidcal_zman_candle_lighting` | only on the days it applies |
+| הדלקת הנרות | `calendar.yidcal_zman_candle_lighting` | only on the days it applies |
 | מוצאי שבת/יום טוב | `calendar.yidcal_zman_havdalah` | only on the days it applies |
+| זמני חמץ | `calendar.yidcal_zman_chometz` | only on Erev Pesach |
+
+**Event titles carry a `זמן` prefix.** The **Pick** column above is what you tick in
+the options screen; the *events* themselves are titled `זמן עלות השחר`, `זמן שקיעת החמה`,
+`זמן הדלקת הנרות`, `זמן מוצאי שבת`, and so on. That is deliberate: with the Holiday
+calendar on as well, the same Motzei Shabbos appears twice — once as a period
+(`מוצאי שבת`, 9:11 PM – 12:00 AM) and once as the moment itself
+(`זמן מוצאי שבת`, 9:11 PM) — and without the prefix the pair reads like a duplicate.
+Titles that already say זמן (`סוף זמן קריאת שמע מג״א`, `זמן מעריב ר״ת`, the chometz
+deadlines) are left alone rather than doubled up.
 
 > **Cost note:** the calendar component polls about once a minute. Each entity keeps a
 > window of events around "now" and rebuilds it every few hours, so a poll is a list
@@ -990,6 +1000,20 @@ Generate a printable **luach PDF** straight from Home Assistant. It runs on the 
 
 * **Service:** `yidcal.generate_luach` — **enabled by default** (toggle it under **Options → Create the Generate Luach (PDF) service**).
 * **Output:** written to `/config/www/yidcal-data/` and served at `/local/yidcal-data/…`. A persistent notification pops up with a clickable download link. YidCal keeps only the **4 most-recent** files and prunes older ones, so the folder never fills up. *(Download/save any PDF you want to keep.)*
+* **`output_path`** — write somewhere else instead of the default folder.
+* **`no_notification: true`** — generate silently. The file is still written and the service still returns its path; use this when something else is showing the result, such as a dashboard card.
+* **Returns a response.** Call it with `response_variable:` and you get back `pdf_url`, `pdf_path` and `json_url`, plus the resolved date range, location and Hebrew year — so an automation can link to the file it just made:
+
+  ```yaml
+  - action: yidcal.generate_luach
+    data:
+      style: weekly_yidcal
+      no_notification: true
+    response_variable: luach
+  - action: notify.mobile_app_phone
+    data:
+      message: "Luach ready: {{ luach.pdf_url }}"
+  ```
 
 Call it with no data to get **this week's** YidCal card for your **configured location**:
 
@@ -1019,6 +1043,25 @@ data:
 * `weekly_yidcal` (default) — one YidCal card per week. Use `start_date` / `end_date` to pick the range; `shehecheyanu` and `add_seconds` are weekly-only extras.
 
 Every field defaults to your integration settings, so overrides are only needed when you want something different (a different year, another city, an Israel luach from a Diaspora setup, etc.).
+
+### Keeping several years of luach JSON *(optional)*
+
+YidCal always keeps one JSON for the current year. Turn on
+**`האלטן די לוח JSON פאר עטליכע יארן`** under **Options → General** and it also keeps a
+separate file per year — one year back, plus however many years ahead you choose
+under **`וויפיל יארן פאראויס צו האלטן`** (1–10, default 5).
+
+* Files are named `luach_erev_rosh_hashanah_<year>.json`, with an index at
+  `luach_years.json`.
+* Each Erev Rosh Hashanah the new far year is added and the oldest is dropped, so
+  there is always exactly one past year on disk.
+* They are built one at a time, a few minutes apart, so a fresh install doesn't
+  generate all of them at once.
+* Each file is roughly **1MB** — the default of 5 years ahead means about **7 files**
+  (one back + this year + five ahead).
+
+> Only runs while the **Generate Luach (PDF)** service above is enabled. If your
+> configured location changes, the affected files are rebuilt.
 
 ---
 
