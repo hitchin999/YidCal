@@ -120,6 +120,10 @@ LABELS = {
     "dsc_enable_multiday_candles": {"yi": "ווען דאס איז אנגעצינדן, בלייבט דער זמן ערב סענסאר אויף די ערשטע נאכט, און טוישט זיך הערשט 12 ביינאכט מוצאי.", "he": "כאשר מופעל, חיישן זמן ערב הופך לסטטי (לילה ראשון בלבד) ומתעדכן רק ב-12:00 AM במוצאי", "en": "When enabled, the Zman Erev sensor becomes static (Night 1 only) and only advances at 12:00 AM on Motzi night"},
     "dsc_enable_zmanim_lookup": {"yi": "צולייגען א sensor.yidcal_zmanim_lookup מיט א סערוויס yidcal.check_zmanim וואס מען קען רופן מיט א דאטום און עס וועט ווייזן די זמנים פון דעם טאג.", "he": "מוסיף את החיישן sensor.yidcal_zmanim_lookup ואת השירות yidcal.check_zmanim. ניתן להפעיל את השירות עם כל תאריך (עד ±100 שנים) והחיישן יתמלא בזמנים של אותו יום ובתווית יום עברית.", "en": "Adds sensor.yidcal_zmanim_lookup plus the yidcal.check_zmanim service. Call the service with any date (±100 years) and the sensor will populate with that day's zmanim and a Hebrew day label."},
     "dsc_enable_luach_pdf": {"yi": "לייגט צו די 'yidcal.generate_luach' סערוויס, וואס מאכט א לוח (PDF) פאר א געוויסע צייט און לייגט עס אריין אלץ א /config/www/yidcal-data/.", "he": "מוסיף את השירות yidcal.generate_luach שיוצר לוח להדפסה (PDF) עבור טווח תאריכים, ושומר אותו תחת /config/www/yidcal-data/.", "en": "Adds the yidcal.generate_luach service, which creates a printable luach (PDF) for a given date range and writes it under /config/www/yidcal-data/."},
+    "lbl_luach_json_multiyear": {"yi": "האלטן די לוח JSON פאר עטליכע יארן", "he": "שמירת קובץ JSON של הלוח למספר שנים", "en": "Keep the luach JSON for several years"},
+    "dsc_luach_json_multiyear": {"yi": "נארמאל האלט מען איין פייל פונעם יעצטיגן יאר. ווען דאס איז אנגעצינדן האלט מען אויך א באזונדערע פייל פאר איין יאר צוריק, און פאר די יארן פאראויס וואס איר קלויבט אויס דא אונטן. עס ארבעט נאר ווען די לוח סערוויס אויבן איז אנגעצינדן; יעדע פייל נעמט ארום איין מעגאבייט.", "he": "בדרך כלל נשמר קובץ אחד של השנה הנוכחית. כאשר מופעל, נשמר בנוסף קובץ נפרד לשנה אחת אחורה, ולמספר השנים קדימה שתבחר למטה. פועל רק כאשר שירות הלוח שלמעלה מופעל; כל קובץ תופס כמגה־בייט אחד.", "en": "YidCal always keeps one JSON for the current year. Turning this on also keeps a separate JSON for one year back and for the years ahead you pick below. Only works while the Luach PDF service above is enabled; each one is roughly 1MB."},
+    "lbl_luach_json_years_ahead": {"yi": "וויפיל יארן פאראויס צו האלטן", "he": "כמה שנים קדימה לשמור", "en": "How many years ahead to keep"},
+    "dsc_luach_json_years_ahead": {"yi": "אחוץ די איין יאר צוריק. פינף מיינט: איין יאר צוריק, דאס יעצטיגע יאר, און פינף יארן פאראויס — צוזאמען זיבן פיילס.", "he": "מלבד השנה האחת אחורה. הערך חמש פירושו: שנה אחת אחורה, השנה הנוכחית וחמש שנים קדימה — בסך הכל שבעה קבצים.", "en": "On top of the one year back. 5 means: one year back, the current year, and five years ahead — 7 files in total."},
     # ---- Calendars ----------------------------------------------------
     "lbl_enable_calendars": {"yi": "עקטיוועט די קאלענדערס", "he": "הפעלת לוחות השנה", "en": "Enable calendars"},
     "dsc_enable_calendars": {"yi": "ווען דאס איז אנגעצינדן ווערט געשאפן א באזונדערע דעווייס — YidCal — Calendars — מיט אלע קאלענדערס וואס איר האט אויסגעקליבן דא אונטן. ווען עס איז אויסגעלאשן ווערט די דעווייס נישט אנגעצינדן.", "he": "כאשר מופעל נוצר מכשיר נפרד — YidCal — Calendars — עם כל הלוחות שבחרת למטה. כאשר כבוי, המכשיר אינו נוצר כלל.", "en": "Creates a separate \"YidCal — Calendars\" device holding every calendar you pick below. When off, no calendar entities and no device are created."},
@@ -182,6 +186,9 @@ MENU_LANGUAGE = {
 
 #: Unit shown on the upcoming_lookahead_days slider.
 UNIT_DAYS = {"yi": "טעג", "he": "ימים", "en": "days"}
+
+#: Unit shown on the luach_json_years_ahead slider.
+UNIT_YEARS = {"yi": "יאר", "he": "שנים", "en": "years"}
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +289,14 @@ _GENERAL_DESCS = [
     "haftorah_minhag", "molad_language",
     "enable_multiday_candles", "enable_zmanim_lookup",
 ]
+#: Luach block on the General page — the service toggle plus the rolling
+#: multi-year JSON window that rides on it.
+_LUACH_FIELDS = [
+    "enable_luach_pdf", "luach_json_multiyear", "luach_json_years_ahead",
+]
+_LUACH_DESCS = [
+    "enable_luach_pdf", "luach_json_multiyear", "luach_json_years_ahead",
+]
 _CALENDAR_FIELDS = [
     "enable_calendars", "calendars", "calendar_date_extras", "calendar_zmanim",
 ]
@@ -303,8 +318,8 @@ STEPS: dict[str, dict] = {
     # --- config flow ---
     "config.user":     {"kind": "menu", "menu": "language"},
     "config.general":  {"kind": "form", "title": "general",
-                        "fields": _GENERAL_FIELDS + ["enable_luach_pdf"],
-                        "descs": _GENERAL_DESCS + ["enable_luach_pdf"]},
+                        "fields": _GENERAL_FIELDS + _LUACH_FIELDS,
+                        "descs": _GENERAL_DESCS + _LUACH_DESCS},
     "config.zmanim":   {"kind": "form", "title": "zmanim",
                         "fields": _ZMANIM_FIELDS, "descs": _ZMANIM_DESCS},
     "config.calendars": {"kind": "form", "title": "calendars",
@@ -316,8 +331,8 @@ STEPS: dict[str, dict] = {
     "options.init":     {"kind": "menu", "menu": "init"},
     "options.language": {"kind": "menu", "menu": "language"},
     "options.general":  {"kind": "form", "title": "general",
-                         "fields": _GENERAL_FIELDS + ["enable_luach_pdf"],
-                         "descs": _GENERAL_DESCS + ["enable_luach_pdf"]},
+                         "fields": _GENERAL_FIELDS + _LUACH_FIELDS,
+                         "descs": _GENERAL_DESCS + _LUACH_DESCS},
     "options.zmanim":   {"kind": "form", "title": "zmanim",
                          "fields": _ZMANIM_FIELDS, "descs": _ZMANIM_DESCS},
     "options.calendars": {"kind": "form", "title": "calendars",
@@ -357,6 +372,10 @@ def sel(key: str, lang: str) -> list[dict[str, str]]:
 
 def unit_days(lang: str) -> str:
     return _pick(UNIT_DAYS, lang)
+
+
+def unit_years(lang: str) -> str:
+    return _pick(UNIT_YEARS, lang)
 
 
 def _pair_label(table: dict[str, tuple[str, str]], key: str, lang: str) -> str:
