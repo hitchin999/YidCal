@@ -104,6 +104,12 @@ from .config_flow import (
     CONF_ENABLE_LUACH_PDF,
     DEFAULT_ENABLE_LUACH_PDF,
 
+    # Rolling multi-year luach JSON window (NEW)
+    CONF_LUACH_JSON_MULTIYEAR,
+    DEFAULT_LUACH_JSON_MULTIYEAR,
+    CONF_LUACH_JSON_YEARS_AHEAD,
+    DEFAULT_LUACH_JSON_YEARS_AHEAD,
+
     # Molad display language (NEW)
     CONF_MOLAD_LANGUAGE,
     DEFAULT_MOLAD_LANGUAGE,
@@ -645,6 +651,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial.get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
     )
 
+    luach_json_multiyear = opts.get(
+        CONF_LUACH_JSON_MULTIYEAR,
+        initial.get(CONF_LUACH_JSON_MULTIYEAR, DEFAULT_LUACH_JSON_MULTIYEAR),
+    )
+    luach_json_years_ahead = opts.get(
+        CONF_LUACH_JSON_YEARS_AHEAD,
+        initial.get(CONF_LUACH_JSON_YEARS_AHEAD, DEFAULT_LUACH_JSON_YEARS_AHEAD),
+    )
+
     molad_language = opts.get(
         CONF_MOLAD_LANGUAGE,
         initial.get(CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE),
@@ -846,6 +861,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
         CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
         CONF_MOLAD_LANGUAGE: molad_language,
+        CONF_ENABLE_LUACH_PDF: enable_luach_pdf,
+        CONF_LUACH_JSON_MULTIYEAR: luach_json_multiyear,
+        CONF_LUACH_JSON_YEARS_AHEAD: luach_json_years_ahead,
         **extra_opts,
     }
 
@@ -895,6 +913,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
         CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
         CONF_MOLAD_LANGUAGE: molad_language,
+        CONF_ENABLE_LUACH_PDF: enable_luach_pdf,
+        CONF_LUACH_JSON_MULTIYEAR: luach_json_multiyear,
+        CONF_LUACH_JSON_YEARS_AHEAD: luach_json_years_ahead,
         **extra_opts,
     }
 
@@ -918,8 +939,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Keep the fixed-name yearly luach JSON current, refreshed on
         # Erev Rosh Hashanah for the incoming year (self-healing). Reuses
         # the generate_luach service in json_only mode.
+        # When the multi-year option is on it also maintains a rolling
+        # window of per-year JSONs (one year back + N ahead), adding the
+        # new far year and dropping the oldest each Erev Rosh Hashanah.
         from .yidcal_lib.luach_auto_json import async_setup_erev_rh_json
-        async_setup_erev_rh_json(hass)
+        async_setup_erev_rh_json(
+            hass,
+            multiyear=bool(luach_json_multiyear),
+            years_ahead=luach_json_years_ahead,
+        )
     else:
         _async_remove_luach_service(hass)
         from .yidcal_lib.luach_auto_json import async_shutdown_erev_rh_json
