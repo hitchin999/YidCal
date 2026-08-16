@@ -60,6 +60,25 @@ DEFAULT_ENABLE_ZMANIM_LOOKUP = False
 CONF_ENABLE_LUACH_PDF = "enable_luach_pdf"
 DEFAULT_ENABLE_LUACH_PDF = True
 
+# ============ Multi-year luach JSON ============
+# YidCal always keeps ONE fixed-name JSON of the current Hebrew year's
+# luach at /config/www/yidcal-data/luach_erev_rosh_hashanah.json,
+# refreshed on Erev Rosh Hashanah. Turning this on additionally keeps a
+# ROLLING WINDOW of per-year files — one year behind plus N years ahead —
+# named luach_erev_rosh_hashanah_<hebrew year>.json, with an index at
+# luach_years.json listing what's available.
+#
+# The window follows the year: each Erev Rosh Hashanah it gains the new
+# far year and drops the one that fell off the back, so there is always
+# exactly one past year on disk. Only meaningful while the Luach PDF
+# feature above is enabled (it reuses that service).
+CONF_LUACH_JSON_MULTIYEAR = "luach_json_multiyear"
+DEFAULT_LUACH_JSON_MULTIYEAR = False
+CONF_LUACH_JSON_YEARS_AHEAD = "luach_json_years_ahead"
+DEFAULT_LUACH_JSON_YEARS_AHEAD = 5
+MIN_LUACH_JSON_YEARS_AHEAD = 1
+MAX_LUACH_JSON_YEARS_AHEAD = 10
+
 # ============ Haftorah Minhag ============
 # Selects which minhag the Haftorah sensor's STATE follows. Both
 # minhagim are always published as the אשכנזי / ספרדי attributes, so
@@ -321,6 +340,28 @@ def _general_schema(lang, get, *, include_luach_pdf: bool):
                 default=get(CONF_ENABLE_LUACH_PDF, DEFAULT_ENABLE_LUACH_PDF),
             )
         ] = bool
+        # Rolling multi-year luach JSON window. Both fields do nothing
+        # unless the toggle above is on — they ride the same service.
+        fields[
+            vol.Optional(
+                CONF_LUACH_JSON_MULTIYEAR,
+                default=get(CONF_LUACH_JSON_MULTIYEAR, DEFAULT_LUACH_JSON_MULTIYEAR),
+            )
+        ] = bool
+        fields[
+            vol.Optional(
+                CONF_LUACH_JSON_YEARS_AHEAD,
+                default=get(CONF_LUACH_JSON_YEARS_AHEAD, DEFAULT_LUACH_JSON_YEARS_AHEAD),
+            )
+        ] = selector({
+            "number": {
+                "min": MIN_LUACH_JSON_YEARS_AHEAD,
+                "max": MAX_LUACH_JSON_YEARS_AHEAD,
+                "step": 1,
+                "mode": "slider",
+                "unit_of_measurement": S.unit_years(lang),
+            }
+        })
     return vol.Schema(fields)
 
 
