@@ -58,6 +58,18 @@ from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from pyluach import dates as pl_dates, parshios
+
+from .molad_text import (
+    TOD_DAWN as _TOD_DAWN,
+    TOD_MORNING as _TOD_MORNING,
+    TOD_LATE_MORNING as _TOD_LATE_MORNING,
+    TOD_AFTERNOON as _TOD_AFTERNOON,
+    TOD_EVENING as _TOD_EVENING,
+    TOD_NIGHT as _TOD_NIGHT,
+    TOD_NIGHT_ENTERING as _TOD_NIGHT_ENTERING,
+    TOD_FRIDAY_NIGHT as _TOD_FRIDAY_NIGHT,
+    TOD_MOTZASH as _TOD_MOTZASH,
+)
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Year as PYear
 
 
@@ -461,6 +473,29 @@ def intra_block_day_label(ph: PHebrewDate, *, diaspora: bool) -> str | None:
 # ────────────────────────────────────────────────────────────────────────
 # Parsha resolution
 # ────────────────────────────────────────────────────────────────────────
+
+def chanukah_day_number(d: date_cls) -> int | None:
+    """Which day of Chanukah ``d`` is (1-8), or None.
+
+    Counted as days-from-25-Kislev so that it stays correct in both
+    כסלו-29 and כסלו-30 years; never as hardcoded month/day pairs.
+    """
+    ph = PHebrewDate.from_pydate(d)
+    try:
+        start = PHebrewDate(ph.year, 9, 25).to_pydate()
+    except Exception:
+        return None
+    n = (d - start).days + 1
+    if 1 <= n <= 8:
+        return n
+    # A date in Teves belongs to the PREVIOUS Kislev's Chanukah.
+    try:
+        start = PHebrewDate(ph.year, 9, 25).to_pydate()
+        n = (d - start).days + 1
+    except Exception:
+        return None
+    return n if 1 <= n <= 8 else None
+
 
 def parsha_name(
     saturday: date_cls,
@@ -1098,84 +1133,221 @@ def parsha_for_mevorchim_rc_day_he(
     )
 
 
+# ────────────────────────────────────────────────────────────────────────
+# Molad / Tekufah time-of-day bucketing
+# ────────────────────────────────────────────────────────────────────────
+# (formerly tod_buckets.py — folded in here, next to its only consumer)
+#
+# Time-of-day bucketing for the Molad and the Tekufos — ONE source of truth,
+# shared by sensor.yidcal_molad, the Shabbos-Mevorchim calendar, and every
+# generated luach.
+#
+# WHY THIS MODULE EXISTS
+# ----------------------
+# The rule used to live in two places that disagreed with each other and
+# with the printed luachs:
+#
+#   * sensor.py::_molad_tod_key_jerusalem — AM edges at 6:00/9:00, and a PM
+#     branch that compared the LOCAL-clock molad against a JERUSALEM tzeis
+#     instant. Because get_actual_molad returns the announcement digits on
+#     the OBSERVER's clock, that mixed two frames: Shabbos 2:09 PM in New
+#     York is 18:09 UTC while Jerusalem tzeis is 17:50 UTC, so the Tammuz
+#     5784 molad was announced as "מוצאי שב״ק" in the middle of Shabbos
+#     afternoon. Scored 9/13 against the Kiryas Joel 5784 luach it mirrors.
+#   * halacha_events.format_molad_short(style="sf") — a separate table with
+#     edges at 5/10/12/19/21.
+#
+# Both are replaced by the table below, verified against the print:
+#
+#   * Kiryas Joel 5784 .......... 13/13 molad announcements (Yiddish)
+#   * South Fallsburg 5781–5787 . 40/41 molad lines (Hebrew)
+#
+# The lone miss is 5781 Kislev, where the sheet sets the word as "אחצ״ה" —
+# the letters of אחה״צ transposed. The two luachs agree on every edge.
+#
+# THE INPUT IS THE ANNOUNCED DIGITS, NOT A CONVERTED TIME
+# -------------------------------------------------------
+# ``YidCalHelper.get_actual_molad`` returns pyluach's announcement digits
+# stamped on the molad's civil date, shifted +1h when the observer's zone is
+# on DST, tagged with the observer's tz. That is exactly what both luachs
+# typeset. Do NOT convert to Jerusalem before calling ``classify``.
+#
+# ZMANIM ARE THE CALLER'S JOB
+# ---------------------------
+# ``classify`` takes ``plag``/``tzeis`` rather than a GeoLocation, so this
+# module stays pure and halacha_events' "no zmanim imports" rule holds.
+# Callers pass the OBSERVER's own local zmanim for the moment's civil date,
+# which makes the rule correct at any location — there is no diaspora/Israel
+# branch here, and there should not be one: is_in_israel is a halachic
+# observance flag, not a clock selector.
+
+#: (night|dawn, dawn|morning, morning|late_morning), as clock hours.
+#: These are NOT chatzos: KJ 5784 prints the Iyar molad of 12:41 as
+#: נאכמיטאג although chatzos that day is 12:53.
+MOLAD_EDGES = (3, 5, 11)
+
+#: Tekufos use an earlier late-morning edge: the SF sheet prints 10:00 as
+#: לפה״צ where a molad at 10:43/10:44 is בבוקר. That edge is pinned rather
+#: than guessed — the tekufah clock is quantised to a 1:30 grid (16
+#: reachable values), 08:30 prints בבוקר, 10:00 prints לפה״צ, and 09:00
+#: never occurs, so 9 and 10 are behaviourally identical forever.
+#: The dawn/morning edges are reused from MOLAD_EDGES: they sit inside the
+#: bracket the tekufah data establishes (01:00 night → 04:00 dawn → 07:00
+#: morning). The two grid slots with no printed reading are 02:30 and
+#: 04:30; if a sheet ever disagrees there, those are the ones to check.
+TEKUFAH_EDGES = (3, 5, 10)
+
+
+def classify_molad_tod(
+    dt_local: datetime,
+    *,
+    plag: datetime,
+    tzeis: datetime,
+    edges: tuple[int, int, int] = MOLAD_EDGES,
+) -> str:
+    """Return the time-of-day bucket key for ``dt_local``.
+
+    ``plag``  — plag hamincha GR״A for dt_local's civil date.
+    ``tzeis`` — tzeis R״ת (sunset + 72) for dt_local's civil date.
+    Both must be in the same clock as ``dt_local``.
+
+    Daytime edges are clock hours; the afternoon/evening and evening/night
+    boundaries are zmanim, because that is where the halachic day turns.
+
+    Three molados within two minutes of each other on the clock, two
+    different printed words — which is what pins the plag boundary:
+
+        5781 Shevat  5:35 PM mid-Jan   plag 3:45 PM  → לפנות ערב
+        5785 Teves   5:33 PM late-Dec  plag 3:25 PM  → לפנות ערב
+        5786 Nissan  5:34 PM mid-Mar   plag 5:52 PM  → אחה״צ
+
+    And the pair that pins the tzeis boundary to the minute:
+
+        5784 Cheshvan Sat 7:33 PM, motzaei ש״ק 7:32 → מוצש״ק
+        5781 Nissan   Sat 7:03 PM, motzaei ש״ק 7:16 → still Shabbos
+    """
+    dawn_h, morning_h, late_morning_h = edges
+    hour = dt_local.hour
+    weekday = dt_local.weekday()          # Mon=0 … Fri=4, Sat=5, Sun=6
+
+    # Pre-dawn. Sunday pre-dawn is still the night of the Shabbos that has
+    # just ended, and both luachs label it מוצש״ק rather than by the hour.
+    if hour < morning_h:
+        if weekday == 6:
+            return _TOD_MOTZASH
+        return _TOD_NIGHT_ENTERING if hour < dawn_h else _TOD_DAWN
+
+    if hour < late_morning_h:
+        return _TOD_MORNING
+    if hour < 12:
+        return _TOD_LATE_MORNING
+
+    if dt_local < plag:
+        return _TOD_AFTERNOON
+    if dt_local < tzeis:
+        return _TOD_EVENING
+    if weekday == 5:
+        return _TOD_MOTZASH
+    if weekday == 4:
+        return _TOD_FRIDAY_NIGHT
+    return _TOD_NIGHT
+
+
+# Wording for each time-of-day bucket, per luach convention. The BUCKET is
+# decided once, in classify() above; only the words differ here.
+#
+# "sf"     — South Fallsburg yearly sheet. Verified 40/41 across 5781-5787.
+# "monroe" — Monroe/KJ multi-page luach. The KJ luach announces the molad
+#            in Yiddish only, so the Hebrew wording below is unchanged from
+#            what YidCal already shipped; what changed is the BUCKET it is
+#            selected by, which is now the printed-verified one.
+_MOLAD_TOD_WORDS = {
+    "sf": {
+        _TOD_DAWN:         "באשמורת הבוקר",
+        _TOD_MORNING:      "בבוקר",
+        _TOD_LATE_MORNING: "לפה״צ",
+        _TOD_AFTERNOON:    "אחה״צ",
+        _TOD_EVENING:      "לפנות ערב",
+    },
+    "monroe": {
+        _TOD_DAWN:         "באשה״ב",
+        _TOD_MORNING:      "בבוקר",
+        _TOD_LATE_MORNING: "קודה״צ",
+        _TOD_AFTERNOON:    "אחה״צ",
+        _TOD_EVENING:      "בערב",
+    },
+}
+
+_ENG_TO_HE_DAY = {
+    "Sunday": "א׳", "Monday": "ב׳", "Tuesday": "ג׳", "Wednesday": "ד׳",
+    "Thursday": "ה׳", "Friday": "עש״ק", "Shabbos": "שב״ק", "Saturday": "שב״ק",
+}
+_NEXT_ENG_DAY = {
+    "Sunday": "Monday", "Monday": "Tuesday", "Tuesday": "Wednesday",
+    "Wednesday": "Thursday", "Thursday": "Friday",
+    "Friday": "Saturday", "Saturday": "Sunday", "Shabbos": "Sunday",
+}
+
+
+def chalakim_phrase_he(parts: int) -> str:
+    """The ``ו<n> חלקים`` clause, spelled the way the luachs spell it.
+
+    Chalakim always land in 0-17 (the molad interval advances by exactly
+    one chelek a month, and 18 chalakim = 1 minute), so every year contains
+    both special cases:
+
+        0  → omitted entirely     (SF 5786 Elul  "בשעה 9:15 בבוקר")
+        1  → "וחלק אחד"           (SF 5781/5784/5787 — three sightings)
+        6  → "וששה חלקים"         (SF 5783 header; masculine, agreeing
+                                   with חלקים. 5787 sets "ושש", which is
+                                   the feminine form and the outlier.)
+    """
+    if not parts:
+        return ""
+    if parts == 1:
+        return " וחלק אחד"
+    if parts == 6:
+        return " וששה חלקים"
+    return f" ו{int_to_hebrew_letters(parts)} חלקים"
+
+
 def format_molad_short(
     m,
     *,
     diaspora: bool = True,
     metzora_display: str = "metzora",
     style: str = "monroe",
+    plag: datetime | None = None,
+    tzeis: datetime | None = None,
 ) -> str:
-    """Format a Molad object (from yidcal_lib.helper.Molad) in Hebrew
-    short phrasing. Two styles are supported:
+    """Format a Molad object (from yidcal_lib.helper.Molad) in Hebrew.
 
-    style="monroe" (default) — Monroe/KJ weekly-luach convention:
-       Standard:    ``יום <wd> <parsha> <tod> H:MM ו<chalakim> חלקים``
-       Pre-dawn (non-Sun): ``יום <wd> <parsha> באשה״ב H:MM ו<chalakim> חלקים``
-       Late-evening: ``אור ליום <wd+1> <parsha> H:MM ו<chalakim> חלקים``
-       Sun pre-dawn: ``מוצש״ק <prev-parsha> H:MM ו<chalakim> חלקים``
+    ``plag`` / ``tzeis`` are the OBSERVER's plag hamincha GR״A and tzeis
+    R״ת for the molad's civil date, in the molad's own clock. They decide
+    the afternoon → evening → night boundaries; see classify_molad_tod. When
+    omitted the function falls back to a fixed 12:00/19:00/21:00 split so
+    that callers which have not been threaded through yet still produce
+    something sane, but every in-tree caller now passes them.
 
-    style="sf" — South-Fallsburg yearly-luach convention:
-       Standard:    ``יום <wd> <parsha> בשעה H:MM ו<chalakim> חלקים <tod>``
-       Pre-dawn (non-Sun): ``אור ליום <wd> <parsha> בשעה H:MM ו<chalakim> חלקים``
-       Late-evening: ``אור ליום <wd+1> <parsha> בשעה H:MM ו<chalakim> חלקים``
-       Sun pre-dawn: ``מוצש״ק <prev-parsha> בשעה H:MM ו<chalakim> חלקים``
+    Day-label forms, both printed-verified:
 
-    Both styles share the same 6-tier time-of-day classification, the
-    same Motzaei-Shabbos special case for Sunday pre-dawn, and the
-    same parsha lookup (parsha of the upcoming Shabbos, or — for
-    Motzaei Shabbos — the parsha of the Shabbos that just ended).
-
-    Visible differences:
-      • SF adds a ``בשעה`` prefix before the time and places the TOD
-        word AFTER the chalakim, instead of before the time.
-      • Monroe uses ``באשה״ב`` as a TOD suffix for pre-dawn 00:00–04:59;
-        SF replaces that with an ``אור ל`` prefix on the current day
-        (matching how Hebrew "the eve-of" is read for pre-dawn hours).
-
-    Time-of-day tiers (24-hour):
-      • 00:00 – 04:59 → pre-dawn (style-specific; see above)
-      • 05:00 – 09:59 → ``בבוקר``    (early morning)
-      • 10:00 – 11:59 → ``קודה״צ``   (late morning, קודם הצהריים)
-      • 12:00 – 18:59 → ``אחה״צ``    (afternoon)
-      • 19:00 – 20:59 → SF: ``לפנות ערב`` / Monroe: ``בערב``  (late afternoon)
-      • 21:00 – 23:59 → ``אור ל`` prefix on NEXT day (both styles)
-
-    The Molad class exposes: ``day`` (English weekday name), ``hours``
-    (12-hr), ``minutes``, ``am_or_pm``, ``chalakim``, ``date`` (civil
-    date object). The civil ``date`` attribute is what lets us resolve
-    the parsha; if it's missing, the parsha portion is silently
-    omitted and the line falls back to the day+time+chalakim form.
+        אור ליום <day>   — night belonging to <day> (pre-3 AM: the current
+                           civil day; after tzeis: the next one)
+        ליל ש״ק          — the same, when that day is Shabbos  (SF only)
+        מוצש״ק <parsha>  — after Shabbos ends, incl. Sunday pre-dawn
+        יום <day> … <tod>
     """
-    eng_to_he = {
-        "Sunday": "א׳", "Monday": "ב׳", "Tuesday": "ג׳", "Wednesday": "ד׳",
-        "Thursday": "ה׳", "Friday": "עש״ק", "Shabbos": "שב״ק", "Saturday": "שב״ק",
-    }
-    next_eng_day = {
-        "Sunday": "Monday", "Monday": "Tuesday", "Tuesday": "Wednesday",
-        "Wednesday": "Thursday", "Thursday": "Friday",
-        "Friday": "Saturday", "Saturday": "Sunday", "Shabbos": "Sunday",
-    }
-
     civil_day = getattr(m, "day", "")
     h12 = getattr(m, "hours", 0)
     mi = getattr(m, "minutes", 0)
     ampm = str(getattr(m, "am_or_pm", "am")).lower()
     parts = getattr(m, "chalakim", 0)
     civil = getattr(m, "date", None)
+    dt_local = getattr(m, "dt", None)
 
-    # Convert 12-hour to 24-hour for time-of-day classification
-    if ampm == "am":
-        h24 = 0 if h12 == 12 else h12
-    else:  # pm
-        h24 = 12 if h12 == 12 else h12 + 12
+    h24 = (0 if h12 == 12 else h12) if ampm == "am" else (12 if h12 == 12 else h12 + 12)
 
-    chal_phrase = ""
-    if parts:
-        chal_phrase = f" ו{int_to_hebrew_letters(parts)} חלקים"
-
-    # Time fragment differs by style:
-    #   Monroe:  "H:MM וP חלקים"     (chalakim trail the time directly)
-    #   SF:      "בשעה H:MM וP חלקים" (with explicit "בשעה" prefix)
+    chal_phrase = chalakim_phrase_he(parts)
     if style == "sf":
         time_phrase = f"בשעה {h12}:{mi:02d}{chal_phrase}"
     else:
@@ -1191,72 +1363,58 @@ def format_molad_short(
         except Exception:
             return ""
 
-    # ── Motzaei Shabbos special case (Sun pre-dawn 00:00 - 04:59) ──
-    # Civil time is early Sunday morning, but in Hebrew terms this is
-    # still the night-portion of the Shabbos that just ended.
-    if 0 <= h24 < 5 and civil_day == "Sunday":
-        prev_sat = (civil - timedelta(days=1)) if civil else None
-        parsha = _lookup_parsha(prev_sat)
-        parsha_phrase = f" {parsha}" if parsha else ""
-        return f"מוצש״ק{parsha_phrase} {time_phrase}"
+    # ── Bucket ─────────────────────────────────────────────────────────
+    if dt_local is not None and plag is not None and tzeis is not None:
+        key = classify_molad_tod(dt_local, plag=plag, tzeis=tzeis)
+    else:
+        # Zmanim-free fallback (see docstring).
+        if h24 < 5:
+            key = (_TOD_MOTZASH if civil_day == "Sunday"
+                   else (_TOD_NIGHT_ENTERING if h24 < 3 else _TOD_DAWN))
+        elif h24 < 11:
+            key = _TOD_MORNING
+        elif h24 < 12:
+            key = _TOD_LATE_MORNING
+        elif h24 < 19:
+            key = _TOD_AFTERNOON
+        elif h24 < 21:
+            key = _TOD_EVENING
+        elif civil_day in ("Shabbos", "Saturday"):
+            key = _TOD_MOTZASH
+        elif civil_day == "Friday":
+            key = _TOD_FRIDAY_NIGHT
+        else:
+            key = _TOD_NIGHT
+
+    # ── Render ─────────────────────────────────────────────────────────
+    if key == _TOD_MOTZASH:
+        # Sunday pre-dawn is still the Shabbos that just ended, so look the
+        # parsha up on the Saturday; a Shabbos-evening molad is already on
+        # that Saturday's civil date.
+        ref = (civil - timedelta(days=1)) if (civil and civil_day == "Sunday") else civil
+        parsha = _lookup_parsha(ref)
+        return f"מוצש״ק{f' {parsha}' if parsha else ''} {time_phrase}"
 
     parsha = _lookup_parsha(civil)
     parsha_phrase = f" {parsha}" if parsha else ""
 
+    if key in (_TOD_NIGHT_ENTERING, _TOD_NIGHT, _TOD_FRIDAY_NIGHT):
+        # NIGHT_ENTERING anchors on the current civil day, the other two on
+        # the next one.
+        eng = (civil_day if key == _TOD_NIGHT_ENTERING
+               else _NEXT_ENG_DAY.get(civil_day, civil_day))
+        day_he = _ENG_TO_HE_DAY.get(eng, "")
+        # SF writes ליל ש״ק rather than אור ליום שב״ק (5781 Av 10:59 PM,
+        # 5783 Teves tekufah, 5787 header). Monroe keeps the long form.
+        if style == "sf" and day_he == "שב״ק":
+            return f"ליל ש״ק{parsha_phrase} {time_phrase}"
+        return f"אור ליום {day_he}{parsha_phrase} {time_phrase}"
+
+    tod = _MOLAD_TOD_WORDS[style if style in _MOLAD_TOD_WORDS else "monroe"][key]
+    day_he = _ENG_TO_HE_DAY.get(civil_day, "")
     if style == "sf":
-        # ── SF: pre-dawn (non-Sun) uses "אור ל" prefix on CURRENT day ──
-        if h24 < 5:
-            day_he = eng_to_he.get(civil_day, "")
-            return f"אור ליום {day_he}{parsha_phrase} {time_phrase}"
-
-        # ── SF: late evening uses "אור ל" prefix on NEXT day ──
-        if h24 >= 21:
-            day_he = eng_to_he.get(next_eng_day.get(civil_day, civil_day), "")
-            return f"אור ליום {day_he}{parsha_phrase} {time_phrase}"
-
-        # ── SF: standard 4-tier with TOD suffix at the end ──
-        if h24 < 10:
-            tod = "בבוקר"
-        elif h24 < 12:
-            tod = "קודה״צ"
-        elif h24 < 19:
-            tod = "אחה״צ"
-        else:  # 19 - 20
-            # SF prints "לפנות ערב" (approaching evening) for this tier
-            # — actual ערב/nightfall in the Catskills sits closer to
-            # 9:30 PM, so this is the more semantically accurate
-            # description of late-afternoon hours like 7-8 PM. (Monroe
-            # uses plain "בערב" in this slot.)
-            tod = "לפנות ערב"
-        day_he = eng_to_he.get(civil_day, "")
         return f"יום {day_he}{parsha_phrase} {time_phrase} {tod}"
-
-    # ── Monroe (default) ──
-    # 6-tier branching; pre-dawn uses "באשה״ב" suffix on CURRENT day;
-    # late evening uses "אור ל" prefix on NEXT day.
-    if h24 < 5:
-        prefix, tod = "", "באשה״ב"
-        day_he = eng_to_he.get(civil_day, "")
-    elif h24 < 10:
-        prefix, tod = "", "בבוקר"
-        day_he = eng_to_he.get(civil_day, "")
-    elif h24 < 12:
-        prefix, tod = "", "קודה״צ"
-        day_he = eng_to_he.get(civil_day, "")
-    elif h24 < 19:
-        prefix, tod = "", "אחה״צ"
-        day_he = eng_to_he.get(civil_day, "")
-    elif h24 < 21:
-        prefix, tod = "", "בערב"
-        day_he = eng_to_he.get(civil_day, "")
-    else:  # 21 - 23: late evening, anchor to NEXT day with אור ל prefix
-        prefix, tod = "אור ל", ""
-        day_he = eng_to_he.get(next_eng_day.get(civil_day, civil_day), "")
-
-    body = f"{prefix}יום {day_he}{parsha_phrase}"
-    if tod:
-        body = f"{body} {tod}"
-    return f"{body} {time_phrase}"
+    return f"יום {day_he}{parsha_phrase} {tod} {time_phrase}"
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -1971,6 +2129,23 @@ def minor_days_in_range(
                     kind="shushan_purim", label_he="שושן פורים",
                     civil_date=shushan_d,
                 ))
+            # Purim Katan / Shushan Purim Katan: 14 and 15 of Adar I,
+            # leap years only. No mitzvos attach to them, but the printed
+            # luachs announce them, so they are emitted as raw data on the
+            # same footing as Purim itself.
+            if PYear(hy).leap:
+                pk_d = PHebrewDate(hy, 12, 14).to_pydate()
+                if start <= pk_d <= end:
+                    out.append(MinorDay(
+                        kind="purim_katan", label_he="פורים קטן",
+                        civil_date=pk_d,
+                    ))
+                spk_d = PHebrewDate(hy, 12, 15).to_pydate()
+                if start <= spk_d <= end:
+                    out.append(MinorDay(
+                        kind="shushan_purim_katan",
+                        label_he="שושן פורים קטן", civil_date=spk_d,
+                    ))
         except Exception:
             pass
     out.sort(key=lambda m: m.civil_date)
@@ -2069,6 +2244,31 @@ class TalUmatarStart:
     hebrew_year: int
 
 
+def tal_umatar_start_dates(gregorian_year: int) -> tuple[date_cls, date_cls]:
+    """Diaspora Tal U'Matar start for the winter beginning in
+    ``gregorian_year``, as ``(maariv_evening, first_full_day)``.
+
+    ``maariv_evening`` is the civil date whose Ma'ariv is the first
+    recitation; ``first_full_day`` is the Hebrew day that Ma'ariv begins
+    (i.e. evening + 1). Callers that need a moment want the first; callers
+    that print "אור ליום <weekday>" want the second.
+
+    Dec 4, or Dec 5 when the FOLLOWING February has 29 days.
+
+    This replaces a ``Tekufas Tishrei + 59 days`` computation that silently
+    produced Dec 5 every single year: the tekufah moment advances six hours
+    annually and wraps every four, so once every four years it falls at
+    22:00 — already past nightfall, making day 1 the next civil day and the
+    sixtieth day Dec 6. 5784 and 5788 are those years. The two live sensors
+    already used the Gregorian rule and were correct; only the luach was
+    wrong, and only in one year of four.
+    """
+    import calendar as _calendar
+    day = 5 if _calendar.isleap(gregorian_year + 1) else 4
+    evening = date_cls(gregorian_year, 12, day)
+    return evening, evening + timedelta(days=1)
+
+
 def tal_umatar_starts_in_range(
     *,
     start: date_cls,
@@ -2090,11 +2290,12 @@ def tal_umatar_starts_in_range(
     end_hy = PHebrewDate.from_pydate(end).year
     out: list[TalUmatarStart] = []
     for hy in range(start_hy - 1, end_hy + 2):
-        # Diaspora: Tekufas Tishrei + 59 days (= day 60 inclusive).
+        # Diaspora: Dec 4/5 Ma'ariv — see tal_umatar_start_dates.
+        # civil_date is the DAY the recitation belongs to, so the luach's
+        # "אור ליום <weekday>" names the night entering it.
         try:
-            tk_tishrei_utc = _tekufas_tishrei_utc(hy)
-            tk_local_date = tk_tishrei_utc.astimezone(tz).date()
-            diaspora_start = tk_local_date + timedelta(days=59)
+            gy = PHebrewDate(hy, 9, 1).to_pydate().year
+            _evening, diaspora_start = tal_umatar_start_dates(gy)
             if start <= diaspora_start <= end:
                 out.append(TalUmatarStart(
                     observance="diaspora",
