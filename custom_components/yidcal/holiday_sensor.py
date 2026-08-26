@@ -132,6 +132,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "שובבים ת\"ת",
         "צום עשרה בטבת",
         "חמשה עשר בשבט",
+        "פורים קטן",
+        "שושן פורים קטן",
         "תענית אסתר מוקדם",
         "שבת ערב פורים",
         "תענית אסתר",
@@ -228,6 +230,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "זאת חנוכה",
         "צום עשרה בטבת",
         "חמשה עשר בשבט",
+        "פורים קטן",
         "תענית אסתר",
         "פורים",
         "שושן פורים",
@@ -613,6 +616,17 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         fest_adar_month = he.real_adar_month(hd_fest.year)
         purim_friday = PHebrewDate(hd_fest.year, fest_adar_month, 14).to_pydate().weekday() == 4  # Fri
 
+        # --- Purim-Katan-on-Friday detection (used for window overrides) ---
+        # 14 Adar I lands on Friday in roughly a third of leap years (the
+        # only other options are Sun/Tue/Wed), so this is not an edge case.
+        # fest_adar_month == 13 IS the leap test: in a common year month 12
+        # is the real Adar and there is no Adar I at all, so the guard both
+        # short-circuits the lookup and keeps this off Purim itself.
+        purim_katan_friday = (
+            fest_adar_month == 13
+            and PHebrewDate(hd_fest.year, 12, 14).to_pydate().weekday() == 4
+        )
+
         # Observed fast dates — canonical rules from halacha_events.
         h_year = year if hd_py.month >= 7 else year + 1
         gedaliah_day = PHebrewDate.from_pydate(he.tzom_gedaliah_observed(h_year)).day
@@ -784,6 +798,25 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # Tu BiShvat
         if hd_fest.month == 11 and hd_fest.day == 15:
             attrs["חמשה עשר בשבט"] = True
+
+        # Purim Katan / Shushan Purim Katan — 14 and 15 of Adar I, leap
+        # years only. No mitzvos attach to either day, but the printed
+        # luachs announce them, so they are published on the same footing
+        # as the Adar II pair (this mirrors halacha_events.minor_days_in_
+        # range, which already emits kind='purim_katan' /
+        # 'shushan_purim_katan' as raw data).
+        #
+        # fest_adar_month is 13 in a leap year and 12 otherwise, so
+        # `== 13` is exactly the "Adar I exists" test — in a common year
+        # month 12 IS Purim's own Adar, and without this guard these flags
+        # would fire on Purim itself. Neither flag is mode-gated: Purim
+        # Katan is the same day in Israel and the diaspora, matching how
+        # פורים and שושן פורים are both published in both modes.
+        if fest_adar_month == 13 and hd_fest.month == 12:
+            if hd_fest.day == 14:
+                attrs["פורים קטן"] = True
+            if hd_fest.day == 15:
+                attrs["שושן פורים קטן"] = True
 
         # Purim — Taanit Esther (pushed to 11 Adar when 13 Adar is Shabbat)
         # In a leap year, Purim/Taanis Esther/Shushan Purim are observed in
@@ -1163,6 +1196,15 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
                 return "havdalah_candle" if (hd_fest.month == 1 and hd_fest.day == 20) else "havdalah_havdalah"
             # --- Purim on Friday: Motzaei Thu → Candle Fri ---
             if name == "פורים" and purim_friday and (hd_fest.month == fest_adar_month) and (hd_fest.day == 14):
+                return "havdalah_candle"
+            # --- Purim Katan on Friday: Motzaei Thu → Candle Fri ---
+            # Same reason as פורים above: plain havdalah_havdalah ends at
+            # havdalah of the day itself, which on a Friday is ~72 minutes
+            # into Shabbos, so the flag would still read true once Shabbos
+            # had begun. Cutting at candles also hands off cleanly to
+            # שושן פורים קטן, whose own havdalah_havdalah window opens at
+            # Friday candles whenever 15 Adar I is Shabbos.
+            if name == "פורים קטן" and purim_katan_friday and (hd_fest.month == 12) and (hd_fest.day == 14):
                 return "havdalah_candle"
                 
             return default_w
