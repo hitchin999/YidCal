@@ -88,7 +88,6 @@ Attributes include: "הושענות היום", per-day Hoshanos, "הושענא �
 from __future__ import annotations
 
 from datetime import timedelta, time, date
-import calendar
 from zoneinfo import ZoneInfo
 import re
 
@@ -115,7 +114,11 @@ from .yidcal_lib.zman_compute import (
     round_half_up as _round_half_up,
     sunset_for_date,
 )
-from .yidcal_lib.halacha_events import is_no_melacha, vayehi_noam_omitted
+from .yidcal_lib.halacha_events import (
+    is_no_melacha,
+    vayehi_noam_omitted,
+    tal_umatar_start_dates,
+)
 
 
 HOLIDAY_SENSOR = "sensor.yidcal_holiday"
@@ -428,8 +431,7 @@ class SpecialPrayerSensor(YidCalDisplayDevice, SensorEntity):
                     # February has 29 days). Examples of Dec 5 starts:
                     # 2019, 2023, 2027, 2031.
                     dec_year = now.year - 1 if now.month <= 4 else now.year
-                    start_day = 5 if calendar.isleap(dec_year + 1) else 4
-                    start_gdate = date(dec_year, 12, start_day)
+                    start_gdate, _first_day = tal_umatar_start_dates(dec_year)
                     start_sunset = sunset_for_date(
                         geo=self._geo, tz=tz, base_date=start_gdate,
                     )
