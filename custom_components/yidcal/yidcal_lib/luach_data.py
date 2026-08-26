@@ -16,14 +16,14 @@ etc.) take it from there.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from datetime import date as date_cls, datetime, timedelta
 import re
 from typing import Union
 from zoneinfo import ZoneInfo
 
 from hdate import HDateInfo
-from pyluach.hebrewcal import HebrewDate as PHebrewDate
+from pyluach.hebrewcal import HebrewDate as PHebrewDate, Year as PYear
 
 from zmanim.util.geo_location import GeoLocation
 
@@ -32,6 +32,8 @@ from .luach_pdf_common import INFO_SEP
 from .zman_compute import (
     round_half_up as _round_half_up,
     round_ceil as _round_ceil,
+    plag_hamincha_gra_for_date,
+    nightfall_for_date,
     sunset_for_date,
     sun_events_for_date,
     compute_zmanim_for_date,
@@ -528,6 +530,8 @@ def build_luach(
     When ``None``, Mevorchim rows omit the Molad text.
     """
     rows = _build_rows(start_date, end_date, config=config)
+    if config.tisha_bav_single_line:
+        rows = _sf_merge_shavuos(rows)
     annotations = _build_annotations(
         start_date, end_date, config=config,
         molad_provider=molad_provider, rows=rows,
@@ -640,9 +644,18 @@ def _build_rows(
         if title_main.startswith("ערב שביעי ש״פ"):
             _sheet_main = title_main.replace(
                 "ערב שביעי ש״פ", "ע׳ שביעי של פסח", 1)
+        # Sheet spelling for a plain parsha row title (בחקותי / תשא /
+        # תצא / תבא / פנחס). Only fires when the title IS the parsha, so
+        # compound Erev-YT titles are left alone.
+        if not _sheet_main:
+            _sf_t = _sf_parsha(title_main, config=config)
+            if _sf_t != title_main:
+                _sheet_main = _sf_t
 
         title = f"{title_main} {title_suffix}".strip()
         hebrew_date = he.hebrew_date_str(d, rc_emphasis=config.hebrew_date_rc_emphasis)
+        if config.tisha_bav_single_line:
+            hebrew_date = _sf_rc_date(d, hebrew_date)
 
         is_shabbos_tom = (d + timedelta(days=1)).weekday() == 5
         special_he: list[str] = []
@@ -676,6 +689,17 @@ def _build_rows(
                 _format_special(lbl) for lbl in all_labels
                 if not lbl.startswith("מברכים חודש")
             ]
+            # SF marks a Shabbos that falls during Chanukah:
+            #   5787  "וישב כ״ד כסלו, (שבת חנוכה)"
+            #   5787  "מקץ ז׳ דחנוכה, ב׳ דר״ח טבת (שבת זאת חנוכה)"
+            # The day-count in the title refers to the FRIDAY; this
+            # parenthetical refers to the Shabbos.
+            if config.tisha_bav_single_line:
+                _ch = he.chanukah_day_number(saturday)
+                if _ch:
+                    special_he.append(
+                        "שבת זאת חנוכה" if _ch == 8 else "שבת חנוכה"
+                    )
             # SF convention: when the ROW's Friday (= the candle-lighting
             # day) is the SECOND day of a 2-day Rosh Chodesh — and the
             # Saturday is therefore NOT a RC day — SF still emits an
@@ -881,11 +905,24 @@ def _attach_motzei(
         #                                 של פסח 5785)
         #   • weekday Erev, non-Tishrei → the Erev row carries the end
         #                               → no trailing row (פסח 5784)
+        # ב׳ דשבועות: the SF sheet carries a trailing row for the second
+        # day of Shavuos when it falls mid-week (5785 Mon/Tue prints
+        # "ב׳ דשבועות, יום ג׳, ז׳ סיון"), the same way ב׳ דסוכות and
+        # ב׳ דראש השנה already work. The Sun/Mon configuration already
+        # satisfies the Friday-Erev clause below, so this only adds the
+        # Mon/Tue and Wed/Thu cases. Sheet-only.
+        _ph_end_blk = PHebrewDate.from_pydate(end_blk)
+        _sheet_shavuos_d2 = (
+            config.tisha_bav_single_line
+            and config.diaspora
+            and (_ph_end_blk.month, _ph_end_blk.day) == (3, 7)
+        )
         _blk_needs_trailing = (
             start_blk != end_blk
             and end_blk.weekday() != 5
-            and (PHebrewDate.from_pydate(end_blk).month == 7
-                 or row.civil_date.weekday() == 4)
+            and (_ph_end_blk.month == 7
+                 or row.civil_date.weekday() == 4
+                 or _sheet_shavuos_d2)
         )
 
         if end_date is not None and end_blk > end_date:
@@ -1123,16 +1160,249 @@ def _build_annotations(
 ) -> list[AnnotationRow]:
     """Build all interleaved annotation rows for the date range."""
     out: list[AnnotationRow] = []
+    # ORDER MATTERS. _merge_in_order sorts stably on (date, position),
+    # so ties fall out in the order builders are extended here. The SF
+    # sheet prints the Chanukah and Hashalah notes ABOVE the מבה״ח
+    # header of the same week (5787: chanukah, hashalah, מבה״ח טבת, then
+    # the וישב row), so on the sheet those two run first.
+    _sheet = config.tisha_bav_single_line
+    if _sheet:
+        out.extend(_annotations_minor_days(start, end, config=config))
+        out.extend(_annotations_hashala(start, end, config=config))
+    out.extend(_annotations_sheet_headers(start, end, config=config))
     out.extend(_annotations_mevorchim(start, end, config=config, molad_provider=molad_provider))
     out.extend(_annotations_molad_tishrei(start, end, config=config, molad_provider=molad_provider))
     out.extend(_annotations_tekufah(start, end, config=config))
     out.extend(_annotations_erev_pesach(start, end, config=config))
     out.extend(_annotations_fasts(start, end, config=config))
-    out.extend(_annotations_minor_days(start, end, config=config))
+    if not _sheet:
+        out.extend(_annotations_minor_days(start, end, config=config))
     out.extend(_annotations_dst(start, end, config=config))
-    out.extend(_annotations_hashala(start, end, config=config))
+    if not _sheet:
+        out.extend(_annotations_hashala(start, end, config=config))
+    # Sheet spellings, applied once to EVERY annotation rather than per
+    # builder — tranche A wired only the Molad-Tishrei line, so מרחשון /
+    # מברכים / עלוה״ש silently never appeared on the sheet.
+    if _sheet:
+        out = [
+            _dc_replace(a, text_he=_sf_spelling(a.text_he, config=config))
+            for a in out
+        ]
+
     out.extend(_build_pruzbol_annotations(start=start, end=end))
     return out
+
+
+def _sf_merge_shavuos(rows: list[LuachRow]) -> list[LuachRow]:
+    """Collapse a Fri/Shabbos Shavuos onto a single sheet row.
+
+    When 6-7 Sivan fall on Friday and Shabbos there are two Erev rows —
+    the Thursday one (Erev Shavuos, candle-lighting for night 1, no
+    motzaei because Yom Tov runs straight into Shabbos) and the Friday
+    one (candle-lighting for night 2, motzaei on Saturday night). The
+    5787 sheet prints them as ONE row carrying the Thursday label and
+    the Saturday-night motzaei:
+
+        ערב שבועות, יום ה׳, ה׳ סיון, עירוב תבשילין  10 Jun  8:18  9:46 …
+
+    NOTE this is a deliberate departure from 5783 and 5786, which print
+    the identical configuration as two rows; 5787 is the reference per
+    Yoel.
+    """
+    out: list[LuachRow] = []
+    skip: set[date_cls] = set()
+    for r in rows:
+        if r.civil_date in skip:
+            continue
+        # Thursday Erev Shavuos immediately followed by a Friday row.
+        if r.civil_date.weekday() == 3 and r.motzei is None:
+            ph = PHebrewDate.from_pydate(r.civil_date + timedelta(days=1))
+            if (ph.month, ph.day) == (3, 6):
+                fri = next(
+                    (x for x in rows
+                     if x.civil_date == r.civil_date + timedelta(days=1)),
+                    None,
+                )
+                if fri is not None and fri.motzei is not None:
+                    r = _dc_replace(
+                        r,
+                        motzei=fri.motzei,
+                        motzei_label_he=fri.motzei_label_he,
+                    )
+                    skip.add(fri.civil_date)
+        out.append(r)
+    return out
+
+
+_SF_MONTH_HE = {
+    1: "ניסן", 2: "אייר", 3: "סיון", 4: "תמוז", 5: "אב", 6: "אלול",
+    # Cheshvan is SHORT here. The long "מרחשון" is used only by the
+    # מבה״ח header (see _SF_SPELLING); a date-position label such as
+    # אדר״ח takes the short form, exactly as a plain Hebrew date does.
+    7: "תשרי", 8: "חשון", 9: "כסלו", 10: "טבת", 11: "שבט",
+    12: "אדר", 13: "אדר ב׳",
+}
+
+
+def _sf_note_anchor(d: date_cls) -> date_cls:
+    """The Friday of the row a sheet note belongs above.
+
+    Notes name the parsha of the Shabbos their date falls into, so the
+    anchor is the Friday immediately BEFORE that Shabbos — i.e. forward
+    from ``d`` to the next Friday. When ``d`` is itself Shabbos the
+    named parsha is that same Shabbos, so the row is the day before.
+    """
+    if d.weekday() == 5:
+        return d - timedelta(days=1)
+    return d + timedelta(days=(4 - d.weekday()) % 7)
+
+
+def _sf_rc_date(d: date_cls, hebrew_date: str) -> str:
+    """Replace a 30-of-the-month Hebrew date with its ר״ח designation.
+
+    The 30th of a month is the FIRST day of the next month's two-day
+    Rosh Chodesh, and the SF sheet names it that way rather than by its
+    date:
+
+        generated  קדושים, ל׳ ניסן, שבת ר״ח
+        printed    קדושים, אדר״ח אייר, (שבת ר״ח)
+
+    Note this row's civil date is the FRIDAY, and the sheet labels rows
+    by the Friday's Hebrew date — so it is the Friday being tested here.
+    Only the א׳ דר״ח (30th) case is handled; the mirror ב׳ דר״ח form
+    ('שופטים, ב׳ דר״ח אלול') is a separate item.
+    """
+    ph = PHebrewDate.from_pydate(d)
+    if ph.day != 30:
+        return hebrew_date
+    nxt = PHebrewDate.from_pydate(d + timedelta(days=1))
+    month = _SF_MONTH_HE.get(nxt.month)
+    # pyluach numbers Adar I as 12 in a leap year and plain Adar as 12
+    # in a regular one, so the month number alone cannot distinguish
+    # them — 5784's 30 Shevat rolls into אדר א׳, not אדר.
+    if nxt.month == 12 and PYear(nxt.year).leap:
+        month = "אדר א׳"
+    return f"אדר״ח {month}" if month else hebrew_date
+
+
+_SF_HDR_DAY = {
+    0: "ב׳", 1: "ג׳", 2: "ד׳", 3: "ה׳", 4: "עש״ק", 5: "שב״ק", 6: "א׳",
+}
+
+
+def _annotations_sheet_headers(
+    start: date_cls, end: date_cls, *, config: LuachConfig,
+) -> list[AnnotationRow]:
+    """The SF sheet's weekday header lines for ר״ה / יו״כ / סוכות.
+
+        ר״ה יום שב״ק ויום א׳ האזינו      (above the Molad-Tishrei line)
+        יום כיפור: יום ב׳                 (above the Erev-Yom-Kippur row)
+        סוכות יום שב״ק ויום א׳            (above the Erev-Sukkos row)
+
+    5787 is the reference for the ר״ה line (two separate lines, ר״ה
+    abbreviated, parsha appended); 5784 for the יו״כ and סוכות siblings.
+    Older sheets vary — 5783/5784 run the ר״ה line INTO the molad line
+    with a dash, 5784 omits the parsha, 5783 writes 'יום ב׳ וג׳' rather
+    than 'יום ב׳ ויום ג׳' — none of which is reproduced here.
+    """
+    if not config.tisha_bav_single_line:
+        return []
+    out: list[AnnotationRow] = []
+    start_hy = PHebrewDate.from_pydate(start).year
+    end_hy = PHebrewDate.from_pydate(end).year
+    _rh_header_done = False
+
+    def _two_day(label: str, d1: date_cls, anchor: date_cls,
+                 kind: str, parsha: str = "") -> None:
+        a = _SF_HDR_DAY.get(d1.weekday(), "")
+        b = _SF_HDR_DAY.get((d1 + timedelta(days=1)).weekday(), "")
+        txt = f"{label} יום {a} ויום {b}"
+        if parsha:
+            txt = f"{txt} {parsha}"
+        out.append(AnnotationRow(
+            civil_date=anchor, kind=kind, text_he=txt, position="before",
+        ))
+
+    for hy in range(start_hy, end_hy + 2):
+        try:
+            rh1 = PHebrewDate(hy, 7, 1).to_pydate()
+            yk = PHebrewDate(hy, 7, 10).to_pydate()
+            suk1 = PHebrewDate(hy, 7, 15).to_pydate()
+        except Exception:
+            continue
+        erev_rh = rh1 - timedelta(days=1)
+        # ONLY the sheet's own Rosh Hashana. The loop runs to end_hy + 2
+        # so that the יו״כ / סוכות siblings are picked up, but a sheet
+        # spanning Elul→Elul also contains NEXT year's Erev RH row, and
+        # the print carries no ר״ה header there.
+        if start <= erev_rh <= end and not _rh_header_done:
+            _rh_header_done = True
+            parsha = ""
+            try:
+                # The parsha of the Shabbos AFTER Rosh Hashana. Looking
+                # up rh1 itself is wrong when RH falls on Shabbos: that
+                # Shabbos has no parsha, so the helper hands back the
+                # PREVIOUS one (5787 would read נצבים-וילך, not האזינו).
+                parsha = he.parsha_current_for_date(
+                    rh1 + timedelta(days=1), diaspora=config.diaspora,
+                    metzora_display=config.metzora_display,
+                ) or ""
+            except Exception:
+                parsha = ""
+            _two_day("ר״ה", rh1, erev_rh, "sheet_hdr_rh",
+                     _sf_parsha(parsha, config=config))
+        erev_yk = yk - timedelta(days=1)
+        if start <= erev_yk <= end:
+            out.append(AnnotationRow(
+                civil_date=erev_yk, kind="sheet_hdr_yk",
+                text_he=f"יום כיפור: יום {_SF_HDR_DAY.get(yk.weekday(), '')}",
+                position="before",
+            ))
+        erev_suk = suk1 - timedelta(days=1)
+        if config.diaspora and start <= erev_suk <= end:
+            _two_day("סוכות", suk1, erev_suk, "sheet_hdr_sukkos")
+    return out
+
+
+def _sf_molad_tishrei_day(molad_text: str, m, rh_d1: date_cls) -> str:
+    """Swap the parsha in a Molad-Tishrei line for the Rosh Hashana day.
+
+    The molad of Tishrei always lands on 29 Elul or 1 Tishrei, and the SF
+    sheet names that day rather than the week's parsha. It has not been
+    consistent about HOW — across 5782-5787 the same Hebrew day is set
+    four different ways — so this follows the two most recent sheets:
+
+        1 Tishrei  → "ליל ש״ק, א׳ דראש השנה"      (5787)
+        29 Elul    → "יום ב׳ וילך (ער״ה)"          (5786)
+        otherwise  → unchanged (weekday + parsha)
+
+    5782 sets a 1-Tishrei molad as a plain "אור ליום ג׳ וילך"; that older
+    form is deliberately not reproduced.
+    """
+    parsha = ""
+    try:
+        parsha = he.parsha_current_for_date(
+            m.date, diaspora=True, metzora_display="metzora",
+        ) or ""
+    except Exception:
+        pass
+    # Which Hebrew day does the MOMENT belong to? format_molad_short has
+    # already decided that (an "אור ל"/"ליל" line names the day it enters),
+    # so read it back off the rendered text instead of re-deriving it.
+    rolls_forward = molad_text.startswith(("אור ל", "ליל "))
+    day = m.date + timedelta(days=1) if rolls_forward else m.date
+    hd = PHebrewDate.from_pydate(day)
+
+    if hd.month == 7 and hd.day in (1, 2):
+        rh = "א׳ דראש השנה" if hd.day == 1 else "ב׳ דראש השנה"
+        # "<night/day label>, <RH day>" — the parsha is replaced outright.
+        return (molad_text.replace(f" {parsha} ", f", {rh} ", 1)
+                if parsha and f" {parsha} " in molad_text else molad_text)
+    if hd.month == 6 and hd.day == 29:
+        # Erev RH keeps the parsha and takes a parenthetical tag.
+        return (molad_text.replace(f" {parsha} ", f" {parsha} (ער״ה) ", 1)
+                if parsha and f" {parsha} " in molad_text else molad_text)
+    return molad_text
 
 
 def _annotations_molad_tishrei(
@@ -1175,11 +1445,21 @@ def _annotations_molad_tishrei(
             diaspora=config.diaspora,
             metzora_display=config.metzora_display,
             style=config.molad_style,
+            plag=plag_hamincha_gra_for_date(
+                geo=config.geo, tz=config.tz, base_date=m.date,
+            ),
+            tzeis=nightfall_for_date(
+                geo=config.geo, tz=config.tz, base_date=m.date,
+            ),
         )
+        if config.tisha_bav_single_line:
+            molad_text = _sf_molad_tishrei_day(molad_text, m, rh_d1)
         out.append(AnnotationRow(
             civil_date=erev_rh,
             kind="molad_tishrei",
-            text_he=f"מולד תשרי: {molad_text}",
+            text_he=_sf_spelling(
+                f"מולד תשרי: {molad_text}", config=config,
+            ),
             position="before",
         ))
     return out
@@ -1269,6 +1549,12 @@ def _annotations_mevorchim(
                     diaspora=config.diaspora,
                     metzora_display=config.metzora_display,
                     style=config.molad_style,
+                    plag=plag_hamincha_gra_for_date(
+                        geo=config.geo, tz=config.tz, base_date=m.date,
+                    ),
+                    tzeis=nightfall_for_date(
+                        geo=config.geo, tz=config.tz, base_date=m.date,
+                    ),
                 )
                 # Same SF double-parsha abbreviation in the molad clause
                 # (post-process; format_molad_short embeds the parsha
@@ -1555,9 +1841,16 @@ def _annotations_erev_pesach(
             a_str = _weekly_fmt_time(achilas, config.time_format)
             s_str = _weekly_fmt_time(sriefes, config.time_format)
             c_str = _weekly_fmt_time(chatzos_night, config.time_format)
+            # SF spells the burning deadline out in full:
+            # "סו״ז שריפת ומכירת וביטול חמץ" (5786, 5787).
+            _sriefes_label = (
+                "סוף זמן שריפת ומכירת וביטול חמץ"
+                if config.tisha_bav_single_line
+                else "סוף זמן שריפת חמץ"
+            )
             line1 = (
                 f"סוף זמן אכילת חמץ {a_str} - "
-                f"סוף זמן שריפת חמץ {s_str}"
+                f"{_sriefes_label} {s_str}"
             )
             line2 = (
                 f"זמן חצות: בלילי פסח {c_str} - "
@@ -1593,15 +1886,19 @@ _HE_WEEKDAY_ANCHOR = {
 
 def _weekday_parsha_anchor(
     d: date_cls, *, diaspora: bool, metzora_display: str,
+    config: "LuachConfig | None" = None,
 ) -> str:
     """Return '<weekday-form> <parsha-current-for-week>' for ``d``.
 
-    Empty string if no parsha could be resolved.
+    Empty string if no parsha could be resolved. When ``config`` is a
+    sheet config the parsha is spelled the SF way (תשא, פנחס, …).
     """
     wd = _HE_WEEKDAY_ANCHOR.get(d.weekday(), "")
     parsha = he.parsha_current_for_date(
         d, diaspora=diaspora, metzora_display=metzora_display,
     )
+    if parsha and config is not None:
+        parsha = _sf_parsha(parsha, config=config)
     if parsha:
         return f"{wd} {parsha}" if wd else parsha
     return wd
@@ -1629,6 +1926,7 @@ def _annotations_fasts(
             actual,
             diaspora=config.diaspora,
             metzora_display=config.metzora_display,
+            config=config,
         )
         label_anchor = (
             f"{fast.label_he} {anchor}" if anchor else fast.label_he
@@ -1737,6 +2035,57 @@ def _annotations_fasts(
     return out
 
 
+def _sf_purim_line(m, *, config: LuachConfig) -> str:
+    """The SF sheet's one-line Purim / Purim-Katan announcement.
+
+        פורים: יום ג׳, שושן פורים יום ד׳ צו — פורים: מנחה גדולה 1:43, מנחה קטנה 5:23
+        פורים קטן: יום א׳, שושן פורים קטן יום ב׳ תשא
+
+    Both halves share the single trailing parsha. Mincha times are
+    printed for Purim only, not for Purim Katan — 5787 is the first
+    sheet to carry them at all (5782/5786 have neither).
+    """
+    katan = m.kind == "purim_katan"
+    shushan = m.civil_date + timedelta(days=1)
+    wd1 = _HE_WEEKDAY_ANCHOR.get(m.civil_date.weekday(), "")
+    wd2 = _HE_WEEKDAY_ANCHOR.get(shushan.weekday(), "")
+    parsha = ""
+    try:
+        parsha = _sf_parsha(
+            he.parsha_current_for_date(
+                m.civil_date,
+                diaspora=config.diaspora,
+                metzora_display=config.metzora_display,
+            ) or "",
+            config=config,
+        )
+    except Exception:
+        parsha = ""
+    lbl2 = "שושן פורים קטן" if katan else "שושן פורים"
+    tail = f"{wd2} {parsha}".strip()
+    line = f"{m.label_he}: {wd1}, {lbl2} {tail}".rstrip()
+
+    if katan:
+        return line
+    try:
+        z = compute_zmanim_for_date(
+            geo=config.geo, tz=config.tz, base_date=m.civil_date,
+            havdalah_offset=config.havdalah_offset,
+        )
+        mg = next(x for x in z if x.label == "מנחה גדולה").dt_local
+        mk = next(x for x in z if x.label == "מנחה קטנה").dt_local
+    except (StopIteration, ValueError, KeyError):
+        # No mincha times available for this date - fall back to the
+        # bare announcement rather than dropping the line entirely.
+        return line
+    mg_str = _weekly_fmt_time(mg, config.time_format)
+    mk_str = _weekly_fmt_time(mk, config.time_format)
+    return (
+        f"{line} \u2014 {m.label_he}: "
+        f"מנחה גדולה {mg_str}, מנחה קטנה {mk_str}"
+    )
+
+
 def _annotations_minor_days(
     start: date_cls, end: date_cls, *, config: LuachConfig,
 ) -> list[AnnotationRow]:
@@ -1781,6 +2130,16 @@ def _annotations_minor_days(
         {"shushan_purim"} if config.diaspora else {"purim"}
     )
 
+    # The SF sheet prints Purim and Shushan Purim as ONE line, and the
+    # same for their Katan counterparts:
+    #     פורים: יום ג׳, שושן פורים יום ד׳ צו
+    #     פורים קטן: יום א׳, שושן פורים קטן יום ב׳ תשא
+    # so the Shushan half is folded into the Purim row rather than
+    # skipped. (5782 uses a different, older layout with the parsha
+    # repeated on both halves; 5787 is the reference.)
+    if config.tisha_bav_single_line:
+        skip_kinds = {"shushan_purim", "shushan_purim_katan"}
+
     out: list[AnnotationRow] = []
     for m in he.minor_days_in_range(start=start, end=end):
         if m.kind in skip_kinds:
@@ -1801,20 +2160,48 @@ def _annotations_minor_days(
                 parsha = ""
             anchor_parts = [p for p in (wd_form, parsha) if p]
             anchor = " ".join(anchor_parts)
-            text = (
-                f"{display_label}-אור ל{anchor}" if anchor else display_label
-            )
+            if config.tisha_bav_single_line:
+                # SF phrasing: "<night> <parsha> מתחילין ימי חנוכה".
+                # Friday night takes the named form "שבת קודש" rather than
+                # "אור ליום שב״ק" (5787); every other night uses אור ל
+                # (5782/5783 "אור ליום ב׳ מקץ", 5784 "אור ליום עש״ק וישב").
+                if m.civil_date.weekday() == 5:
+                    night = "שבת קודש"
+                else:
+                    wd_sf = _HASHALAH_WD_FORM_SF.get(
+                        m.civil_date.weekday(), "",
+                    )
+                    night = f"אור ל{wd_sf}" if wd_sf else ""
+                head = " ".join(p for p in (night, parsha) if p)
+                text = f"{head} מתחילין ימי חנוכה" if head else display_label
+            else:
+                text = (
+                    f"{display_label}-אור ל{anchor}" if anchor else display_label
+                )
+        elif config.tisha_bav_single_line and m.kind in (
+            "purim", "purim_katan",
+        ):
+            text = _sf_purim_line(m, config=config)
         else:
             anchor = _weekday_parsha_anchor(
                 m.civil_date,
                 diaspora=config.diaspora,
                 metzora_display=config.metzora_display,
+                config=config,
             )
             sep = "-" if m.kind in no_space_dash_kinds else " - "
             text = f"{display_label}{sep}{anchor}" if anchor else display_label
 
+        anchor_date = m.civil_date
+        if config.tisha_bav_single_line and m.kind == "chanukah_night_1":
+            # The sheet prints this note ABOVE the row of the parsha it
+            # names. That parsha is the UPCOMING Shabbos, so walk FORWARD
+            # to its Friday — except when Kislev 25 is itself Shabbos, in
+            # which case the named parsha is that same Shabbos and the
+            # row is the day before.
+            anchor_date = _sf_note_anchor(m.civil_date)
         out.append(AnnotationRow(
-            civil_date=m.civil_date,
+            civil_date=anchor_date,
             kind=m.kind,
             text_he=text,
             position="before",
@@ -1861,6 +2248,54 @@ _HASHALAH_WD_FORM = {
     4: "יום ו׳", 5: "שב״ק",   6: "יום א׳",
 }
 
+# The SF sheet writes Friday as עש״ק here, not יום ו׳ (5786: "השאלה: אור
+# ליום עש״ק וישלח"). Shabbos never appears — a 60th day that falls on
+# Shabbos is deferred to Motzaei Shabbos, see _annotations_hashala.
+_HASHALAH_WD_FORM_SF = {**_HASHALAH_WD_FORM, 4: "יום עש״ק"}
+
+# ── Sheet-only spelling map ───────────────────────────────────────────
+# The SF sheet spells a handful of names differently from the rest of
+# YidCal. These are applied to the SHEET's rendered strings only —
+# data/krias_hatorah_data.py is deliberately NOT touched, because it also
+# feeds the parsha, krias-hatorah and haftorah sensors.
+#
+# Ordered longest-first: "מבה״ח חשון" must win over a bare "חשון" so that
+# Hebrew DATES keep the short form ("נח, ב׳ חשון") while the Mevorchim
+# header gets the long one ("מבה״ח מרחשון") — which is exactly what the
+# printed sheet does.
+_SF_SPELLING = (
+    ("מבה״ח חשון", "מבה״ח מרחשון"),
+    ("מברכין בה״ב", "מברכים בה״ב"),
+    ("עלה״ש", "עלוה״ש"),
+)
+
+#: Parsha names as the SF sheet sets them. Applied ONLY to a standalone
+#: parsha token, so the double parshiyos (בהר-בחוקותי) are left alone —
+#: the sheet has no verified reading for those.
+_SF_PARSHA = {
+    "בחוקותי": "בחקותי",
+    "כי תשא": "תשא",
+    "כי תצא": "תצא",
+    "כי תבא": "תבא",
+    "פינחס": "פנחס",
+}
+
+
+def _sf_spelling(text: str, *, config: LuachConfig) -> str:
+    """Apply the sheet-only spelling map to a rendered annotation line."""
+    if not text or not config.tisha_bav_single_line:
+        return text
+    for src, dst in _SF_SPELLING:
+        text = text.replace(src, dst)
+    return text
+
+
+def _sf_parsha(name: str, *, config: LuachConfig) -> str:
+    """Sheet spelling for a standalone parsha name."""
+    if not config.tisha_bav_single_line:
+        return name
+    return _SF_PARSHA.get(name, name)
+
 
 def _annotations_hashala(
     start: date_cls, end: date_cls, *, config: LuachConfig,
@@ -1882,7 +2317,7 @@ def _annotations_hashala(
     ):
         if s.observance != wanted:
             continue
-        wd_form = _HASHALAH_WD_FORM.get(s.civil_date.weekday(), "")
+        is_sheet = config.tisha_bav_single_line
         parsha = ""
         try:
             parsha = he.parsha_current_for_date(
@@ -1892,12 +2327,55 @@ def _annotations_hashala(
             )
         except Exception:
             parsha = ""
-        hebrew_date = he.hebrew_date_str(s.civil_date, rc_emphasis=config.hebrew_date_rc_emphasis)
-        anchor_parts = [p for p in (wd_form, parsha, hebrew_date) if p]
-        anchor = " ".join(anchor_parts)
-        text = f"השאלה: אור ל{anchor} מתחילין ותן טל ומטר"
+        if is_sheet:
+            # The 60th day begins at the preceding Ma'ariv — but when that
+            # day IS Shabbos, ותן טל ומטר cannot be said in the Shabbos
+            # amidah, so the first recitation is deferred to Motzaei
+            # Shabbos and the sheet names it that way. Verified: 5781
+            # "ליל מוצש״ק וישלח", 5787 "מוצש״ק וישב"; and 5782, whose 60th
+            # day is Sunday, prints "מוצש״ק מקץ" for the same night.
+            # Two ways the first Ma'ariv lands on Motzaei Shabbos:
+            #   60th day = Shabbos  -> deferred to motzash (5781, 5787)
+            #   60th day = Sunday   -> the entering night IS motzash (5782)
+            # Either way the sheet names the parsha that just ENDED.
+            if s.civil_date.weekday() in (5, 6):
+                shabbos = (s.civil_date if s.civil_date.weekday() == 5
+                           else s.civil_date - timedelta(days=1))
+                try:
+                    sh_parsha = he.parsha_current_for_date(
+                        shabbos,
+                        diaspora=config.diaspora,
+                        metzora_display=config.metzora_display,
+                    ) or ""
+                except Exception:
+                    sh_parsha = ""
+                anchor = f"מוצש״ק {sh_parsha}".strip()
+            else:
+                wd_form = _HASHALAH_WD_FORM_SF.get(s.civil_date.weekday(), "")
+                anchor = "אור ל" + " ".join(p for p in (wd_form, parsha) if p)
+            # No Hebrew date: 5781/5783/5784/5786/5787 all omit it.
+            text = f'השאלה: {anchor} מתחילין לומר "ותן טל ומטר"'
+        else:
+            wd_form = _HASHALAH_WD_FORM.get(s.civil_date.weekday(), "")
+            hebrew_date = he.hebrew_date_str(
+                s.civil_date, rc_emphasis=config.hebrew_date_rc_emphasis,
+            )
+            anchor = " ".join(
+                p for p in (wd_form, parsha, hebrew_date) if p
+            )
+            text = f"השאלה: אור ל{anchor} מתחילין ותן טל ומטר"
+        anchor_date = s.civil_date
+        if is_sheet:
+            # Above the row of the week whose parsha the line names. In
+            # the two Motzaei-Shabbos forms the parsha is the Shabbos
+            # that just ended, so anchor on ITS Friday; otherwise the
+            # line names the upcoming Shabbos.
+            if s.civil_date.weekday() in (5, 6):
+                anchor_date = shabbos - timedelta(days=1)
+            else:
+                anchor_date = _sf_note_anchor(s.civil_date)
         out.append(AnnotationRow(
-            civil_date=s.civil_date,
+            civil_date=anchor_date,
             kind="hashala",
             text_he=text,
             position="before",
