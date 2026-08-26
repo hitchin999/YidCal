@@ -589,6 +589,7 @@ class ShabbosMevorchimCalendar(YidCalCalendar):
         from .config_flow import CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE
 
         self._helper = YidCalHelper(hass.config)
+        self._geo = None
         cfg = (hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
         self._language = cfg.get(CONF_MOLAD_LANGUAGE, DEFAULT_MOLAD_LANGUAGE)
 
@@ -603,10 +604,13 @@ class ShabbosMevorchimCalendar(YidCalCalendar):
             try:
                 if not self._helper.is_shabbos_mevorchim(saturday):
                     continue
+                if self._geo is None:
+                    self._geo = await get_geo(self.hass)
                 ctx = molad_context(
                     helper=self._helper,
                     havdalah_offset=self._havdalah,
                     today=saturday,
+                    geo=self._geo,
                 )
             except Exception:  # noqa: BLE001
                 _LOGGER.debug(
