@@ -31,6 +31,11 @@ TOD_AFTERNOON = "afternoon"
 TOD_NIGHT = "night"
 TOD_FRIDAY_NIGHT = "friday_night"
 TOD_MOTZASH = "motzash"
+#: A molad in the small hours belongs to the night of the PREVIOUS
+#: day; the luach anchors "אור ל" on the CURRENT civil day for these.
+TOD_NIGHT_ENTERING = "night_entering"
+#: The plag-hamincha-GR״A → tzeis-R״ת window.
+TOD_EVENING = "evening"
 
 _TOD_LABELS: dict[str, dict[str, str]] = {
     TOD_DAWN:         {"yiddish": "פארטאגס",  "hebrew": "לפנות בוקר",  "english": "before dawn"},
@@ -38,6 +43,10 @@ _TOD_LABELS: dict[str, dict[str, str]] = {
     TOD_LATE_MORNING: {"yiddish": "פארמיטאג",  "hebrew": "לפני הצהריים", "english": "late morning"},
     TOD_AFTERNOON:    {"yiddish": "נאכמיטאג",  "hebrew": "אחר הצהריים",  "english": "in the afternoon"},
     TOD_NIGHT:        {"yiddish": "ביינאכט",   "hebrew": "בלילה",       "english": "at night"},
+    # KJ 5784 prints ביינאכט for BOTH Sivan 1:25 AM (night-entering)
+    # and Teves 8:01 PM (night); only the luach day-label differs.
+    TOD_NIGHT_ENTERING: {"yiddish": "ביינאכט", "hebrew": "בלילה",      "english": "at night"},
+    TOD_EVENING:      {"yiddish": "פארנאכטס", "hebrew": "לפנות ערב",   "english": "toward evening"},
     TOD_FRIDAY_NIGHT: {"yiddish": "צונאכטס",   "hebrew": "בלילה",       "english": "at night"},
     # motzash carries no time-of-day — the day name already says it.
     TOD_MOTZASH:      {"yiddish": "",          "hebrew": "",            "english": ""},
