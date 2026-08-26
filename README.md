@@ -120,6 +120,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **שובבים ת"ת** *(ON at Tzeis (Motzei Shabbos entering a Shovavim TaT parsha week), OFF at Tzeis (Motzei Shabbos ending the last week))*
   * **צום עשרה בטבת** *(ON at Alos, OFF at Tzeis)*
   * **חמשה עשר בשבט** *(ON at Tzeis (prior), OFF at Tzeis)*
+  * **פורים קטן** *(leap years only — 14 Adar I. ON at Tzeis (prior), OFF at Tzeis — OR when 14 Adar I is Friday: OFF at candle-lighting (entering Shabbos))*
+  * **שושן פורים קטן** *(leap years only — 15 Adar I. ON at Tzeis (prior), OFF at Tzeis — OR when 15 Adar I is Shabbos: ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos). **Attribute only** — unlike פורים קטן, it never becomes the sensor state)*
   * **תענית אסתר מוקדם** *(ON at Alos (Thursday 11 Adar when 13 Adar is Shabbos), OFF at Tzeis)*
   * **שבת ערב פורים** *(ON at Alos (Shabbos 13 Adar), OFF at Tzeis (Motzei Shabbos, when Megillah reading begins))*
   * **תענית אסתר** *(ON at Alos, OFF at Tzeis)*
@@ -223,6 +225,34 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 * **Molad** (`sensor.yidcal_molad` → `friendly` attribute) Full human-friendly Molad string in Yiddish
 * **Full Display Sensor** (`sensor.yidcal_full_display`) displays it all in one (e.g פרייטאג פרשת קרח ~ ב׳ ד׳ראש חודש תמוז)
+
+  *Attributes:* every piece that goes into the state is **also published on its own**, so a dashboard can reorder or restyle the pieces individually instead of parsing one concatenated string. Each attribute carries the sensor's own decision about whether that piece is showing right now — a template never has to re-derive a timing gate. Every key is always present (empty string when that piece isn't showing), so `state_attr()` never returns `None`.
+
+  | Attribute | Contents |
+  | --- | --- |
+  | `day_label` | The day label, in whichever language the option selects |
+  | `parsha` | Weekly parsha — empty during the regalim, where it is suppressed |
+  | `holiday` | The `sensor.yidcal_holiday` **state** — empty while an `ערב…` is still hidden before Alos, and empty for the many flags that are attribute-only (`ראש חודש`, `שבת ראש חודש`, …) |
+  | `shabbos_erev_pesach` | `ערב פסח` on a Shabbos that is Erev Pesach — empty when the holiday state already says it |
+  | `special_shabbos` | Special Shabbos name, only inside its display window (Friday from midday or candle-lighting, through Motzei Shabbos) |
+  | `rosh_chodesh` | Rosh Chodesh — empty when `שבת ראש חודש` already covers it |
+  | `sefirah_short` | Short Omer count, e.g. `ח׳ בעומר` |
+  | `hebrew_date` | Hebrew date, matching `sensor.yidcal_date` |
+  | `civil_date` | Civil date, e.g. `Saturday, April 18, 2026` |
+
+  `sefirah_short` and `hebrew_date` are populated **whenever their source has a value**. The two config options that mention them govern only whether they are appended to the **state**, so the attributes stay available to compose with either way.
+
+  `civil_date` is **attribute-only** and never joins the state, so nothing an existing dashboard shows shifts. It rolls at **civil midnight** — unlike `hebrew_date`, which rolls at havdalah — so the two are meant to disagree on an evening after havdalah. Its weekday and month names follow the host's locale (English on a stock install), which is why it is not named `english_date`.
+
+  ```jinja
+  {% set fd = 'sensor.yidcal_full_display' %}
+  <center><b><font size="3.5">
+    {{ state_attr(fd,'day_label') }} {{ state_attr(fd,'parsha') }}
+  </font></b></center>
+  <center><b><font size="2" color="grey">
+    {{ state_attr(fd,'hebrew_date') }} ~ {{ state_attr(fd,'civil_date') }}
+  </font></b></center>
+  ```
 * **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion. During weeks where Yom Tov falls on Shabbos (no regular parsha), the sensor shows the next upcoming parsha with an א׳ suffix (e.g. "פרשת שמיני א׳") if there's a regular Mon/Thu kriah that week before Yom Tov. The following week when the parsha is actually leined shows a ב׳ suffix. During the actual Yom Tov / Chol HaMoed days, the parsha is intentionally empty. Sukkos weeks are always empty. Works correctly for both Israel and Diaspora.
 * **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) i.e.: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Perek Avos**: current Perek rendered in אבות פרק ה׳
