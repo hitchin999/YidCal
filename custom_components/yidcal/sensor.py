@@ -14,18 +14,12 @@ from .yidcal_lib.zman_compute import (
     round_half_up as _round_half_up,
     round_ceil as _round_ceil,
     sunset_for_date,
+    plag_hamincha_gra_for_date,
+    nightfall_for_date,
 )
 
 # Fixed Jerusalem location for molad time-of-day labels (same coords the
 # old astral-based code used).
-_JERUSALEM_GEO = GeoLocation(
-    name="YidCal-Jerusalem",
-    latitude=31.7683,
-    longitude=35.2137,
-    time_zone="Asia/Jerusalem",
-    elevation=0,
-)
-
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -45,6 +39,7 @@ from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .yidcal_lib.helper import YidCalHelper, MoladDetails
 from .yidcal_lib import molad_text as MT
+from .yidcal_lib.halacha_events import classify_molad_tod
 from .yidcal_lib.sfirah_helper import SfirahHelper
 from .sfirah_sensor import SefirahCounter, SefirahCounterMiddos, SefirahCounterShort
 from .special_shabbos_sensor import SpecialShabbosSensor
@@ -151,38 +146,12 @@ ENG2HEB = {
     "Adar II": "אדר ב",   # leap year month 13
 }
 
-def _molad_tod_key_jerusalem(jer_dt: datetime, jer_tzeis: datetime) -> str:
-    """
-    Time-of-day BUCKET based on the JERUSALEM clock.
-
-    - AM: hour buckets (Jerusalem hour).
-    - PM: night only after Jerusalem tzeis; before that is afternoon.
-
-    Returns one of ``molad_text``'s TOD_* keys rather than a label — the
-    rule that picks the bucket belongs here, next to the Jerusalem geo it
-    depends on, while the wording for each language lives in molad_text.
-    """
-    hour = jer_dt.hour
-
-    # Morning side (Jerusalem)
-    if hour < 12:
-        if hour < 6:
-            return MT.TOD_DAWN
-        if hour < 9:
-            return MT.TOD_MORNING
-        return MT.TOD_LATE_MORNING
-
-    # PM side (Jerusalem)
-    if jer_dt < jer_tzeis:
-        return MT.TOD_AFTERNOON
-    return MT.TOD_NIGHT
-
-
 def molad_context(
     *,
     helper: YidCalHelper,
     havdalah_offset: int,
     today: date,
+    geo: GeoLocation,
 ) -> dict:
     """Every piece the molad sentence needs, for the month announced on ``today``.
 
@@ -202,32 +171,20 @@ def molad_context(
     details: MoladDetails = helper.get_molad(base_date)
     m = details.molad
 
-    # Motzei Shabbos / Friday-night phrasing is decided on the JERUSALEM
-    # clock, since the molad is announced in Jerusalem time.
-    jer_tz = ZoneInfo("Asia/Jerusalem")
-    jer_sunset = sunset_for_date(geo=_JERUSALEM_GEO, tz=jer_tz, base_date=m.date)
-    jer_tzeis = jer_sunset + timedelta(minutes=havdalah_offset)
-
-    is_special = False
-    if m.day == "Shabbos" and m.dt >= jer_tzeis:
-        is_special = True
-    elif m.day == "Sunday":
-        four_am = datetime(m.date.year, m.date.month, m.date.day, 4, 0, tzinfo=jer_tz)
-        if m.dt < four_am:
-            is_special = True
-
-    friday_night = (
-        not is_special
-        and m.dt.weekday() == 4        # Friday in Jerusalem
-        and m.dt >= jer_tzeis          # after Jerusalem tzeis
+    # The bucket is decided on the OBSERVER's clock and the observer's
+    # zmanim — get_actual_molad already returns the announcement digits on
+    # the local clock, which is what the printed luachs typeset. The old
+    # code compared that local timestamp against a Jerusalem tzeis instant,
+    # which is why a Shabbos-afternoon molad could come out as מוצש״ק.
+    tz = helper.tz
+    # Kept for the sensor's attributes: it suppresses the weekday label
+    # and the time-of-day in favour of a bare "מוצש״ק". Derived from the
+    # bucket rather than recomputed, so the two cannot drift.
+    tod_key = classify_molad_tod(
+        m.dt,
+        plag=plag_hamincha_gra_for_date(geo=geo, tz=tz, base_date=m.date),
+        tzeis=nightfall_for_date(geo=geo, tz=tz, base_date=m.date),
     )
-
-    if is_special:
-        tod_key = MT.TOD_MOTZASH
-    elif friday_night:
-        tod_key = MT.TOD_FRIDAY_NIGHT
-    else:
-        tod_key = _molad_tod_key_jerusalem(m.dt, jer_tzeis)
 
     # Which Hebrew month this molad belongs to — same rollover rules the
     # helper uses, so the month name can never disagree with the digits.
@@ -248,7 +205,7 @@ def molad_context(
         "minutes": m.minutes,
         "chalakim": m.chalakim,
         "tod_key": tod_key,
-        "is_special": is_special,
+        "is_special": tod_key == MT.TOD_MOTZASH,
         "month_hebrew": first_of_month.month_name(True),
         "month_english": first_of_month.month_name(False),
         "rosh_chodesh_days_english": list(rc.days),
@@ -550,6 +507,7 @@ class MoladSensor(YidCalDisplayDevice, SensorEntity):
                 helper=self.helper,
                 havdalah_offset=self._havdalah_offset,
                 today=today,
+                geo=self._geo,
             )
         except Exception as e:
             _LOGGER.error("Molad update failed: %s", e)
