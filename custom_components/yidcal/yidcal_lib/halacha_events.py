@@ -1699,6 +1699,8 @@ HOLIDAY_WINDOW_TYPE: dict[str, str] = {
         "שובבים ת\"ת":                   "havdalah_havdalah",
         "צום עשרה בטבת":                 "alos_havdalah",
         "חמשה עשר בשבט":                "havdalah_havdalah",
+        "פורים קטן":                      "havdalah_havdalah",
+        "שושן פורים קטן":                 "havdalah_havdalah",
         "תענית אסתר":                     "alos_havdalah",
         "תענית אסתר מוקדם":                "alos_havdalah",
         "פורים":                         "havdalah_havdalah",
