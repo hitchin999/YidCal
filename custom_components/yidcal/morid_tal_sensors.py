@@ -14,7 +14,6 @@ Defines two YidCal sensors using pyluach for Hebrew date computation with contin
 """
 from __future__ import annotations
 
-import calendar
 import datetime
 from datetime import timedelta, date
 from zoneinfo import ZoneInfo
@@ -34,6 +33,7 @@ from .yidcal_lib.zman_compute import (
     round_half_up as _round_half_up,
     sunset_for_date,
 )
+from .yidcal_lib.halacha_events import tal_umatar_start_dates
 from .zman_sensors import get_geo
 
 
@@ -184,8 +184,7 @@ class TalUMatarSensor(YidCalDisplayDevice, SensorEntity):
             # a Gregorian leap year (i.e. when the upcoming February
             # has 29 days). Examples of Dec 5 starts: 2019, 2023, 2027, 2031.
             dec_year = now_local.year - 1 if now_local.month <= 4 else now_local.year
-            start_day = 5 if calendar.isleap(dec_year + 1) else 4
-            start_gdate = date(dec_year, 12, start_day)
+            start_gdate, _first_day = tal_umatar_start_dates(dec_year)
 
             raw_start_dt = sunset_on(start_gdate) + timedelta(minutes=self._havdalah_offset)
             start_dt = _round_ceil(raw_start_dt)
