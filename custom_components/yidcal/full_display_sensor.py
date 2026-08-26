@@ -42,6 +42,28 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
     """
     _attr_name = "Full Display"
 
+    #: The state is a single concatenated string, which makes it awkward to
+    #: restyle one piece on a dashboard. Each piece is therefore ALSO
+    #: published as its own attribute, carrying the value that piece
+    #: contributed — or "" when it was suppressed. Templates get the
+    #: sensor's own decision (is the parsha hidden for the regel right now?
+    #: is this ערב… still before alos?) rather than having to re-derive it
+    #: from the source entities.
+    #:
+    #: Declared in display order. Every key is always present, so
+    #: ``state_attr(...)`` never returns None mid-template.
+    _EMPTY_ATTRS: dict[str, str] = {
+        "day_label": "",
+        "parsha": "",
+        "holiday": "",
+        "shabbos_erev_pesach": "",
+        "special_shabbos": "",
+        "rosh_chodesh": "",
+        "sefirah_short": "",
+        "hebrew_date": "",
+        "civil_date": "",
+    }
+
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__()
         slug = "full_display"
@@ -50,6 +72,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
 
         self.hass = hass
         self._state = ""
+        self._attrs: dict[str, str] = dict(self._EMPTY_ATTRS)
 
         # Read user choice for day-label language
         cfg = hass.data[DOMAIN]["config"]
@@ -98,6 +121,10 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
     def native_value(self) -> str:
         return self._state
 
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        return self._attrs
+
     async def async_update(self, now: datetime.datetime | None = None) -> None:
         tz = self._tz
         now = now or datetime.datetime.now(tz)
@@ -115,6 +142,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
             )
 
         text = ""
+        attrs: dict[str, str] = dict(self._EMPTY_ATTRS)
 
         # 1) Day label (Yiddish, Hebrew short, or Hebrew full per user
         # choice). All three are day_label_* entities; the third is
@@ -127,6 +155,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         day = self.hass.states.get(label_entity)
         if day and _ok(day.state):
             text = day.state.strip()
+            attrs["day_label"] = text
 
         # 2) Parsha (suppress during regalim and sentinel "None")
         parsha = self.hass.states.get("sensor.yidcal_parsha")
@@ -138,6 +167,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 hd_today = dates.GregorianDate(today.year, today.month, today.day).to_heb()
                 if not self._is_during_regel(hd_today):
                     text += f" {ps}"
+                    attrs["parsha"] = ps
 
         # 3) Holiday — single state from sensor.yidcal_holiday
         hol = self.hass.states.get("sensor.yidcal_holiday")
@@ -169,13 +199,19 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
 
             if show_holiday:
                 text += f" - {hol_state}"
+                attrs["holiday"] = hol_state
 
         # 3b) Shabbos Erev Pesach: if this Shabbos is Erev Pesach (מוקדם year),
         # surface "ערב פסח" throughout Shabbos.
         if hol and getattr(hol, "attributes", None):
             if str(hol.attributes.get("שבת ערב פסח", False)).lower() == "true":
+                # The dedup is content correctness, not a preference: when
+                # the holiday state ALREADY reads ערב פסח this piece would
+                # duplicate it, so the attribute stays empty too and a
+                # custom layout can drop it in unconditionally.
                 if "ערב פסח" not in text:
                     text += " ~ ערב פסח"
+                    attrs["shabbos_erev_pesach"] = "ערב פסח"
 
         # 5) Special Shabbos — show on Fri only after 12:00 (general),
         # but for "פורים משולש" require candle-lighting; on Shabbos show until havdalah.
@@ -233,6 +269,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
 
                 if show_special:
                     text += f" ~ {sstate}"
+                    attrs["special_shabbos"] = sstate
 
         # 4) Rosh Chodesh
         rosh = self.hass.states.get("sensor.yidcal_rosh_chodesh_today")
@@ -244,23 +281,49 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 and _ok(special.state)
                 and "שבת ראש חודש" in str(special.state)
             ):
-                text += f" ~ {rosh.state.strip()}"
+                attrs["rosh_chodesh"] = rosh.state.strip()
+                text += f" ~ {attrs['rosh_chodesh']}"
 
         # 6) Optional Sefirah Counter (Short) — e.g. "ח׳ בעומר"
         # Skipped on ל"ג בעומר and מוצאי ל"ג בעומר (already shown by the
         # holiday sensor) — the "בעומר" substring check covers both.
-        if self._include_sefirah_short and "בעומר" not in text:
+        # `include_sefirah_short_in_full` governs the STATE only. The two
+        # inner checks — the "בעומר" dedup and the day-0 title — are
+        # content correctness, so they gate the attribute as well.
+        if "בעומר" not in text:
             sef_short = self.hass.states.get("sensor.yidcal_sefirah_counter_short")
             if sef_short and _ok(sef_short.state):
                 sstate_short = str(sef_short.state).strip()
                 # Only show when we're actually counting (skip the day-0 title)
                 if sstate_short and sstate_short != "ספירת העומר":
-                    text += f" ~ {sstate_short}"
+                    attrs["sefirah_short"] = sstate_short
+                    if self._include_sefirah_short:
+                        text += f" ~ {sstate_short}"
 
         # 7) Optional “today’s date”
-        if self._include_date:
-            date_ent = self.hass.states.get("sensor.yidcal_date")
-            if date_ent and _ok(date_ent.state):
-                text += f" - {date_ent.state.strip()}"
+        # As with the sefirah counter, `include_date` decides whether this
+        # joins the STATE; the attribute is published either way so a
+        # custom layout can position it freely.
+        date_ent = self.hass.states.get("sensor.yidcal_date")
+        if date_ent and _ok(date_ent.state):
+            attrs["hebrew_date"] = date_ent.state.strip()
+            if self._include_date:
+                text += f" - {attrs['hebrew_date']}"
+
+        # 8) Civil (Gregorian) date — attribute ONLY. It never joins the
+        # state, so no dashboard that reads the state today shifts.
+        #
+        # Rolls at civil midnight, matching a card's own `now()`. That is
+        # deliberately NOT hebrew_date's rollover, which is havdalah — on a
+        # Tuesday evening after havdalah the two are meant to disagree.
+        #
+        # %A/%B follow the host's LC_TIME. A stock HA install runs
+        # C.UTF-8 and so renders English, but a host with another locale
+        # set will render that locale — which is why this is `civil_date`
+        # rather than `english_date`: the key does not promise a language
+        # it cannot guarantee. `civil_date` is also the term halacha_events
+        # already uses for a Gregorian date throughout.
+        attrs["civil_date"] = now.strftime("%A, %B %d, %Y")
 
         self._state = text
+        self._attrs = attrs
