@@ -17,8 +17,10 @@ device:
                                              as "true"/"false" strings.
   sensor.yidcal_sof_kiddush_levana_display   Printed-luach Hebrew line for
                                              the deadline (ZMAN day/night
-                                             rule), with the ז׳-שלמים line
-                                             as an attribute.
+                                             rule), with BOTH the ג׳-שלמים
+                                             and ז׳-שלמים lines as
+                                             attributes (always, regardless
+                                             of the start-opinion option).
 
 CYCLE SELECTION / ROLLOVER: each sensor tracks ONE Hebrew month's molad
 cycle. Once the sof zman passes, the sensors keep showing that (passed)
@@ -278,7 +280,8 @@ class KiddushLevanaSensor(_KiddushLevanaBase, BinarySensorEntity):
 
 
 class SofKiddushLevanaDisplaySensor(_KiddushLevanaBase, SensorEntity):
-    """Printed-luach Hebrew line for the deadline, ז׳ שלמים attribute."""
+    """Printed-luach Hebrew line for the deadline, with ג׳ שלמים and
+    ז׳ שלמים attributes (both always present)."""
 
     _attr_name = "Sof Kiddush Levunah Display"
     _attr_icon = "mdi:moon-waning-crescent"
@@ -300,7 +303,21 @@ class SofKiddushLevanaDisplaySensor(_KiddushLevanaBase, SensorEntity):
             metzora_display=self._metzora_display,
             ref_date=ref,
         )
+        # BOTH opinions are published unconditionally — independent of
+        # the CONF_KIDDUSH_LEVANA_START option, which governs only the
+        # binary sensor's ON window and the calendar event start.
+        # ג׳ שלמים uses the SAME formatter as ז׳ שלמים: both are cycle
+        # START instants, so the booklet anchor rule (יום / אור ליום /
+        # ליל, never 'כל הלילה') applies identically.
         self._attrs = {
+            "Gimmel_Shleimim": "ג׳ שלמים: " + zsh_anchor_when_with_parsha(
+                cyc["gimmel_naive"],
+                geo=self._geo,
+                tz=self._tz,
+                diaspora=self._diaspora,
+                metzora_display=self._metzora_display,
+                ref_date=ref,
+            ),
             "Zayin_Shleimim": "ז׳ שלמים: " + zsh_anchor_when_with_parsha(
                 cyc["zayin_naive"],
                 geo=self._geo,
