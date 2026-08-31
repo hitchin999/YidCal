@@ -46,6 +46,7 @@ from zmanim.zmanim_calendar import ZmanimCalendar
 from zmanim.util.geo_location import GeoLocation
 
 from .alos_options import DEFAULT_ALOS_OPTION, get_option, resolve_tallis_base
+from .tzeis_options import DEFAULT_TZEIS_OPTION, get_tzeis_option
 from .grossman_calculator import GrossmanCalculator
 
 
@@ -821,6 +822,151 @@ def all_alos_for_date(
         opt.key: alos_for_date(geo=geo, tz=tz, base_date=base_date, option=opt.key)
         for opt in ALOS_OPTIONS
     }
+
+
+@lru_cache(maxsize=_SUN_CACHE_SIZE)
+def _tzeis_degrees_utc(
+    lat: float, lon: float, elev: float, tzname: str, ordinal: int, degrees: float,
+) -> datetime | None:
+    """Sunset depressed ``degrees`` below the horizon, as a UTC instant.
+
+    The evening mirror of ``_alos_degrees_utc``, including its
+    conventions: ``None`` when the sun never reaches that depression on
+    that date (a real outcome, not an error — at 41°N, 26° is never
+    reached anywhere near the summer solstice), and no elevation
+    adjustment, because a degree-based zman is defined by the sun's
+    position and adding a horizon dip for altitude on top of it would
+    double-count. This matches KosherJava.
+    """
+    geo = GeoLocation(
+        name="YidCal", latitude=lat, longitude=lon,
+        time_zone=tzname, elevation=elev,
+    )
+    d = date_cls.fromordinal(ordinal)
+    cal = ZmanimCalendar(geo_location=geo, date=d)
+    zenith = 90.0 + degrees
+
+    # python-zmanim's own helper, which handles the date-wrap bookkeeping.
+    try:
+        moment = cal.sunset_offset_by_degrees(zenith)
+    except Exception:  # noqa: BLE001 - polar dates, or an older API
+        moment = None
+
+    if moment is None:
+        # Same calculator fallback as the Alos side: reaching here means
+        # either the sun genuinely never gets that low, or python-zmanim
+        # renamed the helper above; utc_sunset is the stable half of the
+        # interface.
+        acalc = getattr(cal, "astronomical_calculator", None)
+        if acalc is None:
+            return None
+        try:
+            hours = acalc.utc_sunset(d, geo, zenith, False)
+        except Exception:  # noqa: BLE001
+            return None
+        if hours is None or hours != hours:  # None or NaN
+            return None
+        moment = (
+            datetime.combine(d, time_cls(0), tzinfo=timezone.utc)
+            + timedelta(hours=hours)
+        )
+
+    return moment.astimezone(timezone.utc)
+
+
+def _tzeis_raw(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    option: str,
+) -> datetime | None:
+    """RAW Tzeis for one opinion, or ``None`` if it cannot be computed.
+
+    The honest version: unlike ``tzeis_for_date`` it does NOT substitute
+    a fallback, so the per-opinion attribute table can omit an opinion
+    the sky never reaches instead of publishing a plausible-looking
+    wrong time under its name.
+    """
+    opt = get_tzeis_option(option)
+    sunrise, sunset = sun_events_for_date(geo=geo, tz=tz, base_date=base_date)
+
+    if opt.kind == "fixed":
+        return sunset + timedelta(minutes=opt.value)
+
+    if opt.kind == "zmanis":
+        # One zmanis minute = 1/60 of a GRA sha'ah zmanis.
+        shaah = (sunset - sunrise) / 12
+        return sunset + (shaah / 60) * opt.value
+
+    lat, lon, elev = _geo_cache_key(geo)
+    tzname = getattr(tz, "key", None) or str(tz)
+    utc = _tzeis_degrees_utc(
+        lat, lon, elev, tzname, base_date.toordinal(), float(opt.value)
+    )
+    return None if utc is None else utc.astimezone(tz)
+
+
+def tzeis_for_date(
+    *,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    base_date: date_cls,
+    option: str = DEFAULT_TZEIS_OPTION,
+    havdalah_offset: int = 72,
+) -> datetime:
+    """RAW (unrounded) Tzeis HaKochavim for one opinion, aware in ``tz``.
+
+    Never raises and never returns None, mirroring ``alos_for_date``: an
+    opinion that cannot be computed for this date and latitude falls
+    back to ``sunset + havdalah_offset`` — the SAME figure the sensor's
+    own state uses, so a fallback lands on the user's configured tzeis
+    rather than on some other opinion's number. Callers that have the
+    config must pass it; the 72 default exists only so the harness can
+    call this without one, exactly as in ``compute_zmanim_for_date``.
+
+    Deliberately NOT ``_ALOS_OFFSET_MIN``: that constant is the MGA
+    sha'ah zmanis anchor, which is fixed by design and must not move
+    when a user preference does. Those two 72s are unrelated and are
+    kept unrelated here.
+
+    Use ``_tzeis_raw`` where a missing value must stay missing.
+    """
+    val = _tzeis_raw(geo=geo, tz=tz, base_date=base_date, option=option)
+    if val is not None:
+        return val
+    return sunset_for_date(
+        geo=geo, tz=tz, base_date=base_date
+    ) + timedelta(minutes=havdalah_offset)
+
+
+def all_tzeis_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls,
+) -> dict[str, datetime]:
+    """Every Tzeis opinion for ``base_date``, keyed by its option key.
+
+    What ``sensor.yidcal_tzies_hakochavim`` publishes as its per-opinion
+    timestamp attributes. All of them share one cached sun-event lookup,
+    so the whole table costs about as much as computing any single one.
+
+    Opinions the sun never reaches on this date at this latitude are
+    OMITTED rather than substituted — the key difference from
+    ``all_alos_for_date``, and the reason 26° disappears from the table
+    for a few weeks around the summer solstice at mid-northern
+    latitudes. A missing attribute is a truthful "no such moment
+    tonight"; a fallback would not be.
+    """
+    from .tzeis_options import TZEIS_OPTIONS
+
+    out: dict[str, datetime] = {}
+    for opt in TZEIS_OPTIONS:
+        try:
+            val = _tzeis_raw(geo=geo, tz=tz, base_date=base_date, option=opt.key)
+        except Exception:  # noqa: BLE001 - one bad opinion must not sink the table
+            continue
+        if val is not None:
+            out[opt.key] = val
+    return out
 
 
 def nightfall_for_date(
