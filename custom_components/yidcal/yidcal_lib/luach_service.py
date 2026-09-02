@@ -603,7 +603,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> dict:
                 time_format=time_fmt,
                 show_shehecheyanu=show_shehecheyanu,
                 extra_zmanim_labels=extra_labels,
-                molad_style="monroe",
+                molad_style="weekly",
                 hebrew_date_rc_emphasis=True,
             )
             # Community name: Hebrew form from the places DB when the
@@ -1441,7 +1441,7 @@ def _weekly_full_year_cards(
         metzora_display=metzora_display, time_format=time_format,
         show_shehecheyanu=show_shehecheyanu,
         extra_zmanim_labels=extra_zmanim_labels,
-        molad_style="monroe", hebrew_date_rc_emphasis=True,
+        molad_style="weekly", hebrew_date_rc_emphasis=True,
     )
     # Anchor each week on its Shabbos (first Saturday on/after start),
     # then step +7 through end. Trailing weeks on/after RH of
