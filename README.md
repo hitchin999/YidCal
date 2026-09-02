@@ -372,7 +372,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **Sof Kiddush Levunah Display** (`sensor.yidcal_sof_kiddush_levana_display`)
   The deadline as a printed-luach Hebrew line, e.g. `ס״ז קידוש לבנה: ליל ב׳ 2:07` or `ס״ז קידוש לבנה: ליל ג׳ כל הלילה` — (a deadline that falls during the day rolls back to the preceding night as "כל הלילה"; Yom-Tov nights get their YT name, e.g. ליל א׳ דפסח). Rolls to the next month together with the timestamp sensor.
   When the deadline is more than a week out, the week's parsha is added after the night so you can tell *which* ליל ד׳ it means — e.g. `ס״ז קידוש לבנה: ליל ד׳ עקב כל הלילה`. Once you're **in** that same parsha week (or on a Yom-Tov night, which already names itself), the parsha drops and it reads exactly like the printed luach — `ס״ז קידוש לבנה: ליל ד׳ כל הלילה`. Honors the מצורע/טהרה naming option.
-  *Attribute:* `Zayin_Shleimim` — the ז׳ שלמים line in the same style, with the same parsha rule (e.g. `ז׳ שלמים: יום ב׳ 1:10`, or `ז׳ שלמים: ליל ג׳ ואתחנן 8:30` when it's a different week)
+  *Attributes:* `Gimmel_Shleimim` and `Zayin_Shleimim` — the ג׳ שלמים and ז׳ שלמים lines in the same style, with the same parsha rule (e.g. `ז׳ שלמים: יום ב׳ 1:10`, or `ז׳ שלמים: ליל ג׳ ואתחנן 8:30` when it's a different week). **Both are always published**, whichever start opinion the `ג' אדער ז' שלימים` setting selects — that setting governs the binary sensor's ON window and the calendar event, not this display.
 
 * **Shehecheyanu Display** (`sensor.yidcal_shehecheyanu_display`)
   Whether **שהחיינו** is said at the **next candle lighting** — Shabbos or Yom Tov, whichever comes first. Always populated, with one of exactly two states: `שהחיינו` or `אין אומרים שהחיינו`. Rolls forward to the next lighting on the same minute **Zman Erev** publishes (ceil-to-minute for after-tzeis lightings, half-up for before-shkia).
@@ -454,6 +454,33 @@ instead to pin it independently of the primary.
 > ⚠️ Unticking an extra Alos sensor later does **not** auto-delete the entity. Remove it
 > manually via **Settings → Entities**.
 
+### Tzies Hakochavim opinions
+
+`sensor.yidcal_tzies_hakochavim` keeps its state as **`sunset + havdalah_offset`** —
+nothing here changes it, and there is no dropdown to pick a different one. What is new
+is that **every printed צאת opinion is published alongside it as an attribute**, so a
+dashboard can show a second shita, or you can compare a few before deciding what to set
+`havdalah_offset` to.
+
+| Family | Attributes |
+| ------ | ---------- |
+| **Fixed minutes** after sunset | `Tzies_40_Minutes`, `Tzies_50_Minutes`, `Tzies_56_Minutes`, `Tzies_60_Minutes`, `Tzies_72_Minutes`, `Tzies_90_Minutes`, `Tzies_120_Minutes` |
+| **Degrees** below the horizon | `Tzies_3_65_Degrees`, `Tzies_3_7_Degrees`, `Tzies_3_8_Degrees`, `Tzies_4_37_Degrees`, `Tzies_4_61_Degrees`, `Tzies_4_8_Degrees`, `Tzies_5_95_Degrees`, `Tzies_6_Degrees`, `Tzies_6_45_Degrees`, `Tzies_7_083_Degrees`, `Tzies_7_1_Degrees`, `Tzies_7_67_Degrees`, `Tzies_8_Degrees`, `Tzies_8_5_Degrees`, `Tzies_9_3_Degrees`, `Tzies_9_75_Degrees`, `Tzies_16_1_Degrees`, `Tzies_18_Degrees`, `Tzies_19_8_Degrees`, `Tzies_26_Degrees` |
+
+Values are ISO timestamps, rounded **up** to the minute like the sensor's own state.
+They describe the same night the state does, so they follow the same Alos rollover.
+
+> ⚠️ **A degree attribute is absent on a date the sun never reaches that depression.**
+> This is not an error — at mid-northern latitudes the sun bottoms out around 25° below
+> the horizon in late June, so `Tzies_26_Degrees` disappears for a few weeks around the
+> solstice and comes back on its own. Publishing a substitute under that name would be
+> worse than publishing nothing. Guard templates with `is defined`:
+>
+> ```jinja
+> {% set t = state_attr('sensor.yidcal_tzies_hakochavim','Tzies_26_Degrees') %}
+> {{ t if t is defined and t else 'n/a tonight' }}
+> ```
+
 ### Zman Erev (Candle Lighting)
 
 * **Zman Erev (Candle Lighting)** (`sensor.yidcal_zman_erev`) — **Next candle-lighting timestamp**
@@ -481,6 +508,11 @@ instead to pin it independently of the primary.
       * `Day_1_Label`, `Day_1_Simple`
       * `Day_2_Label`, `Day_2_Simple`
       * `Day_3_Label`, `Day_3_Simple`
+    * **Other candle-lighting opinions** for the same evening the state is showing, ordered earliest first:
+
+      * `Zman_Erev_Viznitz_30_Minutes`, `Zman_Erev_18_Minutes`, `Zman_Erev_15_Minutes`
+
+      Present only when the state is a **before-sunset** lighting. On a Night 2 Yom Tov or a Motzi Shabbos → Yom Tov the zman is tzeis-based, so a "minutes before shkia" figure is not a variant of it and the keys are absent rather than wrong.
 
 ### Night 2 / Night 3 Candle Lighting *(optional)*
 
@@ -511,6 +543,9 @@ instead to pin it independently of the primary.
     * `Zman_Motzi_With_Seconds` – ISO local time (unrounded)
     * `Zman_Motzi_Simple` – HH:MM (local)
     * `City`, `Latitude`, `Longitude`
+    * **Other Motzi opinions** for the same night the state is showing, ordered earliest first: `Zman_Motzi_8_5_Degrees`, `Zman_Motzi_50_Minutes`, `Zman_Motzi_Viznitz_54_Minutes`, `Zman_Motzi_60_Minutes`, `Zman_Motzi_72_Minutes`
+
+      The order is worked out from the times themselves, not fixed in advance — a degree opinion has no fixed minute equivalent, so 8.5° runs roughly 42 minutes after shkia in spring and past 50 in midsummer, and it moves position accordingly. As on the Tzies sensor, a degree attribute is simply absent on a date the sun never reaches it.
 
 ### Zmanim device sensors
 
@@ -525,7 +560,7 @@ instead to pin it independently of the primary.
 * **Zman Shkiat HaChamah** (`sensor.yidcal_shkia`) – sunset. Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations keep reporting the current night's shkia through the night.
 * **Zman Maariv +60m** (`sensor.yidcal_zman_maariv_60`) – 60 min after sunset. Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations keep reporting the current night's value through the night.
 * **Zman Maariv R"T** (`sensor.yidcal_zman_maariv_rt`) – 72 min after sunset. Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations keep reporting the current night's value through the night.
-* **Zman Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset). Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations (e.g. "6 hours after Tzies Hakochavim") keep working through the night.
+* **Zman Tzies Hakochavim** (`sensor.yidcal_tzies_hakochavim`) – stars emergence (sunset + havdalah_offset). Rolls over to the next day at **Alos HaShachar** (not civil midnight), so nighttime automations (e.g. "6 hours after Tzies Hakochavim") keep working through the night. Every other צאת opinion rides along as an attribute — see **[Tzies Hakochavim opinions](#tzies-hakochavim-opinions)**.
 * **Zman Mincha Gedola** (`sensor.yidcal_mincha_gedola`) – earliest Mincha
 * **Zman Mincha Ketana** (`sensor.yidcal_mincha_ketana`) – preferred Mincha
 * **Zman Chatzos HaLaila** (`sensor.yidcal_chatzos_haleila`) – halachic midnight (6 שעות זמניות from nightfall). Anchored to the halachic night: between civil midnight and עלות the sensor still shows the current night's חצות; transitions to the next night at עלות.
