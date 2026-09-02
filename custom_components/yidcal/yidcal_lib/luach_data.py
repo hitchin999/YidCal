@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace as _dc_replace
 from datetime import date as date_cls, datetime, timedelta
+import logging
 import re
 from typing import Union
 from zoneinfo import ZoneInfo
@@ -47,6 +48,8 @@ from .zman_compute import (
     FAST_START_SHKIA,
     DEFAULT_TALLIS_TEFILIN_OFFSET,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -1567,7 +1570,22 @@ def _annotations_mevorchim(
         # SF convention: a colon after the month name before the RC
         # clause (e.g. "מבה״ח טבת: ר״ח שב״ק מקץ ויום א׳ ויגש").
         head = f"מבה״ח {month_he}: {rc_clause}"
-        if molad_text:
+        if config.molad_style == "weekly" and molad_text:
+            # The KY WEEKLY card leads with the molad and puts the
+            # Rosh-Chodesh days after it, naming neither parsha:
+            #   מולד אדר א׳: שבת נאכמיטאג, 39 מינוט און 6 חלקים נאך 12
+            #   • ר״ח יום א׳ וב׳
+            # It takes the BARE ``rc_phrase_he`` rather than the
+            # parsha-labelled clause assembled above, so the
+            # same-parsha suppression that clause needs doesn't apply.
+            # With no molad the line falls back to the shared מבה״ח
+            # head — a 'מולד' label with nothing after it would read
+            # as an error rather than as a missing optional field.
+            text = (
+                f"מולד {month_he}: {molad_text} "
+                f"{INFO_SEP} {ev.rc_phrase_he}"
+            )
+        elif molad_text:
             text = f"{head} {INFO_SEP} המולד: {molad_text}"
         else:
             text = head
@@ -1666,12 +1684,19 @@ def _annotations_tekufah(
                 # ("יום ד׳" → "ד׳"); special weekday names like "עש״ק"
                 # / "שב״ק" stay unchanged.
                 wd_bare = wd_he.removeprefix("יום ")
-                if tk.dt_local.hour < 5:
+                if tk.dt_announce.hour < 5:
                     prefix = "ליל "
-                    time_str = f"{tk.dt_local.hour}:{tk.dt_local.minute:02d}"
+                    # 12-hour, like every other printed time — midnight
+                    # is '12:00', not '0:00'. Reachable: תקופת ניסן
+                    # lands on exactly 00:00 standard every four years
+                    # (5786, 5790, 5794 …).
+                    time_str = (
+                        f"{tk.dt_announce.hour % 12 or 12}:"
+                        f"{tk.dt_announce.minute:02d}"
+                    )
                 else:
                     prefix = "יום "
-                    time_str = he.format_tekufah_time(tk.dt_local)
+                    time_str = he.format_tekufah_time(tk.dt_announce)
                 anchor = f"{wd_bare} {yt_name}, {hebrew_date_str}"
                 text = f"{tk.label_he}: {prefix}{anchor} בשעה {time_str}"
                 out.append(AnnotationRow(
@@ -1684,16 +1709,19 @@ def _annotations_tekufah(
             # Legacy format (chol-hamoed or unmatched YT): "אור ל" /
             # plain-weekday prefix; no YT name.
             anchor = hebrew_date_str
-            if tk.dt_local.hour < 5:
+            if tk.dt_announce.hour < 5:
                 prefix = "אור ל"
-                time_str = f"{tk.dt_local.hour}:{tk.dt_local.minute:02d}"
+                time_str = (
+                    f"{tk.dt_announce.hour % 12 or 12}:"
+                    f"{tk.dt_announce.minute:02d}"
+                )
             else:
                 prefix = ""
-                time_str = he.format_tekufah_time(tk.dt_local)
+                time_str = he.format_tekufah_time(tk.dt_announce)
         else:
             anchor = parsha
             prefix = ""
-            time_str = he.format_tekufah_time(tk.dt_local)
+            time_str = he.format_tekufah_time(tk.dt_announce)
 
         text = (
             f"{tk.label_he}: {prefix}{wd_he} {anchor} בשעה {time_str}"
@@ -2989,7 +3017,11 @@ def _weekly_dom_sublabel(
     if rc is not None:
         pos, total = rc
         if total == 2:
-            return "א׳ דראש חודש" if pos == 1 else "ב׳ דראש חודש"
+            # A two-day R"Ch prints ABBREVIATED in the day-of-month
+            # cell ('א׳ דר״ח' / 'ב׳ דר״ח'); a lone R"Ch day with
+            # nothing else on it stays spelled out. Weekly-card
+            # display rule only — the shared RC helper is untouched.
+            return "א׳ דר״ח" if pos == 1 else "ב׳ דר״ח"
         return "ראש חודש"
 
     # Chanukah
@@ -3242,6 +3274,24 @@ def build_weekly_data(
     def _in_block(dt: date_cls) -> bool:
         return _blk_start <= dt <= _blk_end
 
+    # The week's card boundaries — the SAME set build_weekly_cards()
+    # splits on, so "first / last card of the week" means the same
+    # thing on both sides. Blocks partition [_card_starts[0] ..
+    # week_end] exactly: each card runs from its own Erev to the next
+    # card's Erev minus one day, and the last one runs to week_end.
+    _card_starts = sorted(
+        r.civil_date for r in _erev_rows if not _esc_folds(r)
+    )
+    _hero_civil = hero_row.civil_date if hero_row is not None else None
+    _card_is_first = (
+        _hero_civil not in _card_starts
+        or _hero_civil == _card_starts[0]
+    )
+    _card_is_last = (
+        _hero_civil not in _card_starts
+        or _hero_civil == _card_starts[-1]
+    )
+
     # True when this week resolves to ONE card (a plain parsha week:
     # the only erev row is its Friday, no YT-block split). The
     # parsha-anchored tekufos (תקופת טבת → שמות, תקופת תמוז →
@@ -3412,30 +3462,36 @@ def build_weekly_data(
         )
         sub_parts: list[str] = []
         if _is_hoshana_block:
-            # YT names this block introduces, in calendar order.
-            # Derived from the block's own YT day-rows (Tishrei 22
-            # = שמיני עצרת, 23 = שמחת תורה in diaspora) so it stays
-            # year-agnostic and sensor-safe.
-            _sht: list[str] = []
-            for dd in days:
-                if not _in_block(dd.civil_date):
-                    continue
-                try:
-                    _pp = PHebrewDate.from_pydate(dd.civil_date)
-                except Exception:
-                    continue
-                if _pp.month == 7 and _pp.day == 22:
-                    _sht.append("שמיני עצרת")
-                elif _pp.month == 7 and _pp.day == 23 and config.diaspora:
-                    _sht.append("שמחת תורה")
-            if not config.diaspora and "שמיני עצרת" in _sht:
-                # In E"Y ShA & ST are the same day — printed as both.
-                _sht = ["שמיני עצרת", "שמחת תורה"]
-            sub_parts = _sht or ["שמיני עצרת", "שמחת תורה"]
-            # The printed הושענא רבה card stacks these two YT names on
+            # YT names this block introduces, taken from the Hebrew
+            # calendar rather than from the week's day-rows. The block
+            # is by definition 21 Tishrei, so it always introduces
+            # שמיני עצרת (22) and — in the diaspora — שמחת תורה (23).
+            # Scanning ``days`` for them silently lost שמחת תורה in any
+            # year where הושענא רבה falls on a FRIDAY (תשפ״ז): 23
+            # Tishrei is then the SUNDAY of the next civil week, and
+            # the card printed a single sub line. In E"Y the two are
+            # one day and only שמיני עצרת prints.
+            sub_parts = (
+                ["שמיני עצרת", "שמחת תורה"] if config.diaspora
+                else ["שמיני עצרת"]
+            )
+            # The printed הושענא רבה card stacks these YT names on
             # SEPARATE lines (not comma-joined). Carry them as a stack
             # so the renderer draws one per row.
             sub_stack = list(sub_parts)
+        elif erev_name_in_week == "שביעי של פסח":
+            # The printed KY card sub-titles this block with the YT it
+            # introduces two days later. Diaspora only: in E"Y Pesach
+            # ends with שביעי and there is no eighth day.
+            #
+            # 21 Nisan is always the weekday BEFORE 15 Nisan's, so the
+            # pair can be (Fri, Shabbos) — a block that needs an eruv
+            # tavshilin. The eruv line wins the sub, exactly as it does
+            # on the Shabbos pipeline below.
+            if eruv:
+                sub_parts = ["עירוב תבשילין"]
+            elif config.diaspora:
+                sub_parts = ["אחרון של פסח"]
         elif _esh_chm_fest:
             # Two-line title, BOTH lines at the big hero size
             # (verified vs the printed KY card):
@@ -3502,30 +3558,51 @@ def build_weekly_data(
                     "ראש חודש" not in sub_parts:
                 sub_parts.append("ראש חודש")
 
-            # ── Chanukah day on Shabbos ──
-            # If this week's Shabbos is itself a day of Chanukah,
-            # the printed KY card adds the Chanukah-day label
-            # ('ו׳ דחנוכה' / 'ז׳ דחנוכה' / 'ח׳ דחנוכה') as a
-            # sub-hero part — placed RIGHT AFTER 'ראש חודש' when
-            # both apply (Mikeitz 5786). Day 8 still says 'ח׳
-            # דחנוכה' here (not 'זאת חנוכה') per the printed
-            # evidence; 'זאת חנוכה' applies only to the day-cell
-            # sub-label.
+            # ── Sub-line order (printed KY card) ──
+            #   0. ראש חודש                       (appended above)
+            #   1. special-parsha / שבת name — שקלים, זכור, פרה,
+            #      החודש, חזון, נחמו, הגדול, שירה, שובה, משולש
+            #   2. מבה״ח, then מברכין בה״ב
+            #   3. חנוכה
+            #   4. חזק
+            #   5. פרק                            (appended below)
+            # Net effect: 'שקלים, מבה״ח' · 'החודש, מבה״ח' ·
+            # 'מבה״ח, א׳ דחנוכה' · 'מבה״ח, חזק, פרק א'.
+            #
+            # חזק arrives from the SAME special_shabbos_labels source
+            # as rank 1 but prints below מבה״ח and חנוכה, so it is
+            # split out here rather than at the source (which also
+            # feeds the yearly luachs and the sensors).
+            _CHAZAK = "חזק"
+
+            # Chanukah day on THIS week's Shabbos — resolved here,
+            # appended at rank 3 below. Day 8 still says 'ח׳ דחנוכה'
+            # (not 'זאת חנוכה') per the printed evidence; 'זאת חנוכה'
+            # applies only to the day-of-month cell.
             try:
                 _shab_ch = he.chanukah_day_label_he(week_end)
             except Exception:
                 _shab_ch = None
-            if _shab_ch and _shab_ch not in sub_parts:
-                sub_parts.append(_shab_ch)
 
+            # rank 1 — special-Shabbos names, minus חזק. 'שבת ר״ח' is
+            # conveyed by the day-of-month column on the KY card, not
+            # the hero sub, so the bare 'ר״ח' is skipped.
+            for _sn in special_names:
+                if (_sn and _sn not in ("ר״ח", _CHAZAK)
+                        and _sn not in sub_parts):
+                    sub_parts.append(_sn)
+
+            # rank 2 — מבה״ח, then 'מברכין בה״ב', the BeHaB-fast
+            # announcement Shabbos (the first non-Rosh-Chodesh Shabbos
+            # of Cheshvan / Iyar). Detected via the SAME canonical
+            # helper the yearly luach uses (compute_behab_in_range →
+            # mevorchim_shabbos), so weekly and yearly stay in sync.
+            # The weekly card spells it 'מברכין'; the yearly rows keep
+            # 'מברכין' too and the SF sheet maps it to 'מברכים' — that
+            # map never touches this string (it is applied to
+            # annotation rows only, and only for the SF sheet).
             if is_mevorchim:
                 sub_parts.append("מבה״ח")
-            # 'מברכים בה״ב' — the BeHaB-fast announcement Shabbos
-            # (the first non-Rosh-Chodesh Shabbos of Cheshvan / Iyar).
-            # Detected via the SAME canonical helper the yearly luach
-            # uses (compute_behab_in_range → mevorchim_shabbos), so
-            # the weekly and yearly stay in sync. Placed right after
-            # מבה״ח, before special-Shabbos names / perek.
             try:
                 _is_behab_shabbos = bool(
                     he.compute_behab_in_range(
@@ -3534,13 +3611,16 @@ def build_weekly_data(
                 )
             except Exception:
                 _is_behab_shabbos = False
-            if _is_behab_shabbos and "מברכים בה״ב" not in sub_parts:
-                sub_parts.append("מברכים בה״ב")
-            for _sn in special_names:
-                # 'שבת ר״ח' is conveyed by the day-of-month column on
-                # the KY card, not the hero sub — skip the bare 'ר״ח'.
-                if _sn and _sn not in ("ר״ח",) and _sn not in sub_parts:
-                    sub_parts.append(_sn)
+            if _is_behab_shabbos and "מברכין בה״ב" not in sub_parts:
+                sub_parts.append("מברכין בה״ב")
+
+            # rank 3 — Chanukah
+            if _shab_ch and _shab_ch not in sub_parts:
+                sub_parts.append(_shab_ch)
+
+            # rank 4 — חזק
+            if _CHAZAK in special_names and _CHAZAK not in sub_parts:
+                sub_parts.append(_CHAZAK)
             if perek:
                 # Printed KY card prints the perek WITHOUT the
                 # gershayim ('פרק ב' not 'פרק ב׳' — also for
@@ -3580,11 +3660,29 @@ def build_weekly_data(
         # "next year"), so the main body and sensors are unaffected.
         if trailing_year_sub is not None:
             try:
-                title_sub = (
+                _yr_line = (
                     f"שנת {he.hebrew_year_letters(int(trailing_year_sub))}"
                 )
-                # A trailing page never uses the 2-line ShA/ST stack.
-                sub_stack = []
+                # The printed תשפ״ז booklet STACKS the incoming year
+                # UNDER whatever sub the page already carries rather
+                # than replacing it: the trailing האזינו page reads
+                #   האזינו
+                #   שבת שובה
+                #   שנת תשפ״ח
+                # An earlier reading of the 5786 booklet had the year
+                # overriding the שבת-שובה sub; 5787 is the newer print
+                # and it wins. The ער״ה page carries no other sub — and
+                # its own branch above already set the same year string
+                # — so the filter below keeps it a single line.
+                _base = [
+                    s for s in (
+                        list(sub_stack)
+                        or ([title_sub] if title_sub else [])
+                    )
+                    if s != _yr_line
+                ]
+                sub_stack = _base + [_yr_line]
+                title_sub = ", ".join(sub_stack)
             except Exception:
                 pass
 
@@ -3963,13 +4061,79 @@ def build_weekly_data(
     #     scoped: they print on the card of the block whose dates
     #     contain them. (The בראשית card carries 'מולד מרחשון…';
     #     the same-week הושענא רבה card carries NO molad line.)
-    #   • ז׳ שלמים and the general ס״ז-קידוש-לבנה → WEEK-scoped: they
-    #     print on EVERY card of the week. (Both the ערב יו״כ card
-    #     and the same-week האזינו card show 'ז׳ שלמים: יום ב׳ 1:10'.)
+    #   • ז׳ שלמים and the general ס״ז-קידוש-לבנה → exactly ONE card
+    #     per week. They used to print on EVERY card of a multi-card
+    #     week; the printed booklet carries each on a single card,
+    #     picked by _owns_moment() below.
+    def _zsh_defers(zs: datetime) -> bool:
+        """True when the ז׳-שלמים note moves forward one card.
+
+        Stated in terms of the PRINTED WORDING so the two can never
+        drift: defer exactly when the card would print 'יום ו׳' or
+        'יום שב״ק' — a Friday or Shabbos moment that _zsh_anchor_when
+        renders in its DAYTIME form. A pre-dawn Friday moment prints
+        'אור ליום ו׳' and a post-shkia one prints 'ליל ו׳'; neither
+        defers. Night moments never defer, whatever the weekday
+        (תשפ״ז תשרי, Friday 9:59 PM, stays on האזינו).
+        """
+        if zs.weekday() not in (4, 5):          # Friday / Shabbos only
+            return False
+        try:
+            netz, shkia = sun_events_for_date(
+                geo=config.geo, tz=config.tz, base_date=zs.date(),
+            )
+        except Exception:
+            return False
+        return netz <= zs.replace(tzinfo=config.tz) <= shkia
+
+    def _owns_moment(when: date_cls) -> bool:
+        """True when THIS card carries a note anchored to ``when``.
+
+        A week with two cards used to emit the same week-scoped note on
+        both. Only one may carry it: the card whose block — the
+        sub-range delimited by the next card's Erev — contains the
+        moment. A moment inside no block at all (the days before the
+        week's first Erev, or a ס״ז anchored to a week its own deadline
+        does not fall in) goes to the LAST card of the week.
+        """
+        if _in_block(when):
+            return True
+        if _card_starts and _card_starts[0] <= when <= week_end:
+            return False                # inside a sibling card's block
+        if _card_is_last:
+            _LOGGER.debug(
+                "YidCal weekly card %s (%s): note anchored to %s lies "
+                "outside every block — assigned to the last card",
+                week_start, title_main, when,
+            )
+            return True
+        return False
+
+    def _kl_line(sk: datetime) -> str:
+        """Weekly 'ס״ז קידוש לבנה' line, via the shared night/day
+        formatter (verified vs printed Table-3, 12/12 months)."""
+        return (
+            "ס״ז קידוש לבנה: "
+            + _szkl_anchor_when(
+                sk, geo=config.geo, tz=config.tz,
+                diaspora=config.diaspora,
+                time_fmt=config.time_format,
+            )
+        )
+
     info_molad: list[str] = []
     info_kl: list[str] = []
     chametz_lines: list[str] = []
-    kl_from_pesach = False
+    # Nissan's ס״ז rides on the Erev-Pesach annotation, which is
+    # block-scoped to the ערב פסח card. The SUPPRESSION of the general
+    # path below is week-wide so a sibling card of the same week can
+    # never emit it a second time.
+    kl_from_pesach = any(
+        a.kind == "erev_pesach_chametz"
+        and "קידוש לבנה" in a.text_he
+        and week_start <= a.civil_date <= week_end
+        for a in anns
+    )
     for a in sorted(anns, key=lambda x: x.civil_date):
         _ok = _in_block(a.civil_date)
         if (
@@ -3987,14 +4151,22 @@ def build_weekly_data(
             if "אכילת חמץ" in a.text_he:
                 chametz_lines.append(a.text_he)          # → black box
             else:
-                # Keep ONLY the kiddush-levana clause; the KY weekly
-                # card does not carry the 'זמן חצות …' note here.
-                parts = [p.strip() for p in a.text_he.split(" - ")]
-                kl = next(
-                    (p for p in parts if "קידוש לבנה" in p), None)
-                if kl:
-                    info_kl.append(kl)
-                    kl_from_pesach = True
+                # The annotation's own KL clause is the YEARLY form
+                # ('סוף זמן קידוש לבנה …', no colon). The weekly card
+                # uses the same 'ס״ז קידוש לבנה: ' helper every other
+                # card uses, so re-derive it from the Nissan deadline
+                # rather than parsing the sentence apart. The 'זמן
+                # חצות …' clause on that same line is not carried by
+                # the KY weekly card.
+                try:
+                    info_kl.append(_kl_line(
+                        sof_zman_kiddush_levana_rama_local(
+                            PHebrewDate.from_pydate(a.civil_date).year,
+                            1, config.tz,
+                        )
+                    ))
+                except Exception:
+                    pass
             continue
         if a.kind in ("mevorchim", "molad_tishrei", "tekufah",
                       "hashala"):
@@ -4033,10 +4205,7 @@ def build_weekly_data(
                     pass
             info_molad.append(_txt)
 
-    # ז׳ שלמים / general סוף-זמן-קידוש-לבנה for the week's Hebrew
-    # month(s). (Flagged: KY phrasing + which-week rule not formally
-    # sourced — emitted when the molad-derived date lands in-week,
-    # which matches the printed Erev-Shavuos / Erev-Pesach cards.)
+    # Day anchors used by the ז׳ שלמים / ס״ז-קידוש-לבנה lines.
     def _wd_he(dd: date_cls) -> str:
         if dd.weekday() == 5:
             return "יום שב״ק"
@@ -4060,46 +4229,79 @@ def build_weekly_data(
             return f"ליל {_intra}" if night else _intra
         return _wd_he(dd)
 
-    def _kl_line(sk: datetime) -> str:
-        """Weekly 'ס״ז קידוש לבנה' line, via the shared night/day
-        formatter (verified vs printed Table-3, 12/12 months)."""
-        return (
-            "ס״ז קידוש לבנה: "
-            + _szkl_anchor_when(
-                sk, geo=config.geo, tz=config.tz,
-                diaspora=config.diaspora,
-                time_fmt=config.time_format,
-            )
-        )
+    # ── ז׳ שלמים / ס״ז קידוש לבנה placement ──────────────────────
+    # Both notes hang off a Hebrew month's ז׳-שלמים MOMENT:
+    #
+    #   ז׳ שלמים  prints on the card owning its own moment, EXCEPT
+    #             when that card would print the daytime 'יום ו׳' /
+    #             'יום שב״ק' form — a Friday or Shabbos DAYTIME moment
+    #             defers one card, i.e. onto the FIRST card of the
+    #             following week (Fri/Shabbos always sits in a week's
+    #             LAST block, so "the next card" is always that).
+    #
+    #   ס״ז ק״ל   is anchored to the ז׳-שלמים card + 1 week — the
+    #             DISPLAYED card, so a deferred ז״ש drags its ס״ז with
+    #             it. Verified against the printed תשפ״ז booklet: אדר
+    #             א׳ ז״ש defers תרומה→תצוה and its ס״ז sits on כי תשא;
+    #             סיון ז״ש defers ערב שבועות→נשא and its ס״ז sits on
+    #             בהעלותך.
+    #
+    # NB the סיון pairing puts that ס״ז one week PAST its own deadline
+    # (3:36 AM on the נשא Shabbos). The booklet applies the +1-week
+    # relation mechanically and we reproduce it deliberately. If a
+    # later printing quietly moves סיון back to נשא, that is the signal
+    # to revisit this rule.
+    #
+    # The תשפ״ו booklet never defers, so its two Friday/Shabbos-daytime
+    # months (אייר, סיון) disagree with the above — accepted: the
+    # deferral reads as an editorial change introduced in תשפ״ז, and
+    # each month's ז״ש and ס״ז disagree as a PAIR rather than
+    # compounding.
+    #
+    # Candidate months are therefore every month whose ז״ש can reach
+    # this week: its own week, one week back (a deferred ז״ש, or a
+    # plain ס״ז) and two weeks back (a deferred ס״ז).
     seen_hm: set[tuple[int, int]] = set()
     info_shleimim: list[str] = []
-    for dd in days:
-        ph = PHebrewDate.from_pydate(dd.civil_date)
-        key = (ph.year, ph.month)
-        if key in seen_hm:
+    _scan = week_start - timedelta(days=21)
+    while _scan <= week_end:
+        _sph = PHebrewDate.from_pydate(_scan)
+        _hm = (_sph.year, _sph.month)
+        _scan += timedelta(days=1)
+        if _hm in seen_hm:
             continue
-        seen_hm.add(key)
+        seen_hm.add(_hm)
         try:
-            zs = zayin_shleimim_local(ph.year, ph.month, config.tz)
-            if week_start <= zs.date() <= week_end:
-                info_shleimim.append(
-                    "ז׳ שלמים: "
-                    + _zsh_anchor_when(
-                        zs, geo=config.geo, tz=config.tz,
-                        diaspora=config.diaspora,
-                        time_fmt=config.time_format,
-                    )
-                )
+            zs = zayin_shleimim_local(_hm[0], _hm[1], config.tz)
         except Exception:
-            pass
-        if not kl_from_pesach:
-            try:
-                sk = sof_zman_kiddush_levana_rama_local(
-                    ph.year, ph.month, config.tz)
-                if week_start <= sk.date() <= week_end:
-                    info_kl.append(_kl_line(sk))
-            except Exception:
-                pass
+            continue
+        _zs_week, _ = _weekly_resolve_week(zs.date())
+        _deferred = _zsh_defers(zs)
+        _zs_card_week = (
+            _zs_week + timedelta(days=7) if _deferred else _zs_week
+        )
+        if _zs_card_week == week_start and (
+            _card_is_first if _deferred else _owns_moment(zs.date())
+        ):
+            info_shleimim.append(
+                "ז׳ שלמים: "
+                + _zsh_anchor_when(
+                    zs, geo=config.geo, tz=config.tz,
+                    diaspora=config.diaspora,
+                    time_fmt=config.time_format,
+                )
+            )
+        if kl_from_pesach:
+            continue
+        if _zs_card_week + timedelta(days=7) != week_start:
+            continue
+        try:
+            sk = sof_zman_kiddush_levana_rama_local(
+                _hm[0], _hm[1], config.tz)
+        except Exception:
+            continue
+        if _owns_moment(sk.date()):
+            info_kl.append(_kl_line(sk))
 
     info_lines: list[str] = info_molad + info_shleimim + info_kl
 
@@ -4144,15 +4346,6 @@ def build_weekly_data(
             "(29 תשרי) and Erev-RC Teves (29 כסלו / Chanukah) are NOT "
             "special-cased — verify those two weeks against the "
             "printed luach."
-        )
-    if title_sub and "מבה״ח" in title_sub and any(
-        x not in ("מבה״ח",) and "פרק" not in x
-        for x in title_sub.split(", ")
-    ):
-        open_notes.append(
-            "Week is both מבה״ח and a special-Shabbos — sub-line "
-            "ordering/precedence (מבה״ח vs the special-Shabbos name) "
-            "is a guess; verify against the printed card."
         )
     # Tishrei fast coverage: צום גדליה IS now printed on the KY
     # card (ג׳/ד׳ תשרי) per Yoel. עשרה בטבת / תענית אסתר are also
