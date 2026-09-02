@@ -26,8 +26,10 @@ from .yidcal_lib.zman_compute import (
     dawn_for_date,
     round_ceil as ceil_minute,
     round_half_up as half_up,
+    sunset_degrees_for_date,
     sunset_for_date,
 )
+from .yidcal_lib.erev_motzi_options import EREV_OPINIONS, MOTZI_OPINIONS
 
 
 # ─── Helper: compute holiday duration via pyluach ───────────────────────────
@@ -165,6 +167,78 @@ def lighting_event_for_day(
         return (sunset - timedelta(minutes=candle_offset), "erev_before_sunset")
 
     return (None, "none")
+
+def offset_opinions_for_shkia(
+    *,
+    opinions,
+    base_date: datetime.date,
+    geo: GeoLocation,
+    tz: ZoneInfo,
+    before: bool,
+    rounder,
+    formatter,
+) -> dict[str, str]:
+    """Alternative opinions measured from shkia on ONE civil date.
+
+    ``base_date`` is the day the sensor's own state was built from, not
+    today. The two are the same only when nothing is frozen; on Shabbos
+    the Erev sensor is showing Friday, and an alternative computed off
+    today's shkia would describe a different day than the state sitting
+    right above it. The callers pass the date they actually used.
+
+    ``before=True`` subtracts (candle lighting), False adds (Motzi).
+    ``rounder`` is the sensor's own rounding rule and ``formatter`` its
+    own display format, both passed in rather than assumed, so an
+    alternative can never disagree with the state in how it is rounded
+    or rendered.
+
+    Degree opinions the sun never reaches on this date are omitted, the
+    same rule the Tzeis table follows: a missing key is a truthful "no
+    such moment", a substituted one would not be.
+
+    The returned dict is ordered EARLIEST FIRST, and the order is
+    computed from the resulting times rather than taken from the table.
+    That is not cosmetic. A degree opinion has no fixed minute
+    equivalent — 8.5° runs about 42 minutes after shkia here in
+    September and about 46 in December — so where it falls among the
+    fixed offsets moves with the season and the latitude. Any ordering
+    baked into the table would therefore be right for part of the year
+    and wrong for the rest. Sorting the computed values is right always.
+    Home Assistant renders attributes in insertion order, so this is
+    what the user sees.
+    """
+    sunset = sunset_for_date(geo=geo, tz=tz, base_date=base_date)
+    rows: list[tuple[datetime.datetime, str, str]] = []
+
+    for opt in opinions:
+        try:
+            if opt.kind == "degrees":
+                # Degrees are an absolute sun position, so they are only
+                # meaningful on the evening side; there is no "degrees
+                # before shkia" candle-lighting opinion.
+                if before:
+                    continue
+                val = sunset_degrees_for_date(
+                    geo=geo, tz=tz, base_date=base_date, degrees=opt.value
+                )
+                if val is None:
+                    continue
+            else:
+                delta = timedelta(minutes=opt.value)
+                val = sunset - delta if before else sunset + delta
+        except Exception:  # noqa: BLE001 - one bad opinion must not sink the rest
+            continue
+        rounded = rounder(val.astimezone(tz))
+        rows.append((rounded, opt.attr, formatter(rounded)))
+
+    # Sort on the ROUNDED time, the one actually displayed, so the order
+    # can never contradict the values next to it. Python's sort is
+    # stable, so two opinions landing on the same minute keep their
+    # table order instead of swapping around between updates.
+    rows.sort(key=lambda r: r[0])
+
+    return {attr: shown for _dt, attr, shown in rows}
+
 
 def round_lighting_for_kind(
     dt_local: datetime.datetime, kind: str
@@ -571,6 +645,42 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             attrs["Last_Zman_Erev_Date"]   = (ll + timedelta(days=1)).date().isoformat()  # date it ushered in
             attrs["Last_Zman_Erev_Simple"] = self._format_simple_time(half_up(ll))
 
+        # ---- Static candle-lighting opinions (15 / 18 min before shkia) ----
+        # Anchored to the civil date the STATE was built from, recovered
+        # from the chosen time rather than assumed to be `today`: during a
+        # Shabbos/Yom Tov freeze the state is Friday's lighting while today
+        # is Shabbos, and these have to describe the same evening it does.
+        #
+        # Published only for a before-sunset lighting. On a 2nd-night Yom
+        # Tov or a Shabbos→Yom Tov lighting the zman is tzeis-based, and
+        # "18 minutes before shkia" is not a stricter opinion of that, it
+        # is a different quantity — so the keys are absent rather than
+        # wrong. Consumers must tolerate that.
+        ref_local = (chosen_unrounded or chosen).astimezone(self._tz)
+        erev_base_date = (ref_local + timedelta(minutes=self._candle)).date()
+        _, ref_kind = lighting_event_for_day(
+            erev_base_date,
+            diaspora=self._diaspora,
+            tz=self._tz,
+            geo=self._geo,
+            candle_offset=self._candle,
+            havdalah_offset=self._havdalah,
+        )
+        # "none" means the state came from this sensor's own synthetic
+        # Friday fallback, which is a before-sunset lighting by construction.
+        if ref_kind in ("erev_before_sunset", "none"):
+            attrs.update(
+                offset_opinions_for_shkia(
+                    opinions=EREV_OPINIONS,
+                    base_date=erev_base_date,
+                    geo=self._geo,
+                    tz=self._tz,
+                    before=True,
+                    rounder=half_up,
+                    formatter=self._format_simple_time,
+                )
+            )
+
         self._attr_extra_state_attributes = attrs
 
 
@@ -631,6 +741,33 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 # on the entity platform's next ~30s poll.
                 self.hass, self._publishing(self._alos_update), alos_dt,
             )
+        )
+
+    def _motzi_opinions(self, base_date: datetime.date) -> dict[str, str]:
+        """Tonight's Motzi under the other common opinions.
+
+        ``base_date`` is the civil day whose shkia the STATE was measured
+        from — the last day of the no-melacha block. Both callers pass it
+        explicitly (one has `block_end` in hand, the other recovers it by
+        subtracting the configured havdalah offset from the chosen time,
+        which is exact because the state is defined as that day's shkia
+        plus that offset). Neither uses `today`, which is a different day
+        whenever the sensor is frozen after havdalah or before alos.
+
+        Rounded with ceil and rendered with the same 12/24-hour setting as
+        `Zman_Motzi_Simple`, so an alternative never disagrees with the
+        state on anything but the opinion itself.
+        """
+        if not self._geo:
+            return {}
+        return offset_opinions_for_shkia(
+            opinions=MOTZI_OPINIONS,
+            base_date=base_date,
+            geo=self._geo,
+            tz=self._tz,
+            before=False,
+            rounder=ceil_minute,
+            formatter=self._format_simple_time,
         )
 
     # ---- Helper: find true end of current YT span (handles SA→ST in diaspora) ----
@@ -744,6 +881,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 "Next_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(next_dt).astimezone(self._tz)),
                 "Last_Zman_Motzi_Date": (last_dt + timedelta(days=1)).date().isoformat() if last_dt else "",
                 "Last_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(last_dt).astimezone(self._tz)) if last_dt else "",
+                **self._motzi_opinions(block_end),
             }
             return
 
@@ -863,4 +1001,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             "Next_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(next_dt).astimezone(self._tz)),
             "Last_Zman_Motzi_Date": (last_dt + timedelta(days=1)).date().isoformat() if last_dt else "",
             "Last_Zman_Motzi_Simple": self._format_simple_time(ceil_minute(last_dt).astimezone(self._tz)) if last_dt else "",
+            **self._motzi_opinions(
+                (chosen_unrounded - timedelta(minutes=self._havdalah)).date()
+            ),
         }
