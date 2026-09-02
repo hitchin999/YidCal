@@ -107,6 +107,28 @@ def _join(parts: list[str], language: str) -> str:
     return sep.join(parts)
 
 
+def molad_time_phrase(
+    *,
+    hours: int,
+    minutes: int,
+    chalakim: int,
+    language: str,
+) -> str:
+    """The clock half of the announcement, with no day or time-of-day.
+
+    e.g. ``'45 מינוט און 3 חלקים נאך 9'``. Split out of ``molad_body``
+    so the weekly luach — which builds its own day phrase, and whose
+    pre-dawn wording deliberately differs — can reuse this wording
+    rather than re-spelling מינוט / חלק / נאך for itself.
+    """
+    chal = _chalakim_phrase(chalakim, language)
+    if language == "yiddish":
+        return f"{minutes} מינוט{chal} נאך {hours}"
+    if language == "hebrew":
+        return f"{minutes} דקות{chal} אחרי {hours}"
+    return f"{minutes} minutes{chal} after {hours}"
+
+
 def molad_body(
     *,
     day_english: str,
@@ -120,7 +142,6 @@ def molad_body(
 
     e.g. ``'מאנטאג אינדערפרי, 45 מינוט און 3 חלקים נאך 9'``.
     """
-    chal = _chalakim_phrase(chalakim, language)
     if tod_key == TOD_MOTZASH:
         day = _MOTZASH_DAY[language]
         tod = ""
@@ -128,12 +149,9 @@ def molad_body(
         day = day_label(day_english, language)
         tod = tod_label(tod_key, language)
     head = f"{day} {tod}".strip()
-
-    if language == "yiddish":
-        return f"{head}, {minutes} מינוט{chal} נאך {hours}"
-    if language == "hebrew":
-        return f"{head}, {minutes} דקות{chal} אחרי {hours}"
-    return f"{head}, {minutes} minutes{chal} after {hours}"
+    return f"{head}, " + molad_time_phrase(
+        hours=hours, minutes=minutes, chalakim=chalakim, language=language,
+    )
 
 
 def molad_sentence(
