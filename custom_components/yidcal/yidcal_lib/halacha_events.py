@@ -60,6 +60,9 @@ from zoneinfo import ZoneInfo
 from pyluach import dates as pl_dates, parshios
 
 from .molad_text import (
+    day_label as _mt_day_label,
+    tod_label as _mt_tod_label,
+    molad_time_phrase as _mt_time_phrase,
     TOD_DAWN as _TOD_DAWN,
     TOD_MORNING as _TOD_MORNING,
     TOD_LATE_MORNING as _TOD_LATE_MORNING,
@@ -1387,6 +1390,39 @@ def format_molad_short(
             key = _TOD_NIGHT
 
     # ── Render ─────────────────────────────────────────────────────────
+    if style == "weekly":
+        # The KY WEEKLY card announces the molad in Yiddish and names
+        # no parsha: '<day> <time-of-day>, <M> מינוט און <P>
+        # חלקים נאך <H>'. Day, time-of-day and the clock
+        # phrase all come from molad_text, so the card and
+        # sensor.yidcal_molad cannot drift apart.
+        #
+        # One deliberate divergence: a pre-3 AM molad takes פארטאגס
+        # here rather than molad_text's ביינאכט. The printed
+        # תשפ״ז booklet sets 'מאנטאג פארטאגס ... 1' for the Adar II
+        # molad (and 'דאנערשטאג פארטאגס' for Iyar, which is
+        # already DAWN), contradicting the KJ 5784 reading noted at the
+        # TOD_NIGHT_ENTERING label. The override lives HERE and not in
+        # that shared label so the molad sensor is untouched.
+        #
+        # The CIVIL day is kept in both cases — a 1:23 AM Monday molad
+        # is 'מאנטאג', not 'זונטאג' — matching molad_text's own
+        # convention and the printed booklet.
+        if key == _TOD_MOTZASH:
+            # The day name already carries it: no time-of-day word, and
+            # the gershayim form the luach uses everywhere else (rather
+            # than molad_text's straight-quote spelling).
+            _head = "מוצש״ק"
+        else:
+            _tod_y = (
+                "פארטאגס" if key == _TOD_NIGHT_ENTERING
+                else _mt_tod_label(key, "yiddish")
+            )
+            _head = f"{_mt_day_label(civil_day, 'yiddish')} {_tod_y}".strip()
+        return f"{_head}, " + _mt_time_phrase(
+            hours=h12, minutes=mi, chalakim=parts, language="yiddish",
+        )
+
     if key == _TOD_MOTZASH:
         # Sunday pre-dawn is still the Shabbos that just ended, so look the
         # parsha up on the Saturday; a Shabbos-evening molad is already on
@@ -1447,6 +1483,31 @@ class TekufahEntry:
     def label_he(self) -> str:
         """Full Hebrew label, e.g. 'תקופת ניסן'."""
         return f"תקופת {self.name}"
+
+    @property
+    def dt_announce(self) -> datetime:
+        """The clock reading the luachs print — naive, STANDARD time.
+
+        The cycle advances 7½ hours at a time, so every tekufah lands
+        on a 1:30 grid anchored on the standard-time epoch below, and
+        the printed luachs quote the standard-clock reading all year
+        round. Rendering the instant on a DST-aware clock puts the
+        three warm-season tekufos an hour late and OFF that grid: the
+        printed KJ תשפ״ז sheet sets תקופת ניסן (11:00 UTC) at 6:00,
+        where the same instant reads 7:00 on an EDT clock — and 7:00
+        is not a reachable value. Confirmed in both directions against
+        תשפ״ז: ניסן prints 6:00 (DST, shifted) and טבת prints 10:30
+        (standard, unshifted).
+
+        ``dt_local`` stays the true instant and remains what dates,
+        weekdays and ordering are taken from. The two can never fall
+        on different civil days: that would need a local time of
+        00:00-00:59, which requires a standard reading of 23:00-23:59,
+        and the grid skips from 22:30 to 00:00.
+        """
+        return (
+            self.dt_local - (self.dt_local.dst() or timedelta(0))
+        ).replace(tzinfo=None)
 
 
 def _tekufas_tishrei_utc(hebrew_year: int) -> datetime:
