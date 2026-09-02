@@ -969,6 +969,29 @@ def all_tzeis_for_date(
     return out
 
 
+def sunset_degrees_for_date(
+    *, geo: GeoLocation, tz: ZoneInfo, base_date: date_cls, degrees: float,
+) -> datetime | None:
+    """Sunset depressed ``degrees`` below the horizon, local and aware.
+
+    The public face of ``_tzeis_degrees_utc``, for callers outside the
+    Tzeis table that need one degree-based evening zman (the Motzi
+    sensor's 8.5° opinion, for one) without pulling in the whole
+    ``tzeis_options`` machinery or reaching for a private name.
+
+    Returns ``None`` — never a substitute — when the sun does not reach
+    that depression on that date at that latitude. Callers decide
+    whether to omit the value or fall back; only they know whether a
+    missing zman is acceptable in their context.
+    """
+    lat, lon, elev = _geo_cache_key(geo)
+    tzname = getattr(tz, "key", None) or str(tz)
+    utc = _tzeis_degrees_utc(
+        lat, lon, elev, tzname, base_date.toordinal(), float(degrees)
+    )
+    return None if utc is None else utc.astimezone(tz)
+
+
 def nightfall_for_date(
     *,
     geo: GeoLocation,
