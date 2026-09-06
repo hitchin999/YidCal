@@ -65,6 +65,14 @@ CUSTOM_BBOX: dict[str, tuple[float, float, float, float]] = {
     # so users configured to surrounding addresses (Forest Glen, Larkin Drive,
     # Watergap, etc.) snap to KJ's luach-aligned centroid.
     "Kiryas Joel": (41.20, 41.45, -74.30, -74.00),
+    # South Fallsburg: deliberately TIGHT. It covers South Fallsburg itself
+    # and the Fallsburgh hamlet 2.7 km northeast, and nothing else. A box
+    # drawn around the whole Town of Fallsburg would swallow Woodbourne,
+    # Loch Sheldrake, Hurleyville, Woodridge, Mountain Dale, Dairyland and
+    # Harris -- all curated communities that keep their own luach.
+    # Clearances to the nearest excluded neighbour are roughly 400-550 m,
+    # so widening this by even a hundredth of a degree starts eating them.
+    "South Fallsburg": (41.705, 41.745, -74.645, -74.575),
 }
 
 _DATA_FILE = os.path.join(os.path.dirname(__file__), "places_data.json")
