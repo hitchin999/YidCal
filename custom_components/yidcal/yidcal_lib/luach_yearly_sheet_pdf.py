@@ -290,7 +290,11 @@ class _YearlySheetPDF(FPDF):
         # include the state (e.g. "South Fallsburg, New York").
         if self.subtitle_he:
             self.set_font(FONT_FAMILY_SERIF, "B", self.SUBTITLE_SIZE)
-            box_text = self.subtitle_he.upper()
+            # .upper() is a no-op on Hebrew and bidi() is a no-op on Latin,
+            # so this handles "BOROUGH PARK, NY" and "באראו פארק" alike.
+            # The width must be measured on the reordered string that is
+            # actually drawn, or the black box is sized for the wrong text.
+            box_text = bidi(self.subtitle_he.upper())
             text_w = self.get_string_width(box_text)
             # Generous horizontal padding so the box doesn't crowd the
             # text; vertical sized to fit the cap height with a hair of
