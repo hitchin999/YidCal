@@ -17,6 +17,7 @@ the executor.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 from homeassistant.core import HomeAssistant
@@ -41,6 +42,31 @@ def _normalize(query: str) -> str:
     """Trim and collapse whitespace so 'Lakewood, NJ' and '  Lakewood ,NJ '
     share a cache entry."""
     return " ".join(query.split()).strip()
+
+
+# Bare postal codes only -- US ZIP and ZIP+4, Canadian and UK formats, and
+# the 4-6 digit codes used across Europe and Israel. Deliberately does NOT
+# match place names.
+_POSTCODE_RE = re.compile(
+    r"""^(?:
+          \d{4,6}(?:-\d{3,4})?                      # 12770, 12770-1234
+        | [A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d        # M5V 3A8
+        | [A-Za-z]{1,2}\d[A-Za-z\d]?[ ]?\d[A-Za-z]{2} # NW11 8AA
+      )$""",
+    re.VERBOSE,
+)
+
+
+def _is_postal_code(query: str) -> bool:
+    """True when the query is a bare postal code rather than a place name.
+
+    The country filter is only safe to apply to these. A postal code is
+    meaningless outside its own country, so restricting the search is a
+    genuine disambiguation. A NAME is not: filtering "Jerusalem" to the
+    user's own country returned the Town of Jerusalem in Yates County, NY,
+    and produced a full luach for Guyanoga.
+    """
+    return bool(_POSTCODE_RE.match(query.strip()))
 
 
 async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocation:
@@ -75,6 +101,43 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
     )
     if query in cache:
         return cache[query]
+
+    # Curated list first -- no network call at all when it hits. Beyond
+    # being faster and immune to geocoder outages and rate limits, this is
+    # what stops a name from being resolved in the wrong country: the list
+    # holds one Jerusalem, and it is in Israel.
+    from .places import find_place_by_name
+
+    named = find_place_by_name(query)
+    if named is not None:
+        name, state, named_lat, named_lon = named
+
+        def _tz_for_named() -> str:
+            from timezonefinder import TimezoneFinder
+
+            return TimezoneFinder().timezone_at(
+                lng=named_lon, lat=named_lat,
+            ) or ""
+
+        try:
+            named_tz = await hass.async_add_executor_job(_tz_for_named)
+        except Exception:  # pragma: no cover - defensive
+            named_tz = ""
+        if named_tz:
+            resolved = ResolvedLocation(
+                latitude=named_lat,
+                longitude=named_lon,
+                tzname=named_tz,
+                display_name=f"{name}, {state}" if state else name,
+            )
+            cache[query] = resolved
+            _LOGGER.debug(
+                "YidCal: resolved %r from the curated place list -> "
+                "(%s, %s) tz=%s", query, named_lat, named_lon, named_tz,
+            )
+            return resolved
+        # No timezone for those coordinates: fall through to the geocoder
+        # rather than returning a location we cannot compute zmanim for.
 
     # Pull the user's home location for biasing. Falls back gracefully
     # when any of these aren't set (e.g. a fresh HA instance with no
@@ -113,12 +176,16 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
             return Nominatim(user_agent="yidcal").geocode(query, **kwargs)
 
         try:
-            # Pass 1: with country filter (when we have one) + viewbox bias.
-            loc = _do_geocode(with_country=True)
-            # Pass 2: if the country filter returned nothing, retry without
-            # so international queries (e.g. a US user looking up
-            # "Jerusalem") still resolve.
-            if loc is None and home_country_code:
+            # The country filter is a hard restriction, not a bias, so it
+            # only applies to bare postal codes -- where it prevents a US
+            # ZIP matching a foreign one. Applying it to NAMES is what made
+            # "Jerusalem" resolve to the Town of Jerusalem in Yates County,
+            # New York: pass 1 found a US match, so the unrestricted retry
+            # below never ran.
+            use_country = bool(home_country_code) and _is_postal_code(query)
+            loc = _do_geocode(with_country=use_country)
+            # Retry unrestricted when the filtered pass found nothing.
+            if loc is None and use_country:
                 loc = _do_geocode(with_country=False)
         except GeopyError as exc:
             raise ServiceValidationError(
@@ -176,8 +243,16 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
                 hass, resolved_raw.latitude, resolved_raw.longitude,
             )
         )
-        if city and state:
-            final_display = f"{city}, {state}"
+        # A missing state must not fall back to the raw Nominatim address.
+        # 279 of the curated entries carry no state at all -- every Israeli,
+        # British and European community -- so requiring one printed
+        # "ירושלים, נפת ירושלים, מחוז ירושלים, ישראל" on a luach that had
+        # snapped correctly to Jerusalem.
+        from .places import abbreviate_state
+
+        if city:
+            short_state = abbreviate_state(state)
+            final_display = f"{city}, {short_state}" if short_state else city
         else:
             final_display = resolved_raw.display_name
         resolved = ResolvedLocation(
@@ -247,7 +322,24 @@ async def resolve_location_from_coordinates(
     snap = find_place(latitude, longitude)
     if snap is not None:
         name, state, snap_lat, snap_lon = snap
-        return name, state, snap_lat, snap_lon, hass.config.time_zone
+
+        # Timezone comes from the SNAPPED coordinates. Returning HA's
+        # configured time_zone here meant a New York install generating a
+        # luach for Jerusalem, Los Angeles or Chicago computed every zman
+        # in America/New_York -- candle-lighting for Jerusalem printed at
+        # around 11:30 AM.
+        def _tz_at_snap() -> str:
+            from timezonefinder import TimezoneFinder
+
+            return TimezoneFinder().timezone_at(
+                lng=snap_lon, lat=snap_lat,
+            ) or ""
+
+        try:
+            snap_tz = await hass.async_add_executor_job(_tz_at_snap)
+        except Exception:  # pragma: no cover - defensive
+            snap_tz = ""
+        return name, state, snap_lat, snap_lon, snap_tz or hass.config.time_zone
 
     city = ""
     state = ""
@@ -278,29 +370,52 @@ async def resolve_location_from_coordinates(
             if city_local == "New York" and borough:
                 city_local = borough
             state_local = addr.get("state", "")
-            return city_local, state_local
+            # Rural points often sit outside any named settlement, leaving
+            # only the civil township ("Town of Lumberland"). Useless as a
+            # geocoding target, but fine as a label.
+            municipality_local = addr.get("municipality", "")
+            return city_local, state_local, municipality_local
 
-        city, state = await hass.async_add_executor_job(blocking_lookup)
+        city, state, municipality = await hass.async_add_executor_job(
+            blocking_lookup,
+        )
 
         if not city:
-            # Without a city name, the forward query below degrades to just
-            # ", <State>" — Nominatim can still "succeed" on that and hand
-            # back the STATE centroid, silently relocating the user's zmanim.
-            # Treat no-city as a failed snap instead so the except-branch
-            # below keeps the raw input coords.
-            raise ValueError("reverse geocode returned no city name")
+            # No settlement-level name. Use the township for the LABEL only
+            # and keep the caller's coordinates: forward-geocoding a
+            # township hands back a polygon centroid kilometres away, which
+            # would quietly relocate a remote camp or bungalow colony. The
+            # geocoded point is the better answer there; only the name was
+            # ever wrong.
+            label = municipality.strip()
+            for prefix in ("Town of ", "Township of ", "Village of ",
+                           "City of ", "Borough of "):
+                if label.startswith(prefix):
+                    label = label[len(prefix):]
+                    break
+            if not label:
+                # Nothing usable at all. Treat as a failed snap so the
+                # except-branch below keeps the raw input coords -- without
+                # a name the forward query degrades to ", <State>", which
+                # Nominatim answers with the STATE centroid.
+                raise ValueError("reverse geocode returned no place name")
+            city = label
+            _LOGGER.debug(
+                "YidCal: no settlement at (%s, %s); labelling as %r and "
+                "keeping the input coordinates", latitude, longitude, city,
+            )
+        else:
+            # 2) Forward-geocode "City, State" → official centroid.
+            def blocking_forward():
+                from geopy.geocoders import Nominatim
+                geolocator = Nominatim(user_agent="yidcal")
+                q = f"{city}, {state}"
+                loc = geolocator.geocode(q, exactly_one=True, timeout=10)
+                if not loc:
+                    raise ValueError(f"Could not geocode {q!r}")
+                return loc.latitude, loc.longitude
 
-        # 2) Forward-geocode "City, State" → official centroid.
-        def blocking_forward():
-            from geopy.geocoders import Nominatim
-            geolocator = Nominatim(user_agent="yidcal")
-            q = f"{city}, {state}"
-            loc = geolocator.geocode(q, exactly_one=True, timeout=10)
-            if not loc:
-                raise ValueError(f"Could not geocode {q!r}")
-            return loc.latitude, loc.longitude
-
-        lat, lon = await hass.async_add_executor_job(blocking_forward)
+            lat, lon = await hass.async_add_executor_job(blocking_forward)
     except Exception as e:
         _LOGGER.warning(
             "YidCal: snap geocoding failed (%s), keeping input coords", e,
