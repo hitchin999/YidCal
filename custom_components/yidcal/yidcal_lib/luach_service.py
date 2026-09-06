@@ -609,15 +609,7 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> dict:
             # Community name: Hebrew form from the places DB when the
             # coordinates snap to a known community, else the English
             # place name (same precedence the yearly headers use).
-            _community = loc_name or "YidCal"
-            try:
-                from .places import find_place, get_hebrew_name
-                _fp = find_place(lat, lon)
-                if _fp is not None:
-                    _canon = _fp[0]
-                    _community = get_hebrew_name(_canon) or _canon
-            except Exception:
-                pass
+            _community = _community_name(lat, lon, loc_name or "YidCal")
             notes_he = (
                 "זמן עלות: 72 מינוט לפני הנ״ץ | "
                 "מנחה גדולה גר״א: מוקדם 6 מינוט | "
@@ -780,7 +772,8 @@ async def _async_generate_luach(hass: HomeAssistant, call: ServiceCall) -> dict:
             config=config, molad_provider=molad_provider,
         )
         title_he, subtitle_he, notes_he = _build_titles(
-            start_d, end_d, lat, lon, tzname, city=loc_name,
+            start_d, end_d, lat, lon, tzname,
+            city=_community_name(lat, lon, loc_name),
             hebrew_year_override=eff_hebrew_year,
             candle_offset=candle_off, havdalah_offset=havdalah_off,
             style=style,
@@ -1550,6 +1543,27 @@ def _resolve_output_path(
 
 
 # ── Title strings ─────────────────────────────────────────────────────
+
+def _community_name(latitude: float, longitude: float, fallback: str) -> str:
+    """Hebrew community name for a location, else the best English name.
+
+    Precedence: the Hebrew form from the places database when the
+    coordinates snap to a known community, then that community's canonical
+    English name, then whatever the caller already had (the geocoded
+    string). Shared by the weekly card and the yearly headers so the same
+    location prints identically in both.
+    """
+    try:
+        from .places import find_place, get_hebrew_name
+
+        snap = find_place(latitude, longitude)
+        if snap is not None:
+            canonical = snap[0]
+            return get_hebrew_name(canonical) or canonical
+    except Exception:
+        pass
+    return fallback
+
 
 def _build_titles(
     start: date_cls, end: date_cls,
