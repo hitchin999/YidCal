@@ -7,6 +7,7 @@ service registration.
 """
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 from datetime import date as date_cls, datetime, timedelta
@@ -484,6 +485,14 @@ from .yidcal_lib.zman_geocoder import resolve_location_from_coordinates  # noqa:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up YidCal from a config entry."""
+    # yidcal_lib/places.py parses the 9k-row places_data.json at import
+    # time. Import it in the executor once, here, so every later
+    # `from .places import ...` (geocoder, luach service, the snap check
+    # below) is a sys.modules hit and never opens the file on the loop.
+    await hass.async_add_executor_job(
+        importlib.import_module, f"{__package__}.yidcal_lib.places"
+    )
+
     # Create sample files before anything else
     await create_sample_files(hass)
 
