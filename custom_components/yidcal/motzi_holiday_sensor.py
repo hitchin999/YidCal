@@ -87,6 +87,9 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
         self._candle_offset = candle_offset
         self._havdalah_offset = havdalah_offset
         self._state: bool = False
+        # (start, end) the current ON state is gated on; None when off or
+        # blocked. Read by HolidaySensor to record the mirror's window.
+        self._window: tuple[datetime.datetime, datetime.datetime] | None = None
 
         cfg = hass.data[DOMAIN]["config"]
         self._diaspora: bool = cfg.get("diaspora", True)
@@ -175,6 +178,7 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
 
         if not holiday_date:
             self._state = False
+            self._window = None
             return
 
         # 2) Compute motzei window (holiday-based) via shared cached zmanim
@@ -204,6 +208,7 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
             sun = sat + timedelta(days=1)
             deferred_end = alos_mga_72_for(self._geo, tz, sun)
             self._state = (deferred_start <= now < deferred_end)
+            self._window = (deferred_start, deferred_end)
         elif shabbos_blocks_motzi and holiday_date.weekday() == 5:
             # Holiday’s last day IS Shabbos (e.g. Shavuos ב׳ on Sat, or
             # the 8th day of Chanukah on Sat). The "normal" window
@@ -211,12 +216,15 @@ class MotzeiHolidaySensor(YidCalDevice, BinarySensorEntity, RestoreEntity):
             # Sat tzeis → Sun Alos, which equals מוצאי שבת — correct.
             # Applies to every holiday, not only those with _DEFER_FOR_SHABBOS.
             self._state = (motzei_start <= now < motzei_end)
+            self._window = (motzei_start, motzei_end)
         elif shabbos_blocks_motzi:
             # Non-YT holiday blocked by Shabbos, or YT without deferral
             self._state = False
+            self._window = None
         else:
             # Normal case: no Shabbos conflict
             self._state = (motzei_start <= now < motzei_end)
+            self._window = (motzei_start, motzei_end)
 
 
 #
