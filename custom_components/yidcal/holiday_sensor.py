@@ -598,6 +598,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         havdalah_candle_start, havdalah_candle_end = _wins["havdalah_candle"]
         candle_candle_start, candle_candle_end = _wins["candle_candle"]
 
+        # flag -> (start, end) for every flag this update switches on. Filled
+        # by the window filter below, and, for flags gated by their own code
+        # rather than the table (עשרת ימי תשובה, the Shabbos-based flags, the
+        # מוצאי mirrors, ערב תשעה באב שחל בשבת), right where that code decides
+        # them - so every entry is the exact edge the flag is gated on.
+        _flag_windows: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
+
         # leap-year for Shovavim (canonical rule helpers)
         year = hd_py.year
         is_leap = he.is_leap_hebrew_year(year)
@@ -999,6 +1006,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             # anchor used for the ערב תשעה באב -> תשעה באב flip above.
             if chatzos_shabbos_9av <= now < actual_sunset_floor:
                 attrs["ערב תשעה באב שחל בשבת"] = True
+                _flag_windows["ערב תשעה באב שחל בשבת"] = (chatzos_shabbos_9av, actual_sunset_floor)
             
          # Tu B'Av (15 Av)
         if hd_fest.month == 5 and hd_fest.day == 15:
@@ -1206,6 +1214,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             # Friday candles whenever 15 Adar I is Shabbos.
             if name == "פורים קטן" and purim_katan_friday and (hd_fest.month == 12) and (hd_fest.day == 14):
                 return "havdalah_candle"
+            # --- עשרת ימי תשובה: motzaei R"H havdalah → Erev YK candles ---
+            # _in_ayt_window already gates the flag on exactly these edges;
+            # naming the shape here records them without changing the flag.
+            if name == "עשרת ימי תשובה":
+                return "havdalah_candle" if (hd_fest.month == 7 and hd_fest.day == 9) else "havdalah_havdalah"
                 
             return default_w
 
@@ -1217,7 +1230,6 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # "when does this flag start and end" (the mirror binary sensors, a
         # luach range, a countdown card) reads it from here rather than
         # working it out again and drifting from this.
-        _flag_windows: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
         for name, on in list(attrs.items()):
             if not on:
                 continue
@@ -1283,6 +1295,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         attrs["שמיני עצרת/שמחת תורה"] = bool(
             attrs.get("שמיני עצרת") or attrs.get("שמחת תורה")
         )
+        _span_from("שמיני עצרת/שמחת תורה", ["שמיני עצרת", "שמחת תורה"])
 
         # "פסח (כל חג)": 1st two days + entire Chol HaMoed + שביעי + (אחרון בגלות)
         _pesach_all = [
@@ -1304,6 +1317,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             attrs["שביעי/אחרון של פסח"] = bool(
                 attrs.get("שביעי של פסח") or attrs.get("אחרון של פסח")
             )
+            _span_from("שביעי/אחרון של פסח", ["שביעי של פסח", "אחרון של פסח"])
 
         # ─── Shabbos-based flags: use Fri candle → Sat havdalah window ─────────
         shabbos_pydate: datetime.date | None = None
@@ -1317,6 +1331,19 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             shabbos_pydate = actual_date
 
         hd_shabbos = PHebrewDate.from_pydate(shabbos_pydate) if shabbos_pydate else None
+
+        # The edges the flags below are gated on - Friday's candle_cut and
+        # Saturday's havdalah_cut - as the shared builder's candle_havdalah
+        # shape for the Shabbos date, so no zman is re-derived here.
+        shabbos_window = (
+            compute_holiday_windows(
+                geo=self._geo, tz=tz,
+                festival_date=shabbos_pydate, actual_date=actual_date,
+                candle_offset=self._candle_offset,
+                havdalah_offset=self._havdalah_offset,
+            )["candle_havdalah"]
+            if shabbos_pydate else None
+        )
         
         # Shabbos Chanukah flags (Fri candle → Sat havdalah)
         if hd_shabbos:
@@ -1343,6 +1370,13 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             and (hd_shabbos.day in (1, 30))
             and not (hd_shabbos.month == 7 and hd_shabbos.day == 1)  # exclude RH
         )
+        if shabbos_window:
+            for _sh in (
+                "שבת חנוכה", "שבת חנוכה ראש חודש",
+                "שבת חול המועד סוכות", "שבת חול המועד פסח", "שבת ראש חודש",
+            ):
+                if attrs.get(_sh):
+                    _flag_windows[_sh] = shabbos_window
 
         # ─── Countdown for fast ends in
         if any(attrs.get(f) for f in self.FAST_FLAGS):
@@ -1394,6 +1428,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             motzi = cls(self.hass, self._candle_offset, self._havdalah_offset)
             await motzi.async_update(now)
             attrs[motzi._attr_name] = motzi.is_on
+            if motzi.is_on and getattr(motzi, "_window", None):
+                _flag_windows[motzi._attr_name] = motzi._window
             attrs.update(getattr(motzi, "_attr_extra_state_attributes", {}))
 
         # --- Extra Erev/Motzei windows (8 flags) ---
@@ -1511,6 +1547,15 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             if picked in ("שמיני עצרת", "שמחת תורה"):
                 picked = "שמיני עצרת/שמחת תורה"
             picked = self._ey_collapse_day1_label(picked)
+
+        # Backstop: a flag switched on after the window filter ran (the EY
+        # post-filter above) has a table shape but no recorded window yet;
+        # record the same shape the filter would have used for it.
+        for name, on in attrs.items():
+            if on is True and name not in _flag_windows:
+                w = _dynamic_window(name, self.WINDOW_TYPE.get(name))
+                if w in _wins:
+                    _flag_windows[name] = _wins[w]
 
         # ─── א׳/ב׳ דיום טוב aggregates (diaspora-only attrs) ───
         # First/second day of ANY two-day Yom Tov pair. Derived AFTER
