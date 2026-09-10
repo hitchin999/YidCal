@@ -2845,7 +2845,14 @@ def _is_selichos_day1(d: date_cls) -> bool:
     return d == _selichos_day1_for_rh_year(ph.year + 1)
 
 
-def _is_yom_kippur_katan(d: date_cls) -> bool:
+#: Moved to ``halacha_events`` so the printed luach and
+#: ``sensor.yidcal_holiday``'s יום כיפור קטן flag read one rule. Same
+#: function, re-exported under its old private name so every call site
+#: in this module - and the PDF output - is unchanged.
+_is_yom_kippur_katan = he.is_yom_kippur_katan
+
+
+def _unused_is_yom_kippur_katan(d: date_cls) -> bool:
     """True iff the KY luach prints 'יום כפור קטן' on ``d``.
 
     Rule (sourced from the printed Kiryas-Yoel luach, 5786 — verified
