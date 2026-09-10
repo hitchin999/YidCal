@@ -795,6 +795,74 @@ def chanukah_day_label_he(d: date_cls) -> str | None:
     return f"{_SMALL_ORDINAL_HE[n]} דחנוכה"
 
 
+def is_yom_kippur_katan(d: date_cls) -> bool:
+    """True iff the KY luach prints 'יום כפור קטן' on ``d``.
+
+    Rule (sourced from the printed Kiryas-Yoel luach, 5786 - verified
+    on כז אייר / כט סיון / כט תמוז / כט אב, and the no-tachanun
+    Nisan exclusion verified on כט ניסן):
+
+      • Yom Kippur Katan is Erev Rosh Chodesh - the 29th, i.e. the day
+        before Rosh-Chodesh-day-1.
+      • When that day is Shabbos it is pulled back to the preceding
+        Thursday; when it is Friday, to Thursday as well.
+      • NOT observed for Rosh Chodesh Tishrei (its Erev is 29 Elul =
+        Erev Rosh Hashana, which carries its own label).
+      • NOT observed when the preceding (= current) Hebrew month
+        doesn't say tachanun:
+          – Erev Rosh Chodesh Iyar (29 Nisan): Nisan is an
+            all-no-tachanun month (Pesach prep / Pesach / sefirah
+            lead-in) - printed KY luach OMITS YKK on כט ניסן,
+            confirmed by Yoel.
+
+    Erev-RC Cheshvan (29 תשרי) and Erev-RC Teves (29 כסלו, Chanukah)
+    are deliberately NOT special-cased: Yoel checked the generated
+    weekly sheets against the printed luach and they match as-is.
+
+    Lives here, rather than in ``luach_data``, because both the printed
+    luach and ``sensor.yidcal_holiday``'s יום כיפור קטן flag read it -
+    one rule, one place.
+    """
+    rc1 = None
+    for delta in (1, 2, 3, 4):
+        cand = d + timedelta(days=delta)
+        pos = rc_day_position_for_date(cand)
+        if pos is not None and pos[0] == 1:    # cand = Rosh-Chodesh day-1
+            rc1 = cand
+            break
+    if rc1 is None:
+        return False
+    ph_rc = PHebrewDate.from_pydate(rc1)
+    # Exclude Rosh Chodesh Tishrei (Erev = 29 Elul = Erev Rosh Hashana).
+    # Note: pyluach month numbers run Nisan=1 … Elul=6, Tishrei=7 …
+    # Adar=12 (Adar II=13 in leap years). ``rc1`` is the FIRST day of
+    # the RC; for a 2-day RC it is day 30 of the PRECEDING month, so
+    # ``ph_rc.month`` is the ending month - not necessarily the new
+    # month. The Tishrei exclusion is unambiguous here because RC
+    # Tishrei is always 1 day (Elul is always 29), so ph_rc is
+    # always (7, 1) = 1 Tishrei.
+    if ph_rc.month == 7 and ph_rc.day == 1:
+        return False
+    nominal_erev = rc1 - timedelta(days=1)      # the 29th
+    # Exclude Erev Rosh Chodesh Iyar (= 29 Nisan): Nisan is an
+    # all-no-tachanun month, so the minhag skips YKK there - matches
+    # the printed KY luach. The 29th's own Hebrew month is the
+    # unambiguous identifier of the ending month (pyluach Nisan=1).
+    try:
+        if PHebrewDate.from_pydate(nominal_erev).month == 1:
+            return False
+    except Exception:
+        pass
+    wd = nominal_erev.weekday()                 # Mon=0 … Sat=5, Sun=6
+    if wd == 5:                                 # Shabbos → Thursday
+        actual = nominal_erev - timedelta(days=2)
+    elif wd == 4:                               # Friday → Thursday
+        actual = nominal_erev - timedelta(days=1)
+    else:
+        actual = nominal_erev
+    return d == actual
+
+
 def rc_day_position_for_date(d: date_cls) -> tuple[int, int] | None:
     """If ``d`` is a Rosh Chodesh day, return ``(position, total)``
     where ``total`` is the number of days in this RC (1 or 2) and
