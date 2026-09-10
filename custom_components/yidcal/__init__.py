@@ -42,6 +42,8 @@ from .config_flow import (
     CONF_SLICHOS_LABEL_ROLLOVER,
     CONF_KIDDUSH_LEVANA_START,
     DEFAULT_KIDDUSH_LEVANA_START,
+    CONF_YOM_KIPPUR_KATAN_SCOPE,
+    DEFAULT_YOM_KIPPUR_KATAN_SCOPE,
     CONF_UPCOMING_LOOKAHEAD_DAYS,
     DEFAULT_UPCOMING_LOOKAHEAD_DAYS,
     CONF_IS_IN_ISRAEL,
@@ -572,6 +574,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_SLICHOS_LABEL_ROLLOVER,
         initial.get(CONF_SLICHOS_LABEL_ROLLOVER, DEFAULT_SLICHOS_LABEL_ROLLOVER),
     )
+    yom_kippur_katan_scope = opts.get(
+        CONF_YOM_KIPPUR_KATAN_SCOPE,
+        initial.get(CONF_YOM_KIPPUR_KATAN_SCOPE, DEFAULT_YOM_KIPPUR_KATAN_SCOPE),
+    )
     kiddush_levana_start = opts.get(
         CONF_KIDDUSH_LEVANA_START,
         initial.get(CONF_KIDDUSH_LEVANA_START, DEFAULT_KIDDUSH_LEVANA_START),
@@ -900,6 +906,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_YURTZEIT_DATABASES: databases,
         CONF_SLICHOS_LABEL_ROLLOVER: slichos_label_rollover,
         CONF_KIDDUSH_LEVANA_START: kiddush_levana_start,
+        CONF_YOM_KIPPUR_KATAN_SCOPE: yom_kippur_katan_scope,
         CONF_TIME_FORMAT: time_format,
         # Early Entry (NEW)
         CONF_ENABLE_EARLY_SHABBOS: enable_early_shabbos,
