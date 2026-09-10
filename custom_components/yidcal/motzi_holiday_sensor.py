@@ -276,6 +276,41 @@ class MotzeiSukkosSensor(MotzeiHolidaySensor):
         )
 
 
+class MotzeiPesachFirstDaysSensor(MotzeiHolidaySensor):
+    """מוצאי פסח ימים ראשונים - havdalah at the end of the first days of
+    Pesach, i.e. the night Chol HaMoed begins (ט״ז ניסן in the diaspora,
+    ט״ו ניסן in E"Y). Distinct from מוצאי פסח, which is the end of the
+    whole Yom Tov."""
+    _DEFER_FOR_SHABBOS = True
+    def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
+        super().__init__(
+            hass,
+            holiday_name=None,
+            day_matcher=lambda d, dias: (lambda hd: hd.month == 1 and hd.day == (16 if dias else 15))(PHebrewDate.from_pydate(d)),
+            friendly_name="מוצאי פסח ימים ראשונים",
+            unique_id="yidcal_motzei_pesach_first_days",
+            candle_offset=candle_offset,
+            havdalah_offset=havdalah_offset,
+        )
+
+
+class MotzeiSukkosFirstDaysSensor(MotzeiHolidaySensor):
+    """מוצאי סוכות ימים ראשונים - havdalah at the end of the first days of
+    Sukkos (ט״ז תשרי in the diaspora, ט״ו תשרי in E"Y). Distinct from
+    מוצאי סוכות, which is the end of Simchas Torah."""
+    _DEFER_FOR_SHABBOS = True
+    def __init__(self, hass: HomeAssistant, candle_offset: int, havdalah_offset: int) -> None:
+        super().__init__(
+            hass,
+            holiday_name=None,
+            day_matcher=lambda d, dias: (lambda hd: hd.month == 7 and hd.day == (16 if dias else 15))(PHebrewDate.from_pydate(d)),
+            friendly_name="מוצאי סוכות ימים ראשונים",
+            unique_id="yidcal_motzei_sukkos_first_days",
+            candle_offset=candle_offset,
+            havdalah_offset=havdalah_offset,
+        )
+
+
 class MotzeiShavuosSensor(MotzeiHolidaySensor):
     """מוצאי שבועות (ב׳ שבועות)"""
     _DEFER_FOR_SHABBOS = True
