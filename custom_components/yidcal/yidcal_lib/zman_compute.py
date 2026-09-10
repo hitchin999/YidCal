@@ -720,6 +720,13 @@ def dawn_for_date(
     ) - timedelta(minutes=offset_min)
 
 
+#: Refraction + solar radius, in degrees: the difference between the
+#: geometric horizon (90°) and the visible one (90.8333°, the standard
+#: sunrise zenith). 0.8333 exactly, not 50/60, to match the figure
+#: ``grossman_calculator`` already uses for the same correction.
+_VISIBLE_HORIZON_DEG = 0.8333
+
+
 @lru_cache(maxsize=_SUN_CACHE_SIZE)
 def _alos_degrees_utc(
     lat: float, lon: float, elev: float, tzname: str, ordinal: int, degrees: float,
@@ -799,8 +806,17 @@ def alos_for_date(
 
     lat, lon, elev = _geo_cache_key(geo)
     tzname = getattr(tz, "key", None) or str(tz)
+    degrees = float(opt.value)
+    if opt.kind == "degrees_visible":
+        # Depression measured from the VISIBLE horizon: the sunrise zenith
+        # is 90.8333° (50′ of refraction + solar radius), so 16.1° below
+        # *that* is a geometric zenith of 106.9333° rather than 106.1°.
+        # About five minutes earlier at mid-latitude, which is what the
+        # shul-display convention prints. Same cached solver either way -
+        # only the angle handed to it differs.
+        degrees += _VISIBLE_HORIZON_DEG
     utc = _alos_degrees_utc(
-        lat, lon, elev, tzname, base_date.toordinal(), float(opt.value)
+        lat, lon, elev, tzname, base_date.toordinal(), degrees
     )
     if utc is None:
         return sunrise - timedelta(minutes=_ALOS_OFFSET_MIN)
