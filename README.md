@@ -90,6 +90,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **סוכות א׳** *(ON at candle-lighting, OFF at Tzeis)*
   * **סוכות ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
   * **סוכות א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2))*
+  * **מוצאי סוכות ימים ראשונים** *(ON at Tzeis (end of the first days of Sukkos — ט״ז תשרי, ט״ו in E"Y), OFF at Alos. This is the night Chol HaMoed begins, not the end of the whole Yom Tov — for that see מוצאי סוכות below)*
   * **א׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ב׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ג׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
@@ -137,6 +138,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **פסח א׳** *(ON at candle-lighting, OFF at Tzeis — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
   * **פסח ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
   * **פסח א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2) — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis (end of day 2))*
+  * **מוצאי פסח ימים ראשונים** *(ON at Tzeis (end of the first days of Pesach — ט״ז ניסן, ט״ו in E"Y), OFF at Alos. This is the night Chol HaMoed begins, not the end of the whole Yom Tov — for that see מוצאי פסח below)*
   * **א׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ב׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ג׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
@@ -165,7 +167,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **תשעה באב נדחה** *(ON at sunset (Motzei Shabbos of 9 Av, fast begins), OFF at Tzeis (Sunday 10 Av))*
   * **מוצאי תשעה באב** *(ON at Tzeis, OFF at Alos)*
   * **ט"ו באב** *(ON at Tzeis (entering 15 Av), OFF at Tzeis)*
-  * **יום כיפור קטן** *(ON at Alos (29 Av, or Thursday 28/27 Av if RC Elul starts Shabbos/Sunday), OFF at Tzeis)*
+  * **יום כיפור קטן** *(ON at Alos, OFF at Tzeis. Which Erev Rosh Chodesh it covers is a config option — by default only Erev RC Elul (29 Av, pulled back to Thursday 28/27 Av when that day is Shabbos or Friday); set it to every Erev Rosh Chodesh and it follows the same rule the printed luach uses. See **[Configuration Options](#configuration-options)**)*
   * **ראש חודש** *(ON at Tzeis (entering day 30 or day 1), OFF at Tzeis)*
   * **שבת ראש חודש** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
   * **ערב שבת** *(ON at Alos, OFF at candle-lighting)*
@@ -193,6 +195,13 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 > If enabled in config flow options, many of these attributes can also be exposed as **separate binary sensors** under **YidCal — Holiday Attribute Sensors**.
 
+**Every one of those binary sensors publishes its own window.** `Window_Start` and
+`Window_End` hold the exact minute the flag turns on and off — the same edges listed in
+brackets above, looked ahead up to two weeks — so an automation can tell how long it is
+until מוצאי פסח without waiting for the flag itself to flip. The same windows are what
+`calendar.yidcal_holiday` draws its events from, which is why a holiday appears there as
+a timed block rather than an all-day one.
+
 ---
 
 ## Erev / Motzi sensors (timing notes)
@@ -216,7 +225,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
   **Motzi holiday sensors (attribute-derived) — Shabbos overlap rule:**
   If a holiday’s “motzi moment” is swallowed by Shabbos (example: the holiday ends **Friday night after sunset**), then its **Motzi-holiday sensor is skipped entirely** (you just continue with regular Shabbos → Motzi Shabbos).
-  **Exception — major Yom Tov deferral:** For מוצאי ראש השנה, מוצאי סוכות, מוצאי פסח, מוצאי שבועות, and מוצאי יום הכיפורים, if YT ends Friday going into a 3-day block, the motzei sensor **defers to Motzaei Shabbos** (Saturday havdalah → Sunday Alos) instead of being skipped.
+  **Exception — major Yom Tov deferral:** For מוצאי ראש השנה, מוצאי סוכות, מוצאי פסח, מוצאי שבועות, מוצאי יום הכיפורים, מוצאי סוכות ימים ראשונים, and מוצאי פסח ימים ראשונים, if YT ends Friday going into a 3-day block, the motzei sensor **defers to Motzaei Shabbos** (Saturday havdalah → Sunday Alos) instead of being skipped.
   **Exception:** In a **Purim Meshulash** year, `מוצאי שושן פורים` turns on **Sunday Tzeis → Monday Alos**.
 
 ---
@@ -411,6 +420,7 @@ lets you pick a different opinion, in three families:
 | **Fixed minutes** | A flat number of clock minutes before sunrise. | 60, **72 (default)**, 90, 96, 120 |
 | **Zmanis minutes** | The same numbers as *proportional* minutes — one zmanis minute is 1/60 of a GRA שעה זמנית, so the interval stretches in summer and shrinks in winter. | 72, 90, 96, 120 |
 | **Degrees** | The sun a given number of degrees below the horizon. 16.1° is the classic equivalent of 72 minutes at the Jerusalem equinox; 19.8° corresponds to 120. | 16.1°, 18°, 19°, 19.8°, 26° |
+| **Degrees below the visible horizon** | The same, but measured from the **visible** horizon instead of the geometric one — the depression is added to the standard sunrise zenith (90.8333°, the 50′ of refraction and solar radius that define sunrise) rather than to 90°. Some shul zmanim displays define their "sun altitude −16.1°" this way; it lands roughly five minutes earlier than the plain 16.1° at mid-latitude. Pick this one if you are matching a display that does. | 16.1° |
 
 > **This dropdown cannot shift your luach.** It changes the **Alos sensor** only — and
 > Talis & Tefilin, if that is set to follow it. Every other MGA zman (סוף זמן ק"ש,
@@ -420,7 +430,7 @@ lets you pick a different opinion, in three families:
 one you select: `Alos_60_Minutes`, `Alos_72_Minutes`, `Alos_90_Minutes`, `Alos_96_Minutes`,
 `Alos_120_Minutes`, `Alos_72_Zmanis`, `Alos_90_Zmanis`, `Alos_96_Zmanis`, `Alos_120_Zmanis`,
 `Alos_16_1_Degrees`, `Alos_18_Degrees`, `Alos_19_Degrees`, `Alos_19_8_Degrees`,
-`Alos_26_Degrees`.
+`Alos_26_Degrees`, `Alos_16_1_Degrees_Visible`.
 
 **Optional extra Alos sensors.** On the same page, `צולייגען עקסטערע עלות סענסארס` lets
 you tick any of the opinions to get its own standalone timestamp sensor — handy if you
@@ -441,6 +451,7 @@ sensor.yidcal_alos_18_degrees
 sensor.yidcal_alos_19_degrees
 sensor.yidcal_alos_19_8_degrees
 sensor.yidcal_alos_26_degrees
+sensor.yidcal_alos_16_1_degrees_visible
 ```
 
 Each one carries the same `Alos_Simple` / `Tomorrows_Simple` / `Yesterdays_Simple`
@@ -913,6 +924,7 @@ After adding the integration via UI, go to **Settings → Devices & Services →
 | `צייט־פארמאט (נאר פאר Simple Zmanim)`                      | `12-hour`   | Format for **Simple** Zmanim attributes only: **12-hour (AM/PM)** or **24-hour**.                                                       |
 | `ווען זאל זיך די סליחות טאג טוישן`                         | `זמן הבדלה` | When the Selichos label advances: `havdalah` (after sunset + offset) or `midnight` (12 AM).                                             |
 | `ווען הייבט זיך אן קידוש לבנה - ג' אדער ז' שלימים`         | `ז' שלימים` | Which start drives the **Kiddush Levunah** binary sensor: `ג' שלימים` (molad + 3 days) or `ז' שלימים` (molad + 7 days). Both opinions stay available as attributes either way. |
+| `יום כיפור קטן - וועלכע ערב ראש חודש`                      | `נאר ערב ראש חודש אלול` | Which Erev Rosh Chodesh the **יום כיפור קטן** flag covers. `נאר ערב ראש חודש אלול` keeps the original behaviour — only Erev RC Elul. `יעדע ערב ראש חודש וואס מען זאגט עס` turns it on every Erev Rosh Chodesh the minhag says it, using the same rule the printed luach uses: the 29th, pulled back to Thursday when that is Shabbos or Friday, skipping Erev RC Tishrei (it is Erev Rosh Hashana) and כ״ט ניסן. Either way the flag runs **Alos → Tzeis**. |
 | `Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די`   | `2`         | How many **halachic days** ahead Upcoming Holiday pre-activates (range **1–14**). Updates nightly at **12:02 AM** and respects offsets. |
 | `הפטרה סענסאר מנהג`                                        | `אשכנזי`    | Choose the minhag used for the Haftorah sensor: `אשכנזי` or `ספרדי`.                                                                   |
 | `פרשת מצורע אדער פרשת טהרה`                                | `מצורע`     | How parshas **מצורע** is displayed in the Parsha sensor: `מצורע` (default) or `טהרה`. Applies both standalone and in `תזריע-מצורע`. `אחרי מות` is always shortened to `אחרי`. |
