@@ -99,6 +99,8 @@ LABELS = {
     "lbl_enable_daf_hayomi": {"yi": "צולייגען דף היומי סענסאר", "he": "הוספת חיישן דף היומי", "en": "Create Daf HaYomi sensor"},
     "lbl_slichos_label_rollover": {"yi": "ווען זאל זיך די סליחות טאג טוישן", "he": "מתי מתחלף יום הסליחות", "en": "When should the Selichos label roll over"},
     "lbl_kiddush_levana_start": {"yi": "ווען הייבט זיך אן קידוש לבנה - ג' אדער ז' שלימים", "he": "מתי מתחיל זמן קידוש לבנה - ג' או ז' שלמים", "en": "When does Kiddush Levana begin - 3 (Gimmel) or 7 (Zayin) Shleimim"},
+    "lbl_yom_kippur_katan_scope": {"yi": "יום כיפור קטן - וועלכע ערב ראש חודש", "he": "יום כיפור קטן - איזה ערב ראש חודש", "en": "Yom Kippur Katan - which Erev Rosh Chodesh"},
+    "dsc_yom_kippur_katan_scope": {"yi": "די פלאג גייט אן ביי עלות השחר און אויס ביי צאת הכוכבים. ווערט נישט געזאגט ערב ראש חודש תשרי אדער כט ניסן.", "he": "הדגל נדלק בעלות השחר וכבה בצאת הכוכבים. אינו נאמר בערב ראש חודש תשרי או בכ\"ט ניסן.", "en": "The flag turns on at alos and off at tzeis. Not said on Erev Rosh Chodesh Tishrei or 29 Nisan."},
     "lbl_upcoming_lookahead_days": {"yi": "Upcoming Holiday Sensor וויפיל טעג פאראויס זאל קוקן די", "he": "כמה ימים קדימה יחפש חיישן 'החג הקרוב' (Upcoming Holiday Sensor)", "en": "Days to look ahead in the Upcoming Holiday sensor"},
     "lbl_enable_zmanim_lookup": {"yi": "צולייגען די זמנים Lookup & service call sensors", "he": "הוספת חיישן Zmanim Lookup ושירות yidcal.check_zmanim", "en": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service"},
     "lbl_enable_luach_pdf": {"yi": "צולייגען די לוח PDF סערוויס", "he": "הוספת שירות יצירת לוח (PDF)", "en": "Create the Generate Luach (PDF) service"},
@@ -235,6 +237,10 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
         ("gimmel", {"yi": "ג' שלימים", "he": "ג' שלימים", "en": "3 (Gimmel) Shleimim"}),
         ("zayin",  {"yi": "ז' שלימים", "he": "ז' שלימים", "en": "7 (Zayin) Shleimim"}),
     ],
+    "yom_kippur_katan_scope": [
+        ("elul", {"yi": "נאר ערב ראש חודש אלול", "he": "רק ערב ראש חודש אלול", "en": "Only Erev Rosh Chodesh Elul"}),
+        ("all",  {"yi": "יעדע ערב ראש חודש וואס מען זאגט עס", "he": "כל ערב ראש חודש שאומרים אותו", "en": "Every Erev Rosh Chodesh it is said"}),
+    ],
 
     # ---- NEEDS-YI-HE --------------------------------------------------
     "time_format": [
@@ -283,11 +289,13 @@ _GENERAL_FIELDS = [
     "parsha_metzora_display", "time_format",
     "include_date", "include_attribute_sensors", "include_sefirah_short_in_full",
     "enable_multiday_candles", "enable_daf_hayomi", "slichos_label_rollover",
-    "kiddush_levana_start", "upcoming_lookahead_days", "enable_zmanim_lookup",
+    "kiddush_levana_start", "yom_kippur_katan_scope",
+    "upcoming_lookahead_days", "enable_zmanim_lookup",
 ]
 _GENERAL_DESCS = [
     "haftorah_minhag", "molad_language",
     "enable_multiday_candles", "enable_zmanim_lookup",
+    "yom_kippur_katan_scope",
 ]
 #: Luach block on the General page — the service toggle plus the rolling
 #: multi-year JSON window that rides on it.
