@@ -21,6 +21,18 @@ that published luachs actually use:
            the way the sky actually does, which is why they diverge
            sharply from the fixed figures at high latitude.
 
+  degrees_visible
+           The same, but measured from the VISIBLE horizon instead of
+           the geometric one: the depression is added to the standard
+           sunrise zenith (90.8333°, i.e. the 50′ of refraction plus
+           solar radius that define sunrise) rather than to 90°. Some
+           shul zmanim displays define their "sun altitude -16.1°" this
+           way, which puts their Alos about five minutes before the
+           KosherJava figure at mid-latitude. Kept as its own family so
+           the printed degree figure still matches the label - the row's
+           ``value`` stays 16.1, and the 0.8333° lives in one place in
+           ``zman_compute``.
+
 This module is DATA ONLY — no astronomy, no Home Assistant. The
 computation lives in ``zman_compute.alos_for_date``, which already owns
 the cached sun-event machinery every opinion here is built on. Keeping
@@ -47,7 +59,7 @@ FOLLOW_PRIMARY = "primary"
 @dataclass(frozen=True)
 class AlosOption:
     key: str        # option value stored in the config entry
-    kind: str       # "fixed" | "zmanis" | "degrees"
+    kind: str       # "fixed" | "zmanis" | "degrees" | "degrees_visible"
     value: float    # minutes (fixed/zmanis) or degrees below horizon
     hebrew: str     # label for the yi/he config-flow selector
     english: str    # label for the en config-flow selector
@@ -73,6 +85,8 @@ ALOS_OPTIONS: list[AlosOption] = [
     AlosOption("deg_19",   "degrees", 19.0, "19° אונטערן האריזאנט",   "19 degrees below the horizon",   "Alos_19_Degrees",   "19_degrees"),
     AlosOption("deg_19_8", "degrees", 19.8, "19.8° אונטערן האריזאנט", "19.8 degrees below the horizon", "Alos_19_8_Degrees", "19_8_degrees"),
     AlosOption("deg_26",   "degrees", 26.0, "26° אונטערן האריזאנט",   "26 degrees below the horizon",   "Alos_26_Degrees",   "26_degrees"),
+    # ── degrees below the visible horizon (refraction included) ──
+    AlosOption("deg_16_1_visible", "degrees_visible", 16.1, "16.1° אונטערן זעהבארן האריזאנט (מיט רעפראקציע)", "16.1 degrees below the visible horizon (refraction included)", "Alos_16_1_Degrees_Visible", "16_1_degrees_visible"),
 ]
 
 ALOS_BY_KEY: dict[str, AlosOption] = {opt.key: opt for opt in ALOS_OPTIONS}
