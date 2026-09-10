@@ -101,6 +101,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "סוכות א׳",
         "סוכות ב׳",
         "סוכות א׳ וב׳",
+        "מוצאי סוכות ימים ראשונים",
         "א׳ דחול המועד סוכות",
         "ב׳ דחול המועד סוכות",
         "ג׳ דחול המועד סוכות",
@@ -149,6 +150,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "פסח א׳",
         "פסח ב׳",
         "פסח א׳ וב׳",
+        "מוצאי פסח ימים ראשונים",
         "א׳ דחול המועד פסח",
         "ב׳ דחול המועד פסח",
         "ג׳ דחול המועד פסח",
@@ -414,6 +416,11 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         self._flag_windows: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
         cfg = hass.data.get(DOMAIN, {}).get("config", {})
         self._diaspora = cfg.get("diaspora", True)
+        # יום כיפור קטן: Erev RC Elul only (historical behaviour) or every
+        # Erev RC it is said. Read once - changing it reloads the entry.
+        self._ykk_every_month = (
+            cfg.get("yom_kippur_katan_scope", "elul") == "all"
+        )
 
         # Hebrew names
         set_language("he")
@@ -1012,21 +1019,21 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         if hd_fest.month == 5 and hd_fest.day == 15:
             attrs["ט\"ו באב"] = True
             
-        # ─── Yom Kippur Katan (only for Erev Rosh Chodesh Elul) ─────────────
-        elul_year = hd_fest.year  # Hebrew year reference
-        # First day of RC Elul = 30 Av
-        av30 = PHebrewDate(elul_year, 5, 30)
-        av30_wd = av30.to_pydate().weekday()  # Mon=0 .. Sun=6
-
-        # Default = 29 Av
-        if av30_wd == 5:        # If RC Elul starts Shabbos
-            ykk_av_day = 28     # move back to Thu 28 Av
-        elif av30_wd == 6:      # If RC Elul starts Sunday
-            ykk_av_day = 27     # move back to Thu 27 Av
-        else:
-            ykk_av_day = 29     # normal case (also covers Fri start → Thu 29 Av)
-
-        if hd_fest.month == 5 and hd_fest.day == ykk_av_day:
+        # ─── Yom Kippur Katan ───────────────────────────────────────────────
+        # One rule for both scopes: he.is_yom_kippur_katan, the same
+        # function the printed luach uses (Erev RC, pulled back to
+        # Thursday when that is Shabbos or Friday, skipping RC Tishrei
+        # and 29 Nisan).
+        #
+        # Scope comes from the `yom_kippur_katan_scope` option:
+        #   "elul" (default, and what every install did before) - only
+        #          Erev RC Elul, which is always in Av, so the month
+        #          test alone pins it: no other YKK falls in Av, and
+        #          Av has no other Rosh Chodesh.
+        #   "all"  - every Erev RC the minhag says it.
+        if he.is_yom_kippur_katan(festival_date) and (
+            self._ykk_every_month or hd_fest.month == 5
+        ):
             attrs["יום כיפור קטן"] = True
 
         # ─── Countdown for fast starts in ───────────────────────────────────
@@ -1420,11 +1427,14 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
             MotzeiChanukahSensor,
             MotzeiLagBaOmerSensor,
             MotzeiShushanPurimSensor,
+            MotzeiPesachFirstDaysSensor,
+            MotzeiSukkosFirstDaysSensor,
         )
         for cls in [MotzeiYomKippurSensor, MotzeiPesachSensor, MotzeiSukkosSensor,
                     MotzeiShavuosSensor, MotzeiRoshHashanaSensor,
                     MotzeiShivaUsorBTammuzSensor, MotzeiTishaBavSensor,
-                    MotzeiChanukahSensor, MotzeiLagBaOmerSensor, MotzeiShushanPurimSensor]:
+                    MotzeiChanukahSensor, MotzeiLagBaOmerSensor, MotzeiShushanPurimSensor,
+                    MotzeiPesachFirstDaysSensor, MotzeiSukkosFirstDaysSensor]:
             motzi = cls(self.hass, self._candle_offset, self._havdalah_offset)
             await motzi.async_update(now)
             attrs[motzi._attr_name] = motzi.is_on
