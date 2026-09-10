@@ -30,6 +30,12 @@ CONF_ENABLE_WEEKLY_YURTZEIT = "enable_weekly_yurtzeit"  # keep key name as-is
 CONF_SLICHOS_LABEL_ROLLOVER = "slichos_label_rollover"
 DEFAULT_SLICHOS_LABEL_ROLLOVER = "havdalah"
 CONF_KIDDUSH_LEVANA_START = "kiddush_levana_start"
+
+#: Which Erev Rosh Chodesh the יום כיפור קטן flag covers: "elul" (only
+#: Erev RC Elul - what every install did before this option existed) or
+#: "all" (every Erev RC the minhag says it).
+CONF_YOM_KIPPUR_KATAN_SCOPE = "yom_kippur_katan_scope"
+DEFAULT_YOM_KIPPUR_KATAN_SCOPE = "elul"
 DEFAULT_KIDDUSH_LEVANA_START = "zayin"
 CONF_UPCOMING_LOOKAHEAD_DAYS = "upcoming_lookahead_days"
 DEFAULT_UPCOMING_LOOKAHEAD_DAYS = 2
@@ -311,6 +317,10 @@ def _general_schema(lang, get, *, include_luach_pdf: bool):
             CONF_KIDDUSH_LEVANA_START,
             default=get(CONF_KIDDUSH_LEVANA_START, DEFAULT_KIDDUSH_LEVANA_START),
         ): selector({"select": {"options": S.sel("kiddush_levana_start", lang)}}),
+        vol.Optional(
+            CONF_YOM_KIPPUR_KATAN_SCOPE,
+            default=get(CONF_YOM_KIPPUR_KATAN_SCOPE, DEFAULT_YOM_KIPPUR_KATAN_SCOPE),
+        ): selector({"select": {"options": S.sel("yom_kippur_katan_scope", lang)}}),
         vol.Optional(
             CONF_UPCOMING_LOOKAHEAD_DAYS,
             default=get(CONF_UPCOMING_LOOKAHEAD_DAYS, DEFAULT_UPCOMING_LOOKAHEAD_DAYS),
