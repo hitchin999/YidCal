@@ -9,7 +9,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
 
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .const import DOMAIN
@@ -121,7 +121,7 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
     def _span_end(self, start) -> datetime.date:
         end = start
-        while HDateInfo(end + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+        while _cached_is_yom_tov(end + timedelta(days=1), self._diaspora):
             end += timedelta(days=1)
 
         if self._diaspora:
@@ -134,9 +134,7 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         return end
 
     def _first_day_if_span_starts(self, d) -> datetime.date | None:
-        if HDateInfo(d, diaspora=self._diaspora).is_yom_tov and not HDateInfo(
-            d - timedelta(days=1), diaspora=self._diaspora
-        ).is_yom_tov:
+        if _cached_is_yom_tov(d, self._diaspora) and not _cached_is_yom_tov(d - timedelta(days=1), self._diaspora):
             return d
         return None
 
@@ -154,7 +152,7 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         # Special case: span starts right after Shabbos (prev day is Shabbos, not YT)
         starts_after_shabbos = (
             prev_day.weekday() == 5
-            and not HDateInfo(prev_day, diaspora=self._diaspora).is_yom_tov
+            and not _cached_is_yom_tov(prev_day, self._diaspora)
         )
         if starts_after_shabbos:
             start_dt = self._sunset(prev_day) + timedelta(minutes=self._havdalah)
@@ -169,7 +167,7 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         end_dt = self._sunset(end) + timedelta(minutes=self._havdalah)
 
         # Special case: span leads into Shabbos (next day is Shabbos, not YT)
-        if next_day.weekday() == 5 and not HDateInfo(next_day, diaspora=self._diaspora).is_yom_tov:
+        if next_day.weekday() == 5 and not _cached_is_yom_tov(next_day, self._diaspora):
             shabbos_eve = next_day - timedelta(days=1)  # Friday
             end_dt = self._sunset(shabbos_eve) - timedelta(minutes=self._candle)
 
