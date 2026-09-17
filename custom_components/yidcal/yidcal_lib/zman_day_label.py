@@ -323,6 +323,13 @@ def _build_day_label_core(
         special = _special_shabbos(greg_date, diaspora)
         if special:
             suffixes.append(special)
+        # A Shabbos that is Erev Pesach / Erev Shavuos: the ערב flag is Friday's
+        # alone (halacha_events.FLAG_SPECS), so name the Erev here, as the weekly
+        # luach card and the Full Display do: "לשבת פרשת צו • שבת הגדול • ערב פסח".
+        from .halacha_events import FLAG_SPECS
+        for shabbos_flag, erev in (("שבת ערב פסח", "ערב פסח"), ("שבת ערב שבועות", "ערב שבועות")):
+            if FLAG_SPECS[shabbos_flag][0](greg_date, diaspora) and erev not in suffixes:
+                suffixes.append(erev)
         if suffixes:
             state = f"{state} • {' • '.join(suffixes)}"
         return state
