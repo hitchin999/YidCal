@@ -46,7 +46,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .const import DOMAIN
@@ -158,7 +158,7 @@ class ShehecheyanuDisplaySensor(YidCalSpecialDevice, SensorEntity):
                 continue
 
             tom = d + timedelta(days=1)  # the day this lighting brings in
-            is_yt = HDateInfo(tom, diaspora=self._diaspora).is_yom_tov
+            is_yt = _cached_is_yom_tov(tom, self._diaspora)
 
             if not is_yt:
                 said = False                                        # plain Shabbos
