@@ -23,7 +23,7 @@ import re
 from typing import Union
 from zoneinfo import ZoneInfo
 
-from hdate import HDateInfo
+from .calcache import is_yom_tov as _cached_is_yom_tov, yom_tov_day as _yom_tov_day
 from pyluach.hebrewcal import HebrewDate as PHebrewDate, Year as PYear
 
 from zmanim.util.geo_location import GeoLocation
@@ -181,8 +181,8 @@ def _lighting_event_for_day(
 ) -> tuple[datetime | None, str]:
     """Return (datetime, kind) of any candle-lighting event on civil
     day ``d``."""
-    hd_today = HDateInfo(d, diaspora=diaspora)
-    hd_tom = HDateInfo(d + timedelta(days=1), diaspora=diaspora)
+    hd_today = _yom_tov_day(d, diaspora)
+    hd_tom = _yom_tov_day(d + timedelta(days=1), diaspora)
 
     is_shabbos_today = (d.weekday() == 5)
     is_shabbos_tom = ((d + timedelta(days=1)).weekday() == 5)
@@ -270,7 +270,7 @@ def _shehecheyanu_note(day_in: date_cls, *, diaspora: bool) -> str:
     sensor.yidcal_shehecheyanu_display reads, so the card and the
     sensor can never disagree."""
     try:
-        if not HDateInfo(day_in, diaspora=diaspora).is_yom_tov:
+        if not _cached_is_yom_tov(day_in, diaspora):
             return ""
         return (
             "א״א שהחיינו"
@@ -314,8 +314,8 @@ def _build_row_title(
     """
     next_day = anchor + timedelta(days=1)
     is_shabbos_tom = next_day.weekday() == 5
-    is_yt_tom = HDateInfo(next_day, diaspora=diaspora).is_yom_tov
-    is_yt_today = HDateInfo(anchor, diaspora=diaspora).is_yom_tov
+    is_yt_tom = _cached_is_yom_tov(next_day, diaspora)
+    is_yt_today = _cached_is_yom_tov(anchor, diaspora)
     is_shabbos_today = anchor.weekday() == 5
 
     ph_today = PHebrewDate.from_pydate(anchor)
@@ -617,8 +617,7 @@ def _build_rows(
                 _ph_today = PHebrewDate.from_pydate(d)
                 _yt_lbl = he.intra_block_day_label(
                     _ph_today, diaspora=config.diaspora) or ""
-                if _yt_lbl and HDateInfo(
-                        d, diaspora=config.diaspora).is_yom_tov:
+                if _yt_lbl and _cached_is_yom_tov(d, config.diaspora):
                     _p = he.parsha_name(
                         _sat, diaspora=config.diaspora,
                         metzora_display=config.metzora_display,
@@ -771,7 +770,7 @@ def _build_rows(
             # before the no-melacha block starts). If today is already
             # inside the block (today is YT or Shabbos), the eruv has
             # already been made — don't mark it again.
-            is_yt_today = HDateInfo(d, diaspora=config.diaspora).is_yom_tov
+            is_yt_today = _cached_is_yom_tov(d, config.diaspora)
             is_shabbos_today = d.weekday() == 5
             if not is_yt_today and not is_shabbos_today:
                 block = he.no_melacha_block(
@@ -953,9 +952,7 @@ def _attach_motzei(
             immediate_motzei = _round_ceil(
                 sunset_target + timedelta(minutes=config.havdalah_offset)
             )
-            target_is_yt = HDateInfo(
-                target_blk, diaspora=config.diaspora,
-            ).is_yom_tov
+            target_is_yt = _cached_is_yom_tov(target_blk, config.diaspora)
             row.motzei = immediate_motzei
             row.motzei_label_he = (
                 "מוצאי יום טוב" if target_is_yt else "מוצאי שב״ק"
@@ -988,7 +985,7 @@ def _attach_motzei(
         end_motzei = _round_ceil(
             sunset_end + timedelta(minutes=config.havdalah_offset)
         )
-        last_is_yt = HDateInfo(end_blk, diaspora=config.diaspora).is_yom_tov
+        last_is_yt = _cached_is_yom_tov(end_blk, config.diaspora)
         end_label = "מוצאי יום טוב" if last_is_yt else "מוצאי שב״ק"
 
         trailing_main = (
@@ -1072,8 +1069,8 @@ def _insert_shabbos_to_yt_rows(
     d = start
     while d <= end:
         if d.weekday() == 5:
-            hd_today = HDateInfo(d, diaspora=config.diaspora)
-            hd_tom = HDateInfo(d + timedelta(days=1), diaspora=config.diaspora)
+            hd_today = _yom_tov_day(d, config.diaspora)
+            hd_tom = _yom_tov_day(d + timedelta(days=1), config.diaspora)
             if (not hd_today.is_yom_tov) and hd_tom.is_yom_tov:
                 ph_tom = PHebrewDate.from_pydate(d + timedelta(days=1))
                 yt = he.major_yt_name(ph_tom, diaspora=config.diaspora) or ""
@@ -1108,9 +1105,7 @@ def _insert_shabbos_to_yt_rows(
                 motzei_dt = _round_ceil(
                     sunset_end + timedelta(minutes=config.havdalah_offset)
                 )
-                end_is_yt = HDateInfo(
-                    end_blk, diaspora=config.diaspora,
-                ).is_yom_tov
+                end_is_yt = _cached_is_yom_tov(end_blk, config.diaspora)
                 motzei_label_he = (
                     "מוצאי יום טוב" if end_is_yt else "מוצאי שב״ק"
                 )
@@ -1636,7 +1631,7 @@ def _annotations_tekufah(
 
         # Anchor selection
         ph_tk = PHebrewDate.from_pydate(tk_date)
-        is_tk_yt = HDateInfo(tk_date, diaspora=config.diaspora).is_yom_tov
+        is_tk_yt = _cached_is_yom_tov(tk_date, config.diaspora)
         is_tk_chol = _is_chol_hamoed(ph_tk, diaspora=config.diaspora)
         use_hebrew_date_anchor = is_tk_yt or is_tk_chol
 
@@ -2997,7 +2992,7 @@ def _weekly_dom_sublabel(
         # block" test would wrongly tag them; suppress 1/2/10 Tishrei.
         # (Plain Shabbos already excluded by the is_yom_tov check.)
         if (
-            HDateInfo(yday, diaspora=diaspora).is_yom_tov
+            _cached_is_yom_tov(yday, diaspora)
             and not (yph.month == 7 and yph.day in (1, 2, 10))
         ):
             return "אסרו חג"
@@ -3196,7 +3191,7 @@ def build_weekly_data(
             zmanim=col_zmanim,
             zmanim_raw=col_zmanim_raw,
             is_shabbos=(d.weekday() == 5),
-            is_yomtov=HDateInfo(d, diaspora=config.diaspora).is_yom_tov,
+            is_yomtov=_cached_is_yom_tov(d, config.diaspora),
         ))
         d += timedelta(days=1)
 
@@ -3372,9 +3367,7 @@ def build_weekly_data(
                 and hero_row.civil_date.weekday() == 4):
             try:
                 _sat = hero_row.civil_date + timedelta(days=1)
-                _sat_is_yt = HDateInfo(
-                    _sat, diaspora=config.diaspora,
-                ).is_yom_tov
+                _sat_is_yt = _cached_is_yom_tov(_sat, config.diaspora)
                 if not _sat_is_yt:
                     _parsha = he.parsha_name(
                         _sat,
@@ -3525,12 +3518,8 @@ def build_weekly_data(
                 try:
                     _yt1_d = hero_row.civil_date + timedelta(days=2)
                     _yt2_d = hero_row.civil_date + timedelta(days=3)
-                    if (HDateInfo(
-                            _yt1_d, diaspora=config.diaspora,
-                        ).is_yom_tov
-                        and HDateInfo(
-                            _yt2_d, diaspora=config.diaspora,
-                        ).is_yom_tov):
+                    if (_cached_is_yom_tov(_yt1_d, config.diaspora)
+                        and _cached_is_yom_tov(_yt2_d, config.diaspora)):
                         _nm = he.major_yt_name(
                             PHebrewDate.from_pydate(_yt1_d),
                             diaspora=config.diaspora,
@@ -3889,10 +3878,7 @@ def build_weekly_data(
                         and _first_yt.civil_date == week_end):
                     try:
                         _next_civil = week_end + timedelta(days=1)
-                        if HDateInfo(
-                            _next_civil,
-                            diaspora=config.diaspora,
-                        ).is_yom_tov:
+                        if _cached_is_yom_tov(_next_civil, config.diaspora):
                             _has_2nd_yt_day = True
                     except Exception:
                         pass
@@ -4006,12 +3992,8 @@ def build_weekly_data(
                 # day is YT. Combined with `not is_block_yt`, this
                 # specifically catches the Erev-Shabbos card whose
                 # Shabbos opens a YT block.
-                _yt1_is_yt = HDateInfo(
-                    _yt1, diaspora=config.diaspora,
-                ).is_yom_tov
-                _yt2_is_yt = HDateInfo(
-                    _yt2, diaspora=config.diaspora,
-                ).is_yom_tov
+                _yt1_is_yt = _cached_is_yom_tov(_yt1, config.diaspora)
+                _yt2_is_yt = _cached_is_yom_tov(_yt2, config.diaspora)
                 _is_shab_erev_yt = _yt1_is_yt
                 if _is_shab_erev_yt and _yt1_is_yt and _yt2_is_yt:
                     # Sat-night candle = tzeis Shabbos (no offset
