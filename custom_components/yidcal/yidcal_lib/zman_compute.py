@@ -1080,49 +1080,37 @@ def plag_hamincha_mga_for_date(
     return dawn + (nightfall - dawn) / 12 * 10.75
 
 
-def compute_holiday_windows(
+def flag_window(
     *,
     geo: GeoLocation,
     tz: ZoneInfo,
-    festival_date: date_cls,
-    actual_date: date_cls,
+    day: date_cls,
+    shape: tuple[tuple[str, int], tuple[str, int]],
     candle_offset: int,
     havdalah_offset: int,
-) -> dict[str, tuple[datetime, datetime]]:
-    """The nine named holiday windows for ``festival_date`` — THE single
-    source for "when does a holiday flag turn on/off". Extracted verbatim
-    from holiday_sensor's window block so the sensor and any range/JSON
-    consumer (paired with halacha_events.HOLIDAY_WINDOW_TYPE) share one
-    implementation.
-
-    ``festival_date`` is the havdalah-rolled Hebrew day being labeled;
-    ``actual_date`` is the civil today (only candle_candle's END uses it:
-    next-civil-day candles). Roundings match the sensor exactly:
-    candles half-up, havdalah/motzei ceil, alos FLOORED (the v0.7.8
-    fast-start chumra — alos here anchors minor-fast windows).
+) -> tuple[datetime, datetime]:
+    """(start, end) of a halacha_events.FLAG_SHAPES shape for the flag's
+    ``day`` -- the one window a spec flag is both gated on and published
+    with. Roundings match the holiday sensor: candles half-up, tzeis ceil,
+    alos floor, shkia floor, chatzos half-up.
     """
-    prev_sunset = sunset_for_date(geo=geo, tz=tz, base_date=festival_date - timedelta(days=1))
-    fest_sunset = sunset_for_date(geo=geo, tz=tz, base_date=festival_date)
-    next_sunset = sunset_for_date(geo=geo, tz=tz, base_date=festival_date + timedelta(days=1))
-    tomorrow_sunset = sunset_for_date(geo=geo, tz=tz, base_date=actual_date + timedelta(days=1))
-    dawn = _floor(dawn_for_date(geo=geo, tz=tz, base_date=festival_date))
+    def edge(name: str, offset: int) -> datetime:
+        d = day + timedelta(days=offset)
+        if name == "tzeis":
+            return _ceil(sunset_for_date(geo=geo, tz=tz, base_date=d) + timedelta(minutes=havdalah_offset))
+        if name == "candles":
+            return _half_up(sunset_for_date(geo=geo, tz=tz, base_date=d) - timedelta(minutes=candle_offset))
+        if name == "alos":
+            return _floor(dawn_for_date(geo=geo, tz=tz, base_date=d))
+        if name == "shkia":
+            return _floor(sunset_for_date(geo=geo, tz=tz, base_date=d))
+        if name == "chatzos":
+            return _half_up(chatzos_hayom_for_date(geo=geo, tz=tz, base_date=d))
+        if name == "alos_hu":
+            return _half_up(dawn_for_date(geo=geo, tz=tz, base_date=d))
+        if name == "0200":
+            return datetime.combine(d, time_cls(2, 0), tz)
+        raise ValueError(f"unknown flag-window edge {name!r}")
 
-    candles_erev = _half_up(prev_sunset - timedelta(minutes=candle_offset))
-    havdalah_day = _ceil(fest_sunset + timedelta(minutes=havdalah_offset))
-    motzei_prev = _ceil(prev_sunset + timedelta(minutes=havdalah_offset))
-
-    # havdalah_havdalah start: when the festival day itself is Shabbos the
-    # window opens at Friday candles, not motzei of the previous day.
-    hh_start = candles_erev if festival_date.weekday() == 5 else motzei_prev
-
-    return {
-        "candle_havdalah":   (candles_erev, havdalah_day),
-        "candle_both":       (candles_erev, _ceil(next_sunset + timedelta(minutes=havdalah_offset))),
-        "alos_havdalah":     (dawn, havdalah_day),
-        "alos_candle":       (dawn, _half_up(fest_sunset - timedelta(minutes=candle_offset))),
-        "candle_alos":       (candles_erev, dawn),
-        "havdalah_alos":     (motzei_prev, dawn),
-        "havdalah_havdalah": (hh_start, havdalah_day),
-        "havdalah_candle":   (motzei_prev, _half_up(fest_sunset - timedelta(minutes=candle_offset))),
-        "candle_candle":     (candles_erev, _half_up(tomorrow_sunset - timedelta(minutes=candle_offset))),
-    }
+    (start_edge, start_offset), (end_edge, end_offset) = shape
+    return edge(start_edge, start_offset), edge(end_edge, end_offset)
