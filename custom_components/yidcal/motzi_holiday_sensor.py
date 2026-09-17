@@ -12,6 +12,7 @@ from homeassistant.helpers.event import async_track_time_change
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov, yom_tov_day as _yom_tov_day
 
 from zmanim.util.geo_location import GeoLocation
 
@@ -274,8 +275,8 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         yesterday = today - timedelta(days=1)
         tomorrow  = today + timedelta(days=1)
 
-        hd_yest  = HDateInfo(yesterday, diaspora=self._diaspora)
-        hd_today = HDateInfo(today,    diaspora=self._diaspora)
+        hd_yest  = _yom_tov_day(yesterday, self._diaspora)
+        hd_today = _yom_tov_day(today, self._diaspora)
         hd_tom   = HDateInfo(tomorrow, diaspora=self._diaspora)
 
         is_sat_today = (today.weekday() == 5)
@@ -393,7 +394,7 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             """Walk forward while is_yom_tov is True; return the last YT day."""
             end = start_date
             j = 1
-            while HDateInfo(start_date + timedelta(days=j), diaspora=self._diaspora).is_yom_tov:
+            while _cached_is_yom_tov(start_date + timedelta(days=j), self._diaspora):
                 end = start_date + timedelta(days=j)
                 j += 1
             return end
@@ -413,9 +414,9 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         if cand_start is None:
             for i in range(1, 33):  # look ahead up to ~1 month
                 d       = today + timedelta(days=i)
-                hd_prev = HDateInfo(d - timedelta(days=1), diaspora=self._diaspora)
+                hd_prev = _yom_tov_day(d - timedelta(days=1), self._diaspora)
                 hd_d    = HDateInfo(d,               diaspora=self._diaspora)
-                hd_next = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+                hd_next = _yom_tov_day(d + timedelta(days=1), self._diaspora)
 
                 is_shab  = (d.weekday() == 5)
                 is_hol   = hd_d.is_yom_tov
