@@ -165,6 +165,7 @@ SLUG_OVERRIDES: dict[str, str] = {
     "ל\"ג בעומר":            "lag_baomer",
     "מוצאי ל\"ג בעומר":      "motzei_lag_baomer",
     "ערב שבועות":           "erev_shavuos",
+    "שבת ערב שבועות":       "shabbos_erev_shavuos",
     "שבועות א׳":             "shavuos_1",
     "שבועות ב׳":             "shavuos_2",
     "שבועות א׳ וב׳":          "shavuos_1_2",
