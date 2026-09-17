@@ -1,45 +1,31 @@
 # custom_components/yidcal/flag_windows.py
-"""When each holiday flag turns on and off, read from where YidCal already knows.
+"""When each holiday flag turns on and off, computed from the flag specs.
 
-`sensor.yidcal_holiday` publishes a row of ~106 boolean flags and
-`HolidayAttributeBinarySensor` mirrors one flag each. Both answer "is it Sukkos
-*now*" and neither said when that stops being true, which is what anything
-scheduling around one of them actually needs.
+`sensor.yidcal_holiday` publishes a row of boolean flags and
+`HolidayAttributeBinarySensor` mirrors one flag each. Both say what is true
+*now*; anything scheduling around a flag also needs to know when it starts and
+when it stops.
 
-The answer was already being computed and thrown away
------------------------------------------------------
-`HolidaySensor.async_update` calls `zman_compute.compute_holiday_windows` on
-every single update, gets all nine window shapes for the current festival date,
-and gates each flag on `start <= now < end`. Its `_dynamic_window` resolves
-which shape a flag uses, overrides included - Purim on Friday, the last day of
-Chol HaMoed, and the rest. That is the only place in YidCal that knows a flag's
-real window, and it discarded it the moment the comparison was done.
+Every flag is defined once, in `halacha_events.FLAG_SPECS`: the days it belongs
+to, plus the shape of its window on such a day. The holiday sensor turns a flag
+on exactly while `now` is inside one of those windows, so the windows are
+computed here straight from the same spec, day by day, instead of by sampling
+the sensor at chosen hours:
 
-So it now records it instead, on `HolidaySensor._flag_windows`. Nothing here
-recomputes a window and nothing here knows a rule about candle lighting or
-havdalah; every moment below is a number the sensor handed over. Change a
-window rule in `_dynamic_window` or a shape in `compute_holiday_windows` and
-this follows without being touched.
+* a flag's windows that touch or overlap are one run (two days of Rosh Chodesh,
+  the eight days of Chanukah, שובבים);
+* an aggregate flag (`FLAG_AGGREGATES`: `סוכות (כל חג)`, `א׳ דיום טוב`, ...) is
+  on while any member is, so its runs are the union of the members' windows;
+* a mirror publishes the run it is in, or once that ends, the next one. The
+  search reaches a year ahead, and further for flags that do not come every
+  year (שבת ערב פורים, ערב פסח מוקדם, ...);
+* `calendar.yidcal_holiday` gets every run overlapping the range it is asked
+  for, whole, from the same computation.
 
-What that leaves
-----------------
-* A flag that is **on**: its window is in the live table already. Free, exact,
-  and correct through every override.
-
-* A flag that is **off**: needs the date it next falls on, which lives inside
-  the same update as a row of booleans for one moment - so it is found by
-  asking the sensor about future moments, the way `upcoming_holiday_sensor`
-  already does. Sampling twice a day is enough: 01:00 and 12:00 between them
-  fall inside all nine window shapes. The sample that first reads *on* carries
-  the exact window with it, so nothing has to be narrowed down afterwards.
-
-* An **aggregate** flag - `סוכות (כל חג)`, `א׳ דיום טוב` - is `any(...)` of
-  other flags, computed after the window filter, so it has no window of its
-  own. Those are spanned from the flags they aggregate, which is what the
-  aggregate means.
-
-One scan answers all ~106 mirrors, cached behind a lock, so a minute tick
-arriving at 106 entities produces one lookup and 105 cache reads.
+Per-day windows and answers are cached for the location and settings they were
+computed with. A change to either - an options update, a reload - starts a
+fresh cache on the next lookup, so a new offset is never answered with the old
+one. One cache serves every mirror and the calendar.
 """
 
 from __future__ import annotations
@@ -52,207 +38,173 @@ from zoneinfo import ZoneInfo
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .yidcal_lib import halacha_events as he
+from .yidcal_lib.zman_compute import flag_window
 from .zman_sensors import get_geo
 
 _LOGGER = logging.getLogger(__name__)
 
 CACHE_KEY = "_flag_windows_cache"
 
-# How far ahead to look for a flag that is currently off.
-#
-# Two weeks is a deliberate middle. Phase 1 costs two evaluations a day, so the
-# horizon is the whole cost of a scan, and this runs on every install rather
-# than only on the machine it was written on. Fourteen days still clears the
-# largest lookahead anything asks of it by a wide margin - Restart Guard's
-# ceiling is 24 hours - and still reaches the next event through a quiet
-# stretch: mid-Av finds Rosh Chodesh Elul ten days out.
-#
-# What it gives up is the far view. "When is Sukkos" asked in August now comes
-# back blank rather than answered, which is the honest trade for halving the
-# work on somebody else's Pi.
-SCAN_DAYS = 14
+# A run already under way started at most this long ago (שובבים ת"ת, the
+# longest run, is eight weeks).
+LOOKBACK_DAYS = 70
 
-# Night-only shapes (candle_alos, havdalah_alos) contain 01:00; day-only ones
-# (alos_candle, alos_havdalah) contain 12:00; the rest span one or both. Two
-# samples a day is the smallest set that can miss nothing.
-COARSE_HOURS = (1, 12)
-
-# Recompute at most this often even when nothing has flipped, so a scan cannot
-# drift after a config change or a DST jump.
-MAX_AGE = dt.timedelta(hours=6)
+# First search horizon, enough for every flag that comes each year; flags that
+# skip years are searched further, up to MAX_SEARCH_DAYS.
+LOOKAHEAD_DAYS = 400
+MAX_SEARCH_DAYS = 3000
 
 UNKNOWN = ""
 
 
-async def _evaluate(sensor_factory, moment: dt.datetime, geo):
-    """The flag row and its window table as they will read at `moment`.
-
-    A throwaway HolidaySensor, not the live one. It carries the real entity_id
-    but no `platform`, which `HolidaySensor.async_update` already checks before
-    writing state - and now also before writing the shared window table, so a
-    simulated row cannot overwrite today's.
-    """
-    sim = sensor_factory()
-    sim._geo = geo
-    await sim.async_update(moment)
-    return (
-        dict(getattr(sim, "_bool_attrs", {}) or {}),
-        dict(getattr(sim, "_flag_windows", {}) or {}),
-    )
-
-
 def _iso(window) -> dict[str, str]:
+    if window is None:
+        return {"Window_Start": UNKNOWN, "Window_End": UNKNOWN}
     start, end = window
     return {"Window_Start": start.isoformat(), "Window_End": end.isoformat()}
 
 
-async def _scan(
-    hass: HomeAssistant, sensor_factory, now: dt.datetime
-) -> dict[str, dict[str, str]]:
-    """Every flag's window: the run it is in, or the next one it will enter."""
-    cfg = (hass.data.get(DOMAIN, {}) or {}).get("config", {}) or {}
-    tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
-    geo = await get_geo(hass)
-    now = now.astimezone(tz)
-
-    seen: dict[dt.datetime, tuple[dict[str, bool], dict]] = {}
-
-    async def evaluate(moment: dt.datetime):
-        if moment not in seen:
-            seen[moment] = await _evaluate(sensor_factory, moment, geo)
-            # one evaluation is a few milliseconds and a whole scan is a few
-            # hundred; yielding lets the loop interleave the difference
-            await asyncio.sleep(0)
-        return seen[moment]
-
-    def day_samples(day: dt.date) -> list[dt.datetime]:
-        return [
-            dt.datetime.combine(day, dt.time(hour), tzinfo=tz)
-            for hour in COARSE_HOURS
-        ]
-
-    current, live = await evaluate(now)
-
-    # A flag on for several days holds a *different* window each day - Rosh
-    # Chodesh is two, Chanukah is eight - because the table answers for one
-    # festival date. Reporting a day boundary as the end would announce a
-    # change that never happens, so a run is followed to where it really stops.
-    runs: dict[str, list[dt.datetime]] = {
-        flag: [window[0], window[1]] for flag, window in live.items()
-    }
-
-    # backwards, for the flags already on: how far back does this run go?
-    # It stops at the first day the flag reads off, so a one-day flag costs two
-    # evaluations and only a genuinely long run costs more.
-    active = {flag for flag in runs if current.get(flag)}
-    for offset in range(1, SCAN_DAYS + 1):
-        if not active:
-            break
-        day = (now - dt.timedelta(days=offset)).date()
-        still: set[str] = set()
-        for moment in sorted(day_samples(day), reverse=True):
-            row, table = await evaluate(moment)
-            for flag in active:
-                window = table.get(flag)
-                if not row.get(flag) or window is None:
-                    continue
-                if window[0] < runs[flag][0]:
-                    runs[flag][0] = window[0]
-                still.add(flag)
-        active = still
-
-    # forwards, for everything: extend the runs above, and pick up the first
-    # run of every flag that is off right now
-    pending = {flag for flag, value in current.items() if not value}
-    closed: set[str] = set()
-    for offset in range(SCAN_DAYS + 1):
-        day = (now + dt.timedelta(days=offset)).date()
-        for moment in day_samples(day):
-            if moment <= now:
-                continue
-            row, table = await evaluate(moment)
-            for flag, window in table.items():
-                if flag in closed:
-                    continue
-                if flag in runs:
-                    if window[1] > runs[flag][1]:
-                        runs[flag][1] = window[1]
-                elif flag in pending and row.get(flag):
-                    runs[flag] = [window[0], window[1]]
-                    pending.discard(flag)
-            # a run that has ended is finished with: a later occurrence is a
-            # different window and must not stretch this one
-            for flag in list(runs):
-                if flag not in closed and not row.get(flag) and moment > runs[flag][1]:
-                    closed.add(flag)
-
-    windows = {flag: _iso(tuple(span)) for flag, span in runs.items()}
-
-    # Anything with no window keeps blank values. An absent attribute cannot be
-    # told apart from a broken scan; an empty one says "asked, found nothing".
-    for flag in current:
-        entry = windows.setdefault(flag, {})
-        entry.setdefault("Window_Start", UNKNOWN)
-        entry.setdefault("Window_End", UNKNOWN)
-
-    return windows
-
-
 class FlagWindows:
-    """Shared, lazily refreshed cache of the flag window table."""
+    """Shared cache of each flag's current or next run."""
 
     def __init__(self, hass: HomeAssistant, sensor_factory):
         self._hass = hass
         self._factory = sensor_factory
         self._lock = asyncio.Lock()
-        self._windows: dict[str, dict[str, str]] = {}
-        self._computed_at: dt.datetime | None = None
-        self._next_edge: dt.datetime | None = None
+        self._settings: tuple | None = None
+        self._checked_minute: dt.datetime | None = None
+        self._geo = None
+        self._tz: ZoneInfo | None = None
+        self._days: dict[tuple[str, dt.date], tuple[dt.datetime, dt.datetime] | None] = {}
+        self._answers: dict[str, tuple[tuple[dt.datetime, dt.datetime] | None, dt.date]] = {}
 
-    def _stale(self, now: dt.datetime) -> bool:
-        if self._computed_at is None:
-            return True
-        if now - self._computed_at >= MAX_AGE:
-            return True
-        return self._next_edge is not None and now >= self._next_edge
+    async def _async_check_settings(self, now: dt.datetime) -> None:
+        """Start a fresh cache when the location or any setting changed."""
+        minute = now.replace(second=0, microsecond=0)
+        if self._checked_minute == minute and self._settings is not None:
+            return
+        self._checked_minute = minute
+        sim = self._factory()
+        geo = await get_geo(self._hass)
+        cfg = self._hass.data.get(DOMAIN, {}).get("config", {})
+        tzname = cfg.get("tzname", self._hass.config.time_zone)
+        settings = (
+            geo.latitude, geo.longitude, getattr(geo, "elevation", 0), tzname,
+            sim._candle_offset, sim._havdalah_offset, sim._diaspora,
+            bool(getattr(sim, "_ykk_every_month", False)),
+        )
+        if settings != self._settings:
+            self._settings = settings
+            self._geo = geo
+            self._tz = ZoneInfo(tzname)
+            self._days.clear()
+            self._answers.clear()
+
+    def _window(self, name: str, day: dt.date):
+        key = (name, day)
+        if key not in self._days:
+            rule, shape = he.FLAG_SPECS[name]
+            _lat, _lon, _elev, _tzname, candle, havdalah, diaspora, every_month = self._settings
+            option = he.FLAG_RULE_OPTIONS.get(name)
+            kwargs = {option: every_month} if option == "every_month" else {}
+            window = None
+            if rule(day, diaspora, **kwargs):
+                shape_name = shape(day, diaspora) if callable(shape) else shape
+                window = flag_window(
+                    geo=self._geo, tz=self._tz, day=day, shape=he.FLAG_SHAPES[shape_name],
+                    candle_offset=candle, havdalah_offset=havdalah,
+                )
+            self._days[key] = window
+        return self._days[key]
+
+    def _runs(self, flag: str, first: dt.date, last: dt.date) -> list[tuple[dt.datetime, dt.datetime]]:
+        """The flag's runs from its windows on days `first`..`last`, in order."""
+        members = he.FLAG_AGGREGATES.get(flag, (flag,))
+        if not all(member in he.FLAG_SPECS for member in members):
+            return []
+        windows = sorted(
+            window
+            for member in members
+            for offset in range((last - first).days + 1)
+            if (window := self._window(member, first + dt.timedelta(days=offset))) is not None
+        )
+        runs: list[tuple[dt.datetime, dt.datetime]] = []
+        for start, end in windows:
+            if runs and start <= runs[-1][1]:
+                runs[-1] = (runs[-1][0], max(runs[-1][1], end))
+            else:
+                runs.append((start, end))
+        return runs
+
+    def _find_run(self, flag: str, now: dt.datetime):
+        """The run `now` is in, else the next one; None if none within MAX_SEARCH_DAYS."""
+        first = now.date() - dt.timedelta(days=LOOKBACK_DAYS)
+        horizon = LOOKAHEAD_DAYS
+        while True:
+            last = now.date() + dt.timedelta(days=horizon)
+            run = next((run for run in self._runs(flag, first, last) if run[1] > now), None)
+            if run is not None and run[1].date() < last - dt.timedelta(days=1):
+                return run
+            if horizon >= MAX_SEARCH_DAYS:
+                return run
+            horizon = min(horizon * 2, MAX_SEARCH_DAYS)
 
     async def async_windows_for(self, flag: str, now: dt.datetime) -> dict[str, str]:
-        """This flag's window, refreshing the table if needed.
-
-        Answers come from the cached table rather than from the live one
-        directly: the live table holds one festival day, and a flag on for
-        several days needs the run it belongs to, not today's slice of it.
-        """
+        """This flag's current run, or its next one once that is over."""
         async with self._lock:
-            if self._stale(now):
-                try:
-                    self._windows = await _scan(self._hass, self._factory, now)
-                    edges = [
-                        dt.datetime.fromisoformat(value)
-                        for entry in self._windows.values()
-                        for value in entry.values()
-                        if value
-                    ]
-                    ahead = [edge for edge in edges if edge > now]
-                    self._next_edge = min(ahead) if ahead else None
-                except Exception:  # noqa: BLE001 - never break the mirrors
-                    _LOGGER.exception("YidCal could not scan flag windows")
-                    self._windows = {}
-                    self._next_edge = None
-                # stamped either way, so a failure backs off instead of being
-                # retried by each of 106 mirrors on every minute tick
-                self._computed_at = now
-        return dict(
-            self._windows.get(flag)
-            or {"Window_Start": UNKNOWN, "Window_End": UNKNOWN}
-        )
+            try:
+                await self._async_check_settings(now)
+                cached = self._answers.get(flag)
+                stale = (
+                    cached is None
+                    or (cached[0] is not None and now >= cached[0][1])
+                    or (cached[0] is None and now.date() != cached[1])
+                )
+                if stale:
+                    if len(self._days) > 400_000:
+                        self._days.clear()
+                    run = await self._hass.async_add_executor_job(self._find_run, flag, now)
+                    self._answers[flag] = (run, now.date())
+                window = self._answers[flag][0]
+            except Exception:  # noqa: BLE001 - never break the mirrors
+                _LOGGER.debug("YidCal could not compute the window for %s", flag, exc_info=True)
+                window = None
+        return _iso(window)
+
+
+    async def async_runs_between(
+        self, flags, start: dt.datetime, end: dt.datetime
+    ) -> dict[str, list[tuple[dt.datetime, dt.datetime]]]:
+        """Every run of each flag that overlaps [start, end), whole rather than clipped."""
+        first = start.date() - dt.timedelta(days=LOOKBACK_DAYS)
+        last = end.date() + dt.timedelta(days=LOOKBACK_DAYS)
+
+        def collect():
+            return {
+                flag: [run for run in self._runs(flag, first, last) if run[1] > start and run[0] < end]
+                for flag in flags
+            }
+
+        async with self._lock:
+            await self._async_check_settings(start)
+            if len(self._days) > 400_000:
+                self._days.clear()
+            return await self._hass.async_add_executor_job(collect)
 
 
 def async_get_cache(hass: HomeAssistant, sensor_factory) -> FlagWindows:
-    """The one cache for this Home Assistant, created on first use."""
+    """The one cache for this Home Assistant, created on first use.
+
+    Every caller's factory replaces the stored one, so after a reload the
+    settings come from the new entities rather than the ones that first
+    created the cache.
+    """
     store = hass.data.setdefault(DOMAIN, {})
     cache = store.get(CACHE_KEY)
     if cache is None:
         cache = FlagWindows(hass, sensor_factory)
         store[CACHE_KEY] = cache
+    else:
+        cache._factory = sensor_factory
     return cache
