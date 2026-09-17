@@ -23,7 +23,7 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov, yom_tov_day as _yom_tov_day
 
 from .device import YidCalSpecialDevice
 from .yidcal_lib.zman_compute import (
@@ -99,7 +99,7 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         In diaspora, treat Shemini Atzeres + Simchas Torah as a continuous span.
         """
         end = start
-        while HDateInfo(end + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+        while _cached_is_yom_tov(end + timedelta(days=1), self._diaspora):
             end += timedelta(days=1)
 
         if self._diaspora:
@@ -126,8 +126,8 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
         base_date = ref.date()
         for i in range(0, 400):  # scan forward comfortably through the year
             d = base_date + timedelta(days=i)
-            hd = HDateInfo(d, diaspora=self._diaspora)
-            hd_prev = HDateInfo(d - timedelta(days=1), diaspora=self._diaspora)
+            hd = _yom_tov_day(d, self._diaspora)
+            hd_prev = _yom_tov_day(d - timedelta(days=1), self._diaspora)
 
             if hd.is_yom_tov and not hd_prev.is_yom_tov:
                 span_start = d
