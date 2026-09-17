@@ -57,6 +57,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         "parsha": "",
         "holiday": "",
         "shabbos_erev_pesach": "",
+        "shabbos_erev_shavuos": "",
         "special_shabbos": "",
         "rosh_chodesh": "",
         "sefirah_short": "",
@@ -212,6 +213,14 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
                 if "ערב פסח" not in text:
                     text += " ~ ערב פסח"
                     attrs["shabbos_erev_pesach"] = "ערב פסח"
+
+        # 3c) Shabbos Erev Shavuos: the same for a Shabbos that is Erev Shavuos
+        # (ערב שבועות itself is Friday's alone in that year).
+        if hol and getattr(hol, "attributes", None):
+            if str(hol.attributes.get("שבת ערב שבועות", False)).lower() == "true":
+                if "ערב שבועות" not in text:
+                    text += " ~ ערב שבועות"
+                    attrs["shabbos_erev_shavuos"] = "ערב שבועות"
 
         # 5) Special Shabbos — show on Fri only after 12:00 (general),
         # but for "פורים משולש" require candle-lighting; on Shabbos show until havdalah.
