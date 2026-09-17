@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import date as date_cls, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from hdate import HDateInfo
+from .calcache import is_yom_tov as _cached_is_yom_tov
 from zmanim.util.geo_location import GeoLocation
 from .zman_compute import (
     round_half_up as _half_up_minute,
@@ -74,7 +74,7 @@ def compute_erev_motzi(
         tomorrow = target + timedelta(days=1)
         if (
             tomorrow.weekday() == 5
-            or HDateInfo(tomorrow, diaspora=diaspora).is_yom_tov
+            or _cached_is_yom_tov(tomorrow, diaspora)
         ):
             block = _no_melacha_block(tomorrow, diaspora=diaspora)
 
@@ -106,7 +106,7 @@ def compute_erev_motzi(
         sunset_end = sunset_for_date(geo=geo, tz=tz, base_date=end)
         motzi_dt = _ceil_minute(sunset_end + timedelta(minutes=havdalah_offset))
 
-        last_is_yt = HDateInfo(end, diaspora=diaspora).is_yom_tov
+        last_is_yt = _cached_is_yom_tov(end, diaspora)
         label = "מוצאי יום טוב" if last_is_yt else "מוצאי שבת"
         out[label] = motzi_dt
 
