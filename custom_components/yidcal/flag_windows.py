@@ -51,9 +51,10 @@ CACHE_KEY = "_flag_windows_cache"
 LOOKBACK_DAYS = 70
 
 # First search horizon, enough for every flag that comes each year; flags that
-# skip years are searched further, up to MAX_SEARCH_DAYS.
+# skip years are searched further, up to MAX_SEARCH_DAYS: 25 years, since the
+# rarest (ערב פסח מוקדם / שבת ערב פסח) can be 20 years apart.
 LOOKAHEAD_DAYS = 400
-MAX_SEARCH_DAYS = 3000
+MAX_SEARCH_DAYS = 9200
 
 UNKNOWN = ""
 
