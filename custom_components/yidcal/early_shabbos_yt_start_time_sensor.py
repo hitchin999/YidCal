@@ -15,6 +15,7 @@ from homeassistant.helpers.event import (
 )
 
 from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 
 from .const import DOMAIN
 from .device import YidCalEarlyDevice
@@ -334,7 +335,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         for i in range(0, 60):
             d = today + timedelta(days=i)
             hd = HDateInfo(d, diaspora=diaspora)
-            if hd.is_yom_tov and not HDateInfo(d - timedelta(days=1), diaspora=diaspora).is_yom_tov:
+            if hd.is_yom_tov and not _cached_is_yom_tov(d - timedelta(days=1), diaspora):
                 first_yt_day = d
                 next_yt_name = str(hd.holidays[0]) if hd.holidays else "Yom Tov"
                 break
