@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import logging
 
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
@@ -217,7 +217,7 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         def is_yomtov(pydate: datetime.date) -> bool:
             try:
-                return HDateInfo(pydate, diaspora=diaspora).is_yom_tov
+                return _cached_is_yom_tov(pydate, diaspora)
             except Exception:
                 return False
 
