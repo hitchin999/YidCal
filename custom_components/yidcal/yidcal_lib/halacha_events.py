@@ -1769,103 +1769,393 @@ class FastDay:
 #     he.tisha_bav_observed(hyear), he.real_adar_month(hyear), ...
 # ────────────────────────────────────────────────────────────────────────
 
+
+
 # ────────────────────────────────────────────────────────────────────────
-# Canonical flag → window-kind map. THE single source for "when does a
-# holiday attribute turn on/off": the holiday sensor consumes it live,
-# and any range/JSON feature (e.g. "show everything between Erev Shavuos
-# and Motzei Shavuos") should read the same map + the window math in
-# zman_compute.compute_holiday_windows.
+# Flag timing — single source. A flag listed here is the days it belongs to
+# (a date-only rule) plus ONE shape. The holiday sensor turns it on while
+# now is inside that shape's window for a day the rule accepts, and
+# publishes that same window, so the flag, its Window_Start/Window_End and
+# its calendar event cannot disagree. Change a flag's timing here and all
+# three move together. (Aggregate flags are derived from their members.)
 #
-# Window kinds (start → end):
-#   candle_havdalah   candles(erev)            → havdalah(day)
-#   havdalah_havdalah motzei(prev day)*        → havdalah(day)   (*Friday-candles when day is Shabbos)
-#   candle_both       candles(erev)            → havdalah(day+1)
-#   alos_havdalah     alos(day)                → havdalah(day)
-#   alos_candle       alos(day)                → candles(day)
-#   candle_alos       candles(erev)            → alos(day)
-#   havdalah_alos     motzei(prev day)         → alos(day)
-#   havdalah_candle   motzei(prev day)         → candles(day)
-#   candle_candle     candles(erev)            → candles(day, i.e. next-day candles)
+# A shape is (start, end), each an (edge, day offset) from the flag's day:
+#   alos     alos, floored
+#   candles  shkia minus the candle-lighting offset, half-up
+#   tzeis    shkia plus the havdalah offset, ceiled
+#   shkia    shkia, floored
+#   chatzos  chatzos hayom, half-up
+#   alos_hu  alos, half-up (the Erev / Motzei flags' rounding)
+#   0200     02:00 local on that day
+# (zman_compute.flag_window does the arithmetic.)
+#
+# FLAG_SPECS: name -> (rule, shape). rule(day, diaspora) -> bool says whether
+# the flag belongs to that civil day; shape is a FLAG_SHAPES name, or a
+# function (day, diaspora) -> name when the day or the mode changes the edges.
 # ────────────────────────────────────────────────────────────────────────
-HOLIDAY_WINDOW_TYPE: dict[str, str] = {
-        "א׳ סליחות":                     "havdalah_candle",
-        "ערב ראש השנה":                  "havdalah_candle",
-        "ראש השנה א׳":                   "candle_havdalah",
-        "ראש השנה ב׳":                   "havdalah_havdalah",
-        "ראש השנה א׳ וב׳":                "candle_both",
-        "צום גדליה":                      "alos_havdalah",
-        "שלוש עשרה מדות":                 "alos_candle",
-        "ערב יום כיפור":                   "candle_candle",
-        "יום הכיפורים":                    "candle_havdalah",
-        "ערב סוכות":                      "havdalah_candle",
-        "סוכות א׳":                       "candle_havdalah",
-        "סוכות ב׳":                       "havdalah_havdalah",
-        "סוכות א׳ וב׳":                    "candle_both",
-        "א׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ב׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ג׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ד׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "ה׳ דחול המועד סוכות":               "havdalah_havdalah",
-        "חול המועד סוכות":                  "havdalah_havdalah",
-        "הושענא רבה":                     "havdalah_candle",
-        "שמיני עצרת":                      "candle_havdalah",
-        "שמחת תורה":                     "havdalah_havdalah",
-        "אסרו חג סוכות":                   "havdalah_havdalah",
-        "ערב חנוכה":                      "alos_havdalah",
-        "חנוכה":                         "havdalah_havdalah",
-        "ערב שבת חנוכה":                  "alos_candle",
-        "שבת חנוכה":                      "candle_havdalah", 
-        "שבת חנוכה ראש חודש":              "candle_havdalah",
-        "א׳ דחנוכה":                      "havdalah_havdalah",
-        "ב׳ דחנוכה":                      "havdalah_havdalah",
-        "ג׳ דחנוכה":                      "havdalah_havdalah",
-        "ד׳ דחנוכה":                      "havdalah_havdalah",
-        "ה׳ דחנוכה":                      "havdalah_havdalah",
-        "ו׳ דחנוכה":                      "havdalah_havdalah",
-        "ז׳ דחנוכה":                      "havdalah_havdalah",
-        "זאת חנוכה":                      "havdalah_havdalah",
-        "שובבים":                        "havdalah_havdalah",
-        "שובבים ת\"ת":                   "havdalah_havdalah",
-        "צום עשרה בטבת":                 "alos_havdalah",
-        "חמשה עשר בשבט":                "havdalah_havdalah",
-        "פורים קטן":                      "havdalah_havdalah",
-        "שושן פורים קטן":                 "havdalah_havdalah",
-        "תענית אסתר":                     "alos_havdalah",
-        "תענית אסתר מוקדם":                "alos_havdalah",
-        "פורים":                         "havdalah_havdalah",
-        "שושן פורים":                     "havdalah_havdalah",
-        "ערב בדיקת חמץ":                  "alos_havdalah",
-        "ליל בדיקת חמץ":                   "havdalah_alos",
-        "ערב פסח מוקדם":                  "havdalah_candle",
-        "שבת ערב פסח":                   "candle_candle",
-        "ערב פסח":                       "havdalah_candle",
-        "פסח א׳":                        "candle_havdalah",
-        "פסח ב׳":                        "havdalah_havdalah",
-        "פסח א׳ וב׳":                     "candle_both",
-        "א׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ב׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ג׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ד׳ דחול המועד פסח":                "havdalah_havdalah",
-        "ה׳ דחול המועד פסח":                "havdalah_havdalah",
-        "חול המועד פסח":                  "havdalah_candle",
-        "שביעי של פסח":                   "candle_havdalah",
-        "אחרון של פסח":                   "havdalah_havdalah",
-        "אסרו חג פסח":                    "havdalah_havdalah",
-        "פסח שני":                       "havdalah_havdalah",
-        "ל\"ג בעומר":                    "havdalah_havdalah",
-        "ערב שבועות":                    "havdalah_candle",
-        "שבועות א׳":                     "candle_havdalah",
-        "שבועות ב׳":                     "havdalah_havdalah",
-        "שבועות א׳ וב׳":                  "candle_both",
-        "אסרו חג שבועות":                "havdalah_havdalah",
-        "צום שבעה עשר בתמוז":             "alos_havdalah",
-        "ערב תשעה באב":                 "alos_havdalah",
-        "תשעה באב":                    "candle_havdalah",
-        "תשעה באב נדחה":                "candle_havdalah",
-        "ט\"ו באב":                     "alos_havdalah",
-        "יום כיפור קטן":                  "alos_havdalah",
-        "ראש חודש":                    "havdalah_havdalah",
+FLAG_SHAPES: dict[str, tuple[tuple[str, int], tuple[str, int]]] = {
+    "havdalah_havdalah": (("tzeis", -1), ("tzeis", 0)),
+    "havdalah_candle":   (("tzeis", -1), ("candles", 0)),
+    "candle_havdalah":   (("candles", -1), ("tzeis", 0)),
+    "candle_both":       (("candles", -1), ("tzeis", 1)),
+    "havdalah_both":     (("tzeis", -1), ("tzeis", 1)),
+    "alos_havdalah":     (("alos", 0), ("tzeis", 0)),
+    "alos_candle":       (("alos", 0), ("candles", 0)),
+    "havdalah_alos":     (("tzeis", -1), ("alos", 0)),
+    "alos_shkia":        (("alos", 0), ("shkia", 0)),
+    "shkia_havdalah":    (("shkia", -1), ("tzeis", 0)),
+    "chatzos_shkia":     (("chatzos", 0), ("shkia", 0)),
+    "alos_hu_candle":    (("alos_hu", 0), ("candles", 0)),
+    "alos_hu_havdalah":  (("alos_hu", 0), ("tzeis", 0)),
+    "havdalah_0200":     (("tzeis", -1), ("0200", 0)),
+    "havdalah_alos_hu":  (("tzeis", -1), ("alos_hu", 0)),
 }
+
+
+def _month_day(d: date_cls) -> tuple[int, int]:
+    h = PHebrewDate.from_pydate(d)
+    return h.month, h.day
+
+
+def _is_rosh_chodesh(d: date_cls) -> bool:
+    """Day 30 or day 1 of a month, except 1 Tishrei (Rosh Hashanah)."""
+    month, day = _month_day(d)
+    return day in (1, 30) and (month, day) != (7, 1)
+
+
+def _first_day_shape(d: date_cls, diaspora: bool = True) -> str:
+    """First day of Pesach / Shavuos: from candle-lighting, but from Tzeis when
+    it begins Motzei Shabbos (no candle-lighting before it on Shabbos)."""
+    if (d - timedelta(days=1)).weekday() == 5:
+        return "havdalah_havdalah"
+    return "candle_havdalah"
+
+
+def _pair_shape(d: date_cls, diaspora: bool) -> str:
+    """א׳ וב׳ pair: both days in the diaspora; in Israel only the first day."""
+    first = _first_day_shape(d, diaspora)
+    if not diaspora:
+        return first
+    return "havdalah_both" if first == "havdalah_havdalah" else "candle_both"
+
+
+def _erev_or_friday_before(d: date_cls, month: int, erev_day: int) -> bool:
+    """ערב פסח (14 Nisan) / ערב שבועות (5 Sivan): the Erev day itself, except when
+    it falls on Shabbos. Then the Erev flag is on the Friday before only (until
+    candle-lighting); that Shabbos has its own flag (שבת ערב פסח / שבת ערב שבועות),
+    and the Full Display shows the Erev all Shabbos."""
+    h = PHebrewDate.from_pydate(d)
+    if h.month != month:
+        return False
+    erev_is_shabbos = PHebrewDate(h.year, month, erev_day).to_pydate().weekday() == 5
+    return h.day == (erev_day - 1 if erev_is_shabbos else erev_day)
+
+
+def _chol_hamoed_day(d: date_cls, diaspora: bool, month: int) -> int:
+    """1-based day of Chol HaMoed (diaspora 17–20, Israel 16–20), else 0."""
+    h = PHebrewDate.from_pydate(d)
+    first = 17 if diaspora else 16
+    return h.day - first + 1 if h.month == month and first <= h.day <= 20 else 0
+
+
+def _chm_pesach_shape(d: date_cls, diaspora: bool) -> str:
+    """Chol HaMoed Pesach as a whole: in the diaspora its last day (20 Nisan)
+    ends at candle-lighting; in Israel it has run to Tzeis."""
+    return "havdalah_candle" if diaspora and _month_day(d) == (1, 20) else "havdalah_havdalah"
+
+
+def _real_adar_day(d: date_cls) -> int:
+    """Day of month when ``d`` is in Purim's Adar (Adar II in a leap year), else 0."""
+    h = PHebrewDate.from_pydate(d)
+    return h.day if h.month == real_adar_month(h.year) else 0
+
+
+def _purim_katan_day(d: date_cls) -> int:
+    """Day of month when ``d`` is in Adar I of a leap year, else 0."""
+    h = PHebrewDate.from_pydate(d)
+    return h.day if h.month == 12 and is_leap_hebrew_year(h.year) else 0
+
+
+def _purim_shape(d: date_cls, diaspora: bool) -> str:
+    """Purim / Purim Katan end at Tzeis, but at candle-lighting on a Friday."""
+    return "havdalah_candle" if d.weekday() == 4 else "havdalah_havdalah"
+
+
+def _is_shushan_purim(d: date_cls, diaspora: bool) -> bool:
+    """15 Adar; when that is Shabbos (Purim Meshulash) the flag is Sunday's,
+    Motzei Shabbos to Motzei Sunday."""
+    fifteen = shushan_purim_date(PHebrewDate.from_pydate(d).year)
+    return d == (fifteen + timedelta(days=1) if fifteen.weekday() == 5 else fifteen)
+
+
+def _is_shlosh_esrei_middos(d: date_cls, diaspora: bool) -> bool:
+    """8 Tishrei on Mon/Tue/Thu; 6 Tishrei when that is a Thursday."""
+    month, day = _month_day(d)
+    return month == 7 and ((day == 8 and d.weekday() in (0, 1, 3)) or (day == 6 and d.weekday() == 3))
+
+
+def _chanukah_day(d: date_cls) -> int:
+    """1–8 during Chanukah, else 0."""
+    return chanukah_day_for_date(d) or 0
+
+
+_SHOVAVIM = ("SHEMOS", "VA'EIRA", "BO", "BESHALACH", "YISRO", "MISHPATIM")
+_SHOVAVIM_TAT = _SHOVAVIM + ("TERUMAH", "TETZAVEH")
+_week_parsha_cache: dict[date_cls, str] = {}
+
+
+def _week_parsha(d: date_cls) -> str:
+    """This week's parsha (pyluach, diaspora schedule), upper-case; '' if none."""
+    parsha = _week_parsha_cache.get(d)
+    if parsha is None:
+        parsha = (parshios.getparsha_string(PHebrewDate.from_pydate(d)) or "").upper()
+        if len(_week_parsha_cache) > 256:
+            _week_parsha_cache.clear()
+        _week_parsha_cache[d] = parsha
+    return parsha
+
+
+def _bedikah_night_day(d: date_cls) -> int:
+    """Day of Nisan whose night is Bedikas Chametz: 14, or 13 when 14 is Shabbos."""
+    year = PHebrewDate.from_pydate(d).year
+    return 13 if PHebrewDate(year, 1, 14).to_pydate().weekday() == 5 else 14
+
+
+def _tisha_bav_fast_day(d: date_cls) -> date_cls:
+    """The observed fast day of d's year: 9 Av, or Sunday 10 Av when 9 Av is Shabbos."""
+    return tisha_bav_observed(PHebrewDate.from_pydate(d).year)
+
+
+_yom_tov_cache: dict[tuple[date_cls, bool], bool] = {}
+
+
+def _is_yom_tov(d: date_cls, diaspora: bool) -> bool:
+    """hdate's Yom Tov test, the one the Erev / Motzei flags have always used."""
+    key = (d, diaspora)
+    if key not in _yom_tov_cache:
+        from hdate import HDateInfo
+        if len(_yom_tov_cache) > 256:
+            _yom_tov_cache.clear()
+        _yom_tov_cache[key] = bool(HDateInfo(d, diaspora=diaspora).is_yom_tov)
+    return _yom_tov_cache[key]
+
+
+def _is_asru_chag_sukkos(d: date_cls, diaspora: bool) -> bool:
+    """Israel: 23 Tishrei. Diaspora: 24 Tishrei, or 25 when 24 is Shabbos."""
+    h = PHebrewDate.from_pydate(d)
+    if h.month != 7:
+        return False
+    if not diaspora:
+        return h.day == 23
+    day24 = PHebrewDate(h.year, 7, 24).to_pydate()
+    return d == (day24 + timedelta(days=1) if day24.weekday() == 5 else day24)
+
+
+FLAG_SPECS: dict[str, tuple] = {
+    "א׳ סליחות":       (lambda d, diaspora: _month_day(d)[0] == 6 and 21 <= _month_day(d)[1] <= 26
+                                            and d.weekday() == 6, "havdalah_candle"),
+    "ערב ראש השנה":    (lambda d, diaspora: _month_day(d) == (6, 29), "havdalah_candle"),
+    "עשרת ימי תשובה":  (lambda d, diaspora: _month_day(d)[0] == 7 and 3 <= _month_day(d)[1] <= 9,
+                        lambda d, diaspora: "havdalah_candle" if _month_day(d) == (7, 9) else "havdalah_havdalah"),
+    "ראש השנה א׳":     (lambda d, diaspora: _month_day(d) == (7, 1), "candle_havdalah"),
+    "ראש השנה ב׳":     (lambda d, diaspora: _month_day(d) == (7, 2), "havdalah_havdalah"),
+    "ראש השנה א׳ וב׳": (lambda d, diaspora: _month_day(d) == (7, 1), "candle_both"),
+    "צום גדליה":       (lambda d, diaspora: d == tzom_gedaliah_observed(PHebrewDate.from_pydate(d).year), "alos_havdalah"),
+    "שלוש עשרה מדות":  (_is_shlosh_esrei_middos, "alos_havdalah"),
+    "ערב יום כיפור":   (lambda d, diaspora: _month_day(d) == (7, 9), "havdalah_candle"),
+    "יום הכיפורים":     (lambda d, diaspora: _month_day(d) == (7, 10), "candle_havdalah"),
+    "ערב סוכות":       (lambda d, diaspora: _month_day(d) == (7, 14), "havdalah_candle"),
+    "סוכות א׳":        (lambda d, diaspora: _month_day(d) == (7, 15), "candle_havdalah"),
+    "סוכות ב׳":        (lambda d, diaspora: diaspora and _month_day(d) == (7, 16), "havdalah_havdalah"),
+    "סוכות א׳ וב׳":    (lambda d, diaspora: _month_day(d) == (7, 15), _pair_shape),
+    "א׳ דחול המועד סוכות": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 7) == 1, "havdalah_havdalah"),
+    "ב׳ דחול המועד סוכות": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 7) == 2, "havdalah_havdalah"),
+    "ג׳ דחול המועד סוכות": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 7) == 3, "havdalah_havdalah"),
+    "ד׳ דחול המועד סוכות": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 7) == 4, "havdalah_havdalah"),
+    "ה׳ דחול המועד סוכות": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 7) == 5, "havdalah_havdalah"),
+    "חול המועד סוכות": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 7) > 0, "havdalah_havdalah"),
+    "הושענא רבה":      (lambda d, diaspora: _month_day(d) == (7, 21), "havdalah_candle"),
+    "שמיני עצרת":      (lambda d, diaspora: _month_day(d) == (7, 22), "candle_havdalah"),
+    # in Israel שמחת תורה is שמיני עצרת's day, with its window
+    "שמחת תורה":       (lambda d, diaspora: _month_day(d) == (7, 23 if diaspora else 22),
+                        lambda d, diaspora: "havdalah_havdalah" if diaspora else "candle_havdalah"),
+    "אסרו חג סוכות":   (_is_asru_chag_sukkos, "havdalah_havdalah"),
+    "ערב חנוכה":       (lambda d, diaspora: _month_day(d) == (9, 24), "alos_havdalah"),
+    "חנוכה":           (lambda d, diaspora: _chanukah_day(d) > 0, "havdalah_havdalah"),
+    "א׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 1, "havdalah_havdalah"),
+    "ב׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 2, "havdalah_havdalah"),
+    "ג׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 3, "havdalah_havdalah"),
+    "ד׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 4, "havdalah_havdalah"),
+    "ה׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 5, "havdalah_havdalah"),
+    "ו׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 6, "havdalah_havdalah"),
+    "ז׳ דחנוכה":       (lambda d, diaspora: _chanukah_day(d) == 7, "havdalah_havdalah"),
+    "זאת חנוכה":       (lambda d, diaspora: _chanukah_day(d) == 8, "havdalah_havdalah"),
+    "ערב שבת חנוכה":   (lambda d, diaspora: d.weekday() == 4 and _chanukah_day(d) > 0, "alos_candle"),
+    "צום עשרה בטבת":   (lambda d, diaspora: _month_day(d) == (10, 10), "alos_havdalah"),
+    "חמשה עשר בשבט":   (lambda d, diaspora: _month_day(d) == (11, 15), "havdalah_havdalah"),
+    "ערב פסח מוקדם":   (lambda d, diaspora: _month_day(d) == (1, 13) and d.weekday() == 4, "havdalah_candle"),
+    "שבת ערב פסח":     (lambda d, diaspora: _month_day(d) == (1, 14) and d.weekday() == 5, "candle_havdalah"),
+    # When 14 Nisan is Shabbos, ערב פסח is Friday's alone (until candle-lighting);
+    # the Shabbos is שבת ערב פסח, and the Full Display shows ערב פסח all Shabbos.
+    "ערב פסח":         (lambda d, diaspora: _erev_or_friday_before(d, 1, 14), "havdalah_candle"),
+    "פסח א׳":          (lambda d, diaspora: _month_day(d) == (1, 15), _first_day_shape),
+    "פסח ב׳":          (lambda d, diaspora: diaspora and _month_day(d) == (1, 16), "havdalah_havdalah"),
+    "פסח א׳ וב׳":      (lambda d, diaspora: _month_day(d) == (1, 15), _pair_shape),
+    "א׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 1, "havdalah_havdalah"),
+    "ב׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 2, "havdalah_havdalah"),
+    "ג׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 3, "havdalah_havdalah"),
+    "ד׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 4, "havdalah_havdalah"),
+    "ה׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 5, "havdalah_havdalah"),
+    "חול המועד פסח":   (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) > 0, _chm_pesach_shape),
+    "שביעי של פסח":    (lambda d, diaspora: _month_day(d) == (1, 21), "candle_havdalah"),
+    "אחרון של פסח":    (lambda d, diaspora: diaspora and _month_day(d) == (1, 22), "havdalah_havdalah"),
+    "אסרו חג פסח":     (lambda d, diaspora: _month_day(d) == ((1, 23) if diaspora else (1, 22)), "havdalah_havdalah"),
+    "פורים קטן":       (lambda d, diaspora: _purim_katan_day(d) == 14, _purim_shape),
+    "שושן פורים קטן":  (lambda d, diaspora: _purim_katan_day(d) == 15, "havdalah_havdalah"),
+    "תענית אסתר":      (lambda d, diaspora: d == taanis_esther_observed(PHebrewDate.from_pydate(d).year), "alos_havdalah"),
+    "תענית אסתר מוקדם": (lambda d, diaspora: _real_adar_day(d) == 11
+                         and d == taanis_esther_observed(PHebrewDate.from_pydate(d).year), "alos_havdalah"),
+    "פורים":           (lambda d, diaspora: _real_adar_day(d) == 14, _purim_shape),
+    "שושן פורים":      (_is_shushan_purim, "havdalah_havdalah"),
+    "פסח שני":          (lambda d, diaspora: _month_day(d) == (2, 14), "havdalah_havdalah"),
+    "ל\"ג בעומר":       (lambda d, diaspora: _month_day(d) == (2, 18), "havdalah_havdalah"),
+    # When 5 Sivan is Shabbos, ערב שבועות is Friday's alone (until candle-lighting);
+    # the Shabbos is שבת ערב שבועות, and the Full Display shows ערב שבועות all Shabbos.
+    "ערב שבועות":      (lambda d, diaspora: _erev_or_friday_before(d, 3, 5), "havdalah_candle"),
+    "שבת ערב שבועות":  (lambda d, diaspora: _month_day(d) == (3, 5) and d.weekday() == 5, "candle_havdalah"),
+    "צום שבעה עשר בתמוז": (lambda d, diaspora: d == shiva_asar_btamuz_observed(PHebrewDate.from_pydate(d).year),
+                           "alos_havdalah"),
+    "ט\"ו באב":         (lambda d, diaspora: _month_day(d) == (5, 15), "havdalah_havdalah"),
+    "שבועות א׳":       (lambda d, diaspora: _month_day(d) == (3, 6), _first_day_shape),
+    "שבועות ב׳":       (lambda d, diaspora: diaspora and _month_day(d) == (3, 7), "havdalah_havdalah"),
+    "שבועות א׳ וב׳":   (lambda d, diaspora: _month_day(d) == (3, 6), _pair_shape),
+    "אסרו חג שבועות":  (lambda d, diaspora: _month_day(d) == ((3, 8) if diaspora else (3, 7)), "havdalah_havdalah"),
+    "ראש חודש":         (lambda d, diaspora: _is_rosh_chodesh(d), "havdalah_havdalah"),
+    "שבת ראש חודש":     (lambda d, diaspora: d.weekday() == 5 and _is_rosh_chodesh(d), "candle_havdalah"),
+    "שבת חנוכה":        (lambda d, diaspora: d.weekday() == 5 and _chanukah_day(d) > 0, "candle_havdalah"),
+    "שבת חנוכה ראש חודש": (lambda d, diaspora: d.weekday() == 5 and _chanukah_day(d) > 0 and _is_rosh_chodesh(d),
+                          "candle_havdalah"),
+    "שבת חול המועד סוכות": (lambda d, diaspora: d.weekday() == 5 and _chol_hamoed_day(d, diaspora, 7) > 0,
+                           "candle_havdalah"),
+    "שבת חול המועד פסח":  (lambda d, diaspora: d.weekday() == 5 and _chol_hamoed_day(d, diaspora, 1) > 0,
+                           "candle_havdalah"),
+    "שובבים":           (lambda d, diaspora: _week_parsha(d) in _SHOVAVIM
+                         or (is_leap_hebrew_year(PHebrewDate.from_pydate(d).year) and _week_parsha(d) in _SHOVAVIM_TAT),
+                         "havdalah_havdalah"),
+    "שובבים ת\"ת":       (lambda d, diaspora: is_leap_hebrew_year(PHebrewDate.from_pydate(d).year)
+                         and _week_parsha(d) in _SHOVAVIM_TAT, "havdalah_havdalah"),
+    "ערב בדיקת חמץ":    (lambda d, diaspora: _month_day(d) == (1, _bedikah_night_day(d) - 1), "alos_havdalah"),
+    "ליל בדיקת חמץ":    (lambda d, diaspora: _month_day(d) == (1, _bedikah_night_day(d)), "havdalah_alos"),
+    "ערב תשעה באב":     (lambda d, diaspora: d == _tisha_bav_fast_day(d) - timedelta(days=1), "alos_shkia"),
+    "ערב תשעה באב שחל בשבת": (lambda d, diaspora: d.weekday() == 5 and _month_day(d) == (5, 9), "chatzos_shkia"),
+    "תשעה באב":         (lambda d, diaspora: d == _tisha_bav_fast_day(d), "shkia_havdalah"),
+    "תשעה באב נדחה":    (lambda d, diaspora: d == _tisha_bav_fast_day(d) and _month_day(d) == (5, 10), "shkia_havdalah"),
+    # scope option: every Erev Rosh Chodesh, or only Erev RC Elul (always in Av)
+    "יום כיפור קטן":    (lambda d, diaspora, every_month: is_yom_kippur_katan(d)
+                         and (every_month or _month_day(d)[0] == 5), "alos_havdalah"),
+}
+
+# Rules that also need a config option get it as this keyword argument; the
+# sensor supplies the value.
+FLAG_RULE_OPTIONS: dict[str, str] = {
+    "יום כיפור קטן": "every_month",
+}
+
+_DAY = timedelta(days=1)
+FLAG_SPECS.update({
+    # Erev / Motzei flags (formerly erev_motzei_extra)
+    "ערב שבת":               (lambda d, diaspora: d.weekday() == 4 and not _is_yom_tov(d, diaspora), "alos_hu_candle"),
+    "ערב יום טוב":           (lambda d, diaspora: d.weekday() != 5 and not _is_yom_tov(d, diaspora)
+                              and _is_yom_tov(d + _DAY, diaspora), "alos_hu_candle"),
+    "ערב שבת שחל ביום טוב":  (lambda d, diaspora: d.weekday() == 4 and _is_yom_tov(d, diaspora), "alos_hu_candle"),
+    "ערב יום טוב שחל בשבת":  (lambda d, diaspora: d.weekday() == 5 and _is_yom_tov(d + _DAY, diaspora), "alos_hu_havdalah"),
+    "מוצאי שבת":             (lambda d, diaspora: d.weekday() == 6 and not _is_yom_tov(d, diaspora), "havdalah_0200"),
+    "מוצאי יום טוב":         (lambda d, diaspora: d.weekday() != 5 and _is_yom_tov(d - _DAY, diaspora)
+                              and not _is_yom_tov(d, diaspora), "havdalah_0200"),
+    "מוצאי שבת שחל ביום טוב": (lambda d, diaspora: d.weekday() == 6 and _is_yom_tov(d, diaspora), "havdalah_0200"),
+    "מוצאי יום טוב שחל בשבת": (lambda d, diaspora: d.weekday() == 5 and _is_yom_tov(d - _DAY, diaspora)
+                               and not _is_yom_tov(d, diaspora), "havdalah_0200"),
+    "שבת ערב פורים":         (lambda d, diaspora: d.weekday() == 5 and _real_adar_day(d) == 13, "alos_hu_havdalah"),
+})
+
+
+def _motzei_day(d: date_cls, target, defer_for_shabbos: bool) -> bool:
+    """``d`` is the morning a מוצאי window ends on (Tzeis of the last day → Alos).
+    A last day on Friday runs into Shabbos: a Yom Tov מוצאי moves to Motzei
+    Shabbos (ending Sunday's Alos); any other מוצאי is skipped."""
+    last = d - _DAY
+    if target(last) and last.weekday() != 4:
+        return True
+    return defer_for_shabbos and d.weekday() == 6 and target(d - 2 * _DAY)
+
+
+# name -> (last day of the holiday (day, diaspora) -> bool, moves to Motzei Shabbos when that is Friday)
+_MOTZEI_TARGETS = {
+    "מוצאי ראש השנה":           (lambda d, dia: _month_day(d) == (7, 2), True),
+    "מוצאי יום הכיפורים":        (lambda d, dia: _month_day(d) == (7, 10), True),
+    "מוצאי סוכות ימים ראשונים":   (lambda d, dia: _month_day(d) == (7, 16 if dia else 15), True),
+    "מוצאי סוכות":              (lambda d, dia: _month_day(d) == (7, 23 if dia else 22), True),
+    "מוצאי חנוכה":              (lambda d, dia: _chanukah_day(d) == 8, False),
+    "מוצאי שושן פורים":          (lambda d, dia: d.weekday() != 5
+                                 and d == shushan_purim_observed(PHebrewDate.from_pydate(d).year), False),
+    "מוצאי פסח ימים ראשונים":    (lambda d, dia: _month_day(d) == (1, 16 if dia else 15), True),
+    "מוצאי פסח":                (lambda d, dia: _month_day(d) == (1, 22 if dia else 21), True),
+    "מוצאי ל\"ג בעומר":         (lambda d, dia: _month_day(d) == (2, 18) and d.weekday() != 5, False),
+    "מוצאי שבועות":             (lambda d, dia: _month_day(d) == (3, 7 if dia else 6), True),
+    "מוצאי צום שבעה עשר בתמוז":  (lambda d, dia: d == shiva_asar_btamuz_observed(PHebrewDate.from_pydate(d).year), False),
+    "מוצאי תשעה באב":           (lambda d, dia: d == tisha_bav_observed(PHebrewDate.from_pydate(d).year), False),
+}
+for _name, (_target, _defer) in _MOTZEI_TARGETS.items():
+    FLAG_SPECS[_name] = (
+        lambda d, diaspora, _t=_target, _df=_defer: _motzei_day(d, lambda x: _t(x, diaspora), _df),
+        "havdalah_alos_hu",
+    )
+
+
+# Aggregate flags: on while any member is on, so their windows are the union of
+# the members'. (The holiday sensor publishes שביעי/אחרון של פסח and א׳/ב׳ דיום
+# טוב in the diaspora only.)
+FLAG_AGGREGATES: dict[str, tuple[str, ...]] = {
+    "סוכות (כל חג)": ("סוכות א׳", "סוכות ב׳", "א׳ דחול המועד סוכות", "ב׳ דחול המועד סוכות",
+                      "ג׳ דחול המועד סוכות", "ד׳ דחול המועד סוכות", "ה׳ דחול המועד סוכות", "הושענא רבה"),
+    "שמיני עצרת/שמחת תורה": ("שמיני עצרת", "שמחת תורה"),
+    "פסח (כל חג)": ("פסח א׳", "פסח ב׳", "א׳ דחול המועד פסח", "ב׳ דחול המועד פסח", "ג׳ דחול המועד פסח",
+                    "ד׳ דחול המועד פסח", "ה׳ דחול המועד פסח", "שביעי של פסח", "אחרון של פסח"),
+    "שביעי/אחרון של פסח": ("שביעי של פסח", "אחרון של פסח"),
+    "א׳ דיום טוב": ("ראש השנה א׳", "סוכות א׳", "שמיני עצרת", "פסח א׳", "שביעי של פסח", "שבועות א׳"),
+    "ב׳ דיום טוב": ("ראש השנה ב׳", "סוכות ב׳", "שמחת תורה", "פסח ב׳", "אחרון של פסח", "שבועות ב׳"),
+}
+
+
+def evaluate_flag_specs(*, now, tz, geo, diaspora: bool, candle_offset: int, havdalah_offset: int,
+                        options: dict | None = None, names=None) -> dict:
+    """{flag: (start, end)} for every spec flag that is on at ``now``.
+
+    A flag is on while ``now`` is inside its shape's window for a day its rule
+    accepts, and that window is the one returned, so a flag and its published
+    edges come from the same place. A window reaches at most from the day
+    before to the day after, so yesterday, today and tomorrow are the only
+    candidate days. ``options`` supplies FLAG_RULE_OPTIONS values; ``names``
+    limits the evaluation to some flags.
+    """
+    from .zman_compute import flag_window
+    options = options or {}
+    on: dict = {}
+    for name in (FLAG_SPECS if names is None else names):
+        rule, shape = FLAG_SPECS[name]
+        option = FLAG_RULE_OPTIONS.get(name)
+        kwargs = {option: options.get(option, False)} if option else {}
+        for offset in (-1, 0, 1):
+            day = now.date() + timedelta(days=offset)
+            if not rule(day, diaspora, **kwargs):
+                continue
+            shape_name = shape(day, diaspora) if callable(shape) else shape
+            start, end = flag_window(geo=geo, tz=tz, day=day, shape=FLAG_SHAPES[shape_name],
+                                     candle_offset=candle_offset, havdalah_offset=havdalah_offset)
+            if start <= now < end:
+                on[name] = (start, end)
+                break
+    return on
 
 
 def is_leap_hebrew_year(hyear: int) -> bool:
