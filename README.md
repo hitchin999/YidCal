@@ -81,8 +81,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **מוצאי ראש השנה** *(ON at Tzeis, OFF at Alos)*
   * **עשרת ימי תשובה** *(ON at Tzeis (end of Rosh Hashana), OFF at candle-lighting (Erev Yom Kippur))*
   * **צום גדליה** *(ON at Alos, OFF at Tzeis)*
-  * **שלוש עשרה מדות** *(ON at Alos, OFF at candle-lighting)*
-  * **ערב יום כיפור** *(ON at candle-lighting (night before), OFF at candle-lighting)*
+  * **שלוש עשרה מדות** *(ON at Alos, OFF at Tzeis)*
+  * **ערב יום כיפור** *(ON at Tzeis (night before), OFF at candle-lighting)*
   * **יום הכיפורים** *(ON at candle-lighting, OFF at Tzeis)*
   * **מוצאי יום הכיפורים** *(ON at Tzeis, OFF at Alos)*
   * **ערב סוכות** *(ON at Tzeis (night before), OFF at candle-lighting)*
@@ -132,8 +132,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **ערב בדיקת חמץ** *(ON at Alos, OFF at Tzeis)*
   * **ליל בדיקת חמץ** *(ON at Tzeis, OFF at Alos)*
   * **ערב פסח מוקדם** *(ON at Tzeis (night before), OFF at candle-lighting)*
-  * **שבת ערב פסח** *(ON at candle-lighting (Friday), OFF at candle-lighting (Motzei Shabbos/Tzeis))*
-  * **ערב פסח** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **שבת ערב פסח** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **ערב פסח** *(ON at Tzeis (night before), OFF at candle-lighting. When Erev Pesach is Shabbos it is on Friday only; the Shabbos is שבת ערב פסח, and the Full Display shows ערב פסח through Shabbos)*
   * **פסח (כל חג)** *(ON at candle-lighting (day 1), OFF at Tzeis (end of אחרון של פסח in diaspora / end of שביעי in Israel))*
   * **פסח א׳** *(ON at candle-lighting, OFF at Tzeis — OR when Erev Pesach is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
   * **פסח ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis (end of day 2))*
@@ -153,7 +153,8 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **פסח שני** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ל"ג בעומר** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **מוצאי ל"ג בעומר** *(ON at Tzeis, OFF at Alos)*
-  * **ערב שבועות** *(ON at Tzeis (night before), OFF at candle-lighting)*
+  * **שבת ערב שבועות** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **ערב שבועות** *(ON at Tzeis (night before), OFF at candle-lighting. When Erev Shavuos is Shabbos it is on Friday only; the Shabbos is שבת ערב שבועות, and the Full Display shows ערב שבועות through Shabbos)*
   * **שבועות א׳** *(ON at candle-lighting, OFF at Tzeis — OR when Erev Shavuos is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
   * **שבועות ב׳** *(ON at Tzeis (end of day 1), OFF at Tzeis)*
   * **שבועות א׳ וב׳** *(ON at candle-lighting, OFF at Tzeis (end of day 2) — OR when Erev Shavuos is on Shabbos: ON at Tzeis (Motzei Shabbos), OFF at Tzeis)*
@@ -189,7 +190,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
     * אחרון של פסח
     * שבועות ב׳
   * **ערב שבת שחל ביום טוב** *(ON at Alos, OFF at candle-lighting)*
-  * **ערב יום טוב שחל בשבת** *(ON at Alos, OFF at candle-lighting (Tzeis))*
+  * **ערב יום טוב שחל בשבת** *(ON at Alos, OFF at Tzeis)*
   * **מוצאי שבת שחל ביום טוב** *(ON at Tzeis, OFF at 02:00)*
   * **מוצאי יום טוב שחל בשבת** *(ON at Tzeis, OFF at 02:00)*
 
@@ -197,7 +198,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 
 **Every one of those binary sensors publishes its own window.** `Window_Start` and
 `Window_End` hold the exact minute the flag turns on and off — the same edges listed in
-brackets above, looked ahead up to two weeks — so an automation can tell how long it is
+brackets above, computed from the same rules and looked ahead a year or more — so an automation can tell how long it is
 until מוצאי פסח without waiting for the flag itself to flip. The same windows are what
 `calendar.yidcal_holiday` draws its events from, which is why a holiday appears there as
 a timed block rather than an all-day one.
@@ -212,6 +213,7 @@ a timed block rather than an all-day one.
   **Holiday Erev binary sensors (attribute-derived)**: these specific Erev holiday binaries now start at **Tzeis the night before** (instead of Alos):
 
   * ערב ראש השנה
+  * ערב יום כיפור
   * ערב סוכות
   * ערב פסח מוקדם
   * ערב פסח
@@ -243,6 +245,7 @@ a timed block rather than an all-day one.
   | `parsha` | Weekly parsha — empty during the regalim, where it is suppressed |
   | `holiday` | The `sensor.yidcal_holiday` **state** — empty while an `ערב…` is still hidden before Alos, and empty for the many flags that are attribute-only (`ראש חודש`, `שבת ראש חודש`, …) |
   | `shabbos_erev_pesach` | `ערב פסח` on a Shabbos that is Erev Pesach — empty when the holiday state already says it |
+  | `shabbos_erev_shavuos` | `ערב שבועות` on a Shabbos that is Erev Shavuos — empty when the holiday state already says it |
   | `special_shabbos` | Special Shabbos name, only inside its display window (Friday from midday or candle-lighting, through Motzei Shabbos) |
   | `rosh_chodesh` | Rosh Chodesh — empty when `שבת ראש חודש` already covers it |
   | `sefirah_short` | Short Omer count, e.g. `ח׳ בעומר` |
@@ -634,6 +637,7 @@ They describe the same night the state does, so they follow the same Alos rollov
     * `לא׳ דחול המועד פסח`, `לב׳ דחול המועד סוכות`
     * `לשביעי של פסח`, `לאחרון של פסח`, `להושענא רבה`
     * `לערב פסח`, `לערב שבועות`, `לערב ראש השנה`, `לערב יום כיפור`, `לערב סוכות` — the day before a major Yom Tov
+    * `לשבת פרשת צו • שבת הגדול • ערב פסח` — a Shabbos that is Erev Pesach or Erev Shavuos gets the Erev added after its Shabbos names (that Friday keeps its regular weekday label)
     * `לפורים`, `לשושן פורים`, `לחנוכה א׳`, `לתענית אסתר`
     * `לי״ז בתמוז`, `לט׳ באב`, `לי׳ בטבת`, `לצום גדליה`
     * `לל״ג בעומר`, `לט״ו בשבט`
