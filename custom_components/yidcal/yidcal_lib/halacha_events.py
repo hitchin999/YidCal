@@ -52,6 +52,8 @@ What's NOT in here (and why):
 """
 from __future__ import annotations
 
+from functools import lru_cache as _lru_cache
+
 from dataclasses import dataclass, field
 from datetime import date as date_cls, datetime, timedelta
 from typing import Iterable
@@ -59,6 +61,7 @@ from zoneinfo import ZoneInfo
 
 from pyluach import dates as pl_dates, parshios
 
+from .calcache import is_yom_tov as _cached_is_yom_tov
 from .molad_text import (
     day_label as _mt_day_label,
     tod_label as _mt_tod_label,
@@ -348,8 +351,7 @@ def _is_no_mel_internal(d: date_cls, *, diaspora: bool) -> bool:
     Imports hdate lazily so this module can be imported in contexts
     that don't need YT classification (e.g. raw Tekufah lookups).
     """
-    from hdate import HDateInfo
-    return d.weekday() == 5 or HDateInfo(d, diaspora=diaspora).is_yom_tov
+    return d.weekday() == 5 or _cached_is_yom_tov(d, diaspora)
 
 
 def is_no_melacha(d: date_cls, *, diaspora: bool) -> bool:
@@ -766,12 +768,21 @@ def vayehi_noam_omitted(shabbos_date: date_cls, *, diaspora: bool) -> bool:
     return yt_sun_thu or chm_sun_fri
 
 
+@_lru_cache(maxsize=16384)
+def _hebrew_date(d: date_cls) -> PHebrewDate:
+    """``PHebrewDate.from_pydate(d)``, memoized. The flag rules convert the same
+    few hundred dates once per flag, and the lookahead scans years of days.
+    pyluach dates are values (nothing here changes one in place), so sharing
+    the converted object is safe."""
+    return PHebrewDate.from_pydate(d)
+
+
 def chanukah_day_for_date(d: date_cls) -> int | None:
     """Return the day of Chanukah (1-8) for a civil date, or None if
     the date is outside Chanukah. Handles both Kislev-30-day and
     Kislev-29-day years correctly by counting forward from 25 Kislev.
     """
-    ph = PHebrewDate.from_pydate(d)
+    ph = _hebrew_date(d)
     # Quick reject: Chanukah spans 25 Kislev (month 9) through ~2-3 Teves.
     if ph.month == 9 and ph.day >= 25:
         return ph.day - 24  # 25→1 .. 30→6
@@ -875,7 +886,7 @@ def rc_day_position_for_date(d: date_cls) -> tuple[int, int] | None:
         (1, 2); Sun returns (2, 2).
       • RC Shvat 5786 = (Mon 1 Shvat) → returns (1, 1).
     """
-    ph = PHebrewDate.from_pydate(d)
+    ph = _hebrew_date(d)
     # Case A: day 30 of any month — this is ALWAYS day 1 of a 2-day
     # RC for the next Hebrew month.
     if ph.day == 30:
@@ -884,7 +895,7 @@ def rc_day_position_for_date(d: date_cls) -> tuple[int, int] | None:
     # RC, or day 2 of a 2-day RC. Decide by checking the prior day.
     if ph.day == 1:
         prev = d - timedelta(days=1)
-        ph_prev = PHebrewDate.from_pydate(prev)
+        ph_prev = _hebrew_date(prev)
         if ph_prev.day == 30:
             return (2, 2)
         return (1, 1)
@@ -1145,7 +1156,6 @@ def parsha_for_mevorchim_rc_day_he(
       kriah uses נשא (the next parsha-bearing Shabbos's parsha, Sat
       May 30). This function returns ``"נשא א׳"``.
     """
-    from hdate import HDateInfo  # local import — same pattern as is_no_melacha
 
     # Find the upcoming Shabbos (or rc_day itself if it's Shabbos)
     if rc_day.weekday() == 5:
@@ -1174,7 +1184,7 @@ def parsha_for_mevorchim_rc_day_he(
         if d.weekday() not in (0, 3):  # Mon=0, Thu=3
             continue
         try:
-            is_yt = HDateInfo(d, diaspora=diaspora).is_yom_tov
+            is_yt = _cached_is_yom_tov(d, diaspora)
         except Exception:
             is_yt = False
         if is_yt:
@@ -1813,7 +1823,7 @@ FLAG_SHAPES: dict[str, tuple[tuple[str, int], tuple[str, int]]] = {
 
 
 def _month_day(d: date_cls) -> tuple[int, int]:
-    h = PHebrewDate.from_pydate(d)
+    h = _hebrew_date(d)
     return h.month, h.day
 
 
@@ -1844,7 +1854,7 @@ def _erev_or_friday_before(d: date_cls, month: int, erev_day: int) -> bool:
     it falls on Shabbos. Then the Erev flag is on the Friday before only (until
     candle-lighting); that Shabbos has its own flag (שבת ערב פסח / שבת ערב שבועות),
     and the Full Display shows the Erev all Shabbos."""
-    h = PHebrewDate.from_pydate(d)
+    h = _hebrew_date(d)
     if h.month != month:
         return False
     erev_is_shabbos = PHebrewDate(h.year, month, erev_day).to_pydate().weekday() == 5
@@ -1853,7 +1863,7 @@ def _erev_or_friday_before(d: date_cls, month: int, erev_day: int) -> bool:
 
 def _chol_hamoed_day(d: date_cls, diaspora: bool, month: int) -> int:
     """1-based day of Chol HaMoed (diaspora 17–20, Israel 16–20), else 0."""
-    h = PHebrewDate.from_pydate(d)
+    h = _hebrew_date(d)
     first = 17 if diaspora else 16
     return h.day - first + 1 if h.month == month and first <= h.day <= 20 else 0
 
@@ -1866,13 +1876,13 @@ def _chm_pesach_shape(d: date_cls, diaspora: bool) -> str:
 
 def _real_adar_day(d: date_cls) -> int:
     """Day of month when ``d`` is in Purim's Adar (Adar II in a leap year), else 0."""
-    h = PHebrewDate.from_pydate(d)
+    h = _hebrew_date(d)
     return h.day if h.month == real_adar_month(h.year) else 0
 
 
 def _purim_katan_day(d: date_cls) -> int:
     """Day of month when ``d`` is in Adar I of a leap year, else 0."""
-    h = PHebrewDate.from_pydate(d)
+    h = _hebrew_date(d)
     return h.day if h.month == 12 and is_leap_hebrew_year(h.year) else 0
 
 
@@ -1908,7 +1918,7 @@ def _week_parsha(d: date_cls) -> str:
     """This week's parsha (pyluach, diaspora schedule), upper-case; '' if none."""
     parsha = _week_parsha_cache.get(d)
     if parsha is None:
-        parsha = (parshios.getparsha_string(PHebrewDate.from_pydate(d)) or "").upper()
+        parsha = (parshios.getparsha_string(_hebrew_date(d)) or "").upper()
         if len(_week_parsha_cache) > 256:
             _week_parsha_cache.clear()
         _week_parsha_cache[d] = parsha
@@ -1917,27 +1927,19 @@ def _week_parsha(d: date_cls) -> str:
 
 def _bedikah_night_day(d: date_cls) -> int:
     """Day of Nisan whose night is Bedikas Chametz: 14, or 13 when 14 is Shabbos."""
-    year = PHebrewDate.from_pydate(d).year
+    year = _hebrew_date(d).year
     return 13 if PHebrewDate(year, 1, 14).to_pydate().weekday() == 5 else 14
 
 
 def _tisha_bav_fast_day(d: date_cls) -> date_cls:
     """The observed fast day of d's year: 9 Av, or Sunday 10 Av when 9 Av is Shabbos."""
-    return tisha_bav_observed(PHebrewDate.from_pydate(d).year)
-
-
-_yom_tov_cache: dict[tuple[date_cls, bool], bool] = {}
+    return tisha_bav_observed(_hebrew_date(d).year)
 
 
 def _is_yom_tov(d: date_cls, diaspora: bool) -> bool:
-    """hdate's Yom Tov test, the one the Erev / Motzei flags have always used."""
-    key = (d, diaspora)
-    if key not in _yom_tov_cache:
-        from hdate import HDateInfo
-        if len(_yom_tov_cache) > 256:
-            _yom_tov_cache.clear()
-        _yom_tov_cache[key] = bool(HDateInfo(d, diaspora=diaspora).is_yom_tov)
-    return _yom_tov_cache[key]
+    """hdate's Yom Tov test (the one the Erev / Motzei flags have always used),
+    answered by the shared fast check in calcache."""
+    return _cached_is_yom_tov(d, diaspora)
 
 
 def _is_asru_chag_sukkos(d: date_cls, diaspora: bool) -> bool:
