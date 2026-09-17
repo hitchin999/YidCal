@@ -25,7 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
 
-from hdate import HDateInfo
+from .yidcal_lib.calcache import yom_tov_day as _yom_tov_day
 
 from .device import YidCalSpecialDevice
 from .const import DOMAIN
@@ -131,8 +131,8 @@ class ErevAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
 
     def _is_erev_day(self, today) -> bool:
         """True if today is Erev Shabbos (Friday, not YT) or Erev Yom Tov (weekday, not already YT/Shabbos)."""
-        hd_today = HDateInfo(today, diaspora=self._diaspora)
-        hd_tomorrow = HDateInfo(today + timedelta(days=1), diaspora=self._diaspora)
+        hd_today = _yom_tov_day(today, self._diaspora)
+        hd_tomorrow = _yom_tov_day(today + timedelta(days=1), self._diaspora)
 
         is_yomtov_today = hd_today.is_yom_tov
         is_friday = today.weekday() == 4
