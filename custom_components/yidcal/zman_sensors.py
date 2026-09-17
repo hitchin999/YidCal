@@ -16,6 +16,7 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
 from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov, yom_tov_day as _yom_tov_day
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from zmanim.util.geo_location import GeoLocation
@@ -39,7 +40,7 @@ def get_holiday_duration(pydate: datetime.date, *, diaspora: bool) -> int:
     Return the number of consecutive Yom Tov days starting at `pydate`,
     using pyluach to detect the festival name.
     """
-    hd0 = HDateInfo(pydate, diaspora=diaspora)
+    hd0 = _yom_tov_day(pydate, diaspora)
     if not hd0.is_yom_tov:
         return 0  # not a festival
 
@@ -78,7 +79,7 @@ def _no_melacha_block(
     Returns None when *d* is neither Shabbos nor Yom Tov.
     """
     def _is_no_mel(dd: datetime.date) -> bool:
-        return dd.weekday() == 5 or HDateInfo(dd, diaspora=diaspora).is_yom_tov
+        return dd.weekday() == 5 or _cached_is_yom_tov(dd, diaspora)
 
     if not _is_no_mel(d):
         return None
@@ -141,7 +142,7 @@ def lighting_event_for_day(
       - 'motzaei_shabbos_after_tzeis'    → Shabbos → Yom Tov (after tzeis)
       - 'none'                           → no lighting that civil day
     """
-    hd_today = HDateInfo(d, diaspora=diaspora)
+    hd_today = _yom_tov_day(d, diaspora)
     hd_tom   = HDateInfo(d + timedelta(days=1), diaspora=diaspora)
 
     is_shabbos_today = (d.weekday() == 5)          # Saturday
@@ -264,7 +265,7 @@ def label_for_kind_and_context(d: datetime.date, kind: str, *, diaspora: bool) -
         # Tomorrow’s context
         tom = d + timedelta(days=1)
         is_shabbos_tom = (tom.weekday() == 5)
-        is_yt_tom      = HDateInfo(tom, diaspora=diaspora).is_yom_tov
+        is_yt_tom      = _cached_is_yom_tov(tom, diaspora)
 
         # If the first Yom Tov day is on Shabbos (e.g., Rosh Hashanah on Shabbos)
         if is_shabbos_tom and is_yt_tom:
@@ -426,15 +427,15 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         def last_motzi_cutoff_date(ref: datetime.date) -> datetime.date | None:
             for back in range(0, 14):
                 d   = ref - timedelta(days=back)
-                hd0 = HDateInfo(d, diaspora=self._diaspora)
-                hd1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+                hd0 = _yom_tov_day(d, self._diaspora)
+                hd1 = _yom_tov_day(d + timedelta(days=1), self._diaspora)
                 ended_shabbos = (d.weekday() == 5) and (not hd1.is_yom_tov)
                 ended_yomtov  = hd0.is_yom_tov and (not hd1.is_yom_tov)
                 if ended_shabbos or ended_yomtov:
                     return d + timedelta(days=1)
             return None
 
-        hd_today = HDateInfo(today, diaspora=self._diaspora)
+        hd_today = _yom_tov_day(today, self._diaspora)
         cutoff = last_motzi_cutoff_date(today)
         allow_forward_jump_today = (cutoff is not None and today >= cutoff)
 
@@ -543,7 +544,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         def is_yt_related(d: datetime.date, kind: str) -> bool:
             if kind != "erev_before_sunset":
                 return True
-            return HDateInfo(d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov
+            return _cached_is_yom_tov(d + timedelta(days=1), self._diaspora)
 
         clusters: list[list[tuple[datetime.date, datetime.datetime, str]]] = []
         if events:
@@ -610,7 +611,7 @@ class ZmanErevSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             cluster_starts_motzaei_shabbos = (cl_start == (next_shabbos + timedelta(days=1)))
             connected_ok = cluster_includes_next_shabbos or cluster_starts_motzaei_shabbos
 
-            next_shabbos_is_yom_tov = HDateInfo(next_shabbos, diaspora=self._diaspora).is_yom_tov
+            next_shabbos_is_yom_tov = _cached_is_yom_tov(next_shabbos, self._diaspora)
             plain_shabbos_pending = (
                 not next_shabbos_is_yom_tov
                 and (cl_start > next_shabbos)
@@ -779,7 +780,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
         """
         end = start
         # Walk forward as long as the next day is also Yom Tov
-        while HDateInfo(end + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+        while _cached_is_yom_tov(end + timedelta(days=1), self._diaspora):
             end += timedelta(days=1)
 
         if self._diaspora:
@@ -817,7 +818,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             return best
 
         # ---------------- IN NO-MELACHA BLOCK: target block's end ----------------
-        hd_today = HDateInfo(today, diaspora=self._diaspora)
+        hd_today = _yom_tov_day(today, self._diaspora)
         block = _no_melacha_block(today, diaspora=self._diaspora)
         if block is not None:
             block_start, block_end = block
@@ -851,7 +852,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
                 start_scan = ref_dt.date() + timedelta(days=1)
                 for i in range(0, 30):
                     d = start_scan + timedelta(days=i)
-                    if HDateInfo(d, diaspora=self._diaspora).is_yom_tov and not HDateInfo(d - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                    if _cached_is_yom_tov(d, self._diaspora) and not _cached_is_yom_tov(d - timedelta(days=1), self._diaspora):
                         blk = _no_melacha_block(d, diaspora=self._diaspora)
                         span_end = blk[1] if blk else self._yt_span_end(d)
                         end_dt = sunset_on(span_end) + timedelta(minutes=self._havdalah)
@@ -927,8 +928,8 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
 
             for i in range(0, 30):  # scan up to ~1 month
                 d = today + timedelta(days=i)
-                hd_d = HDateInfo(d, diaspora=self._diaspora)
-                hd_prev = HDateInfo(d - timedelta(days=1), diaspora=self._diaspora)
+                hd_d = _yom_tov_day(d, self._diaspora)
+                hd_prev = _yom_tov_day(d - timedelta(days=1), self._diaspora)
                 if hd_d.is_yom_tov and not hd_prev.is_yom_tov:
                     blk = _no_melacha_block(d, diaspora=self._diaspora)
                     span_end = blk[1] if blk else self._yt_span_end(d)
@@ -973,7 +974,7 @@ class ZmanMotziSensor(YidCalZmanDevice, RestoreEntity, SensorEntity):
             start_scan = ref_dt.date() + timedelta(days=1)
             for i in range(0, 30):
                 d2 = start_scan + timedelta(days=i)
-                if HDateInfo(d2, diaspora=self._diaspora).is_yom_tov and not HDateInfo(d2 - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                if _cached_is_yom_tov(d2, self._diaspora) and not _cached_is_yom_tov(d2 - timedelta(days=1), self._diaspora):
                     blk2 = _no_melacha_block(d2, diaspora=self._diaspora)
                     span_end2 = blk2[1] if blk2 else self._yt_span_end(d2)
                     end_dt2 = sunset_on(span_end2) + timedelta(minutes=self._havdalah)
