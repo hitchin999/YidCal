@@ -14,8 +14,8 @@ is a thin front end over the pure functions the matching sensor already
 uses, so a change to a rule reaches the calendar without being copied:
 
   Date                 pyluach + ``parsha_sensor.compute_parsha_state``
-  Holiday              ``HolidaySensor`` simulated at future moments, with
-                       the exact windows it records on ``_flag_windows``
+  Holiday              ``flag_windows``: each flag's runs from
+                       ``halacha_events.FLAG_SPECS``, on the flag's own edges
   Day Type             ``DayTypeSensor`` simulated at midday
   Shabbos Mevorchim    ``YidCalHelper.is_shabbos_mevorchim`` + ``molad_context``
   Amud / Daf HaYomi    ``compute_amud_hayomi`` / ``compute_daf_yomi``
@@ -177,20 +177,6 @@ def _zman_summary(label: str) -> str:
     chometz deadlines — are returned unchanged rather than doubled up.
     """
     return label if "זמן" in label else f"זמן {label}"
-
-
-def _merge_spans(spans: list[list[dt.datetime]]) -> list[tuple[dt.datetime, dt.datetime]]:
-    """Coalesce overlapping or touching [start, end] pairs."""
-    if not spans:
-        return []
-    ordered = sorted(spans, key=lambda s: s[0])
-    out: list[list[dt.datetime]] = [list(ordered[0])]
-    for start, end in ordered[1:]:
-        if start <= out[-1][1]:
-            out[-1][1] = max(out[-1][1], end)
-        else:
-            out.append([start, end])
-    return [(s, e) for s, e in out]
 
 
 def _days(start: dt.datetime, end: dt.datetime):
@@ -447,71 +433,33 @@ class DateCalendar(YidCalCalendar):
 # ─────────────────────────── Holiday calendar ───────────────────────────
 
 class HolidayCalendar(YidCalCalendar):
-    """One timed event per holiday attribute, spanning exactly its window.
+    """One timed event per holiday attribute, spanning exactly its run.
 
-    ``sensor.yidcal_holiday`` publishes ~106 boolean flags and records,
-    on ``_flag_windows``, the precise start and end of every flag that is
-    on. That is where the "from 9:35 until …" comes from — these are the
-    real candle-lighting / havdalah / alos edges the flag itself is gated
-    on, not a whole-day approximation.
-
-    A flag on for several days holds a different window each day (Chanukah
-    is eight, Rosh Chodesh is two), so same-flag windows that touch are
-    merged into the one run they belong to.
+    The runs come from ``flag_windows``, computed from the same flag specs
+    (``halacha_events.FLAG_SPECS``) ``sensor.yidcal_holiday`` decides each
+    flag from, so every event starts and ends on the flag's own edges. A flag
+    on for several days (Chanukah, Rosh Chodesh) is one event for the whole
+    run, and a run crossing the edge of the requested range is still reported
+    whole.
     """
-
-    # Two simulations per day makes this the most expensive scan here, so
-    # its live window is the shortest — long enough to always hold the
-    # next holiday, short enough that the six-hourly rebuild stays cheap.
-    _live_lookahead = dt.timedelta(days=21)
-    _live_lookback = dt.timedelta(days=1)
-
-    # Night-only windows contain 01:00, day-only ones contain 12:00; every
-    # window shape the holiday sensor uses spans at least one of the two.
-    _SAMPLE_HOURS = (1, 12)
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__(hass, "holiday", "YidCal Holiday", "mdi:calendar-star")
 
     async def _async_build(self, start, end):
+        from .flag_windows import async_get_cache
         from .holiday_sensor import HolidaySensor
 
         def factory():
             return HolidaySensor(self.hass, self._candle, self._havdalah)
 
-        # Scan a day either side so a run straddling the range edge is
-        # reported whole rather than clipped to the sample grid.
-        scan_start = start - dt.timedelta(days=1)
-        scan_end = end + dt.timedelta(days=1)
-
-        per_flag: dict[str, list[list[dt.datetime]]] = {}
-        for index, day in enumerate(_days(scan_start, scan_end)):
-            if index and index % _YIELD_EVERY == 0:
-                await asyncio.sleep(0)
-            for hour in self._SAMPLE_HOURS:
-                try:
-                    _state, row, windows = await _simulate_holiday(
-                        factory, self._at(day, hour), self._geo
-                    )
-                except Exception:  # noqa: BLE001
-                    _LOGGER.debug(
-                        "YidCal holiday calendar: sample failed for %s %02d:00",
-                        day, hour, exc_info=True,
-                    )
-                    continue
-                for flag, window in windows.items():
-                    if not row.get(flag):
-                        continue
-                    win_start, win_end = window
-                    if win_end <= win_start:
-                        continue
-                    per_flag.setdefault(flag, []).append([win_start, win_end])
+        # the flags sensor.yidcal_holiday publishes in this mode
+        flags = [name for name, value in factory()._empty_attrs_for_mode().items() if value is False]
+        runs = await async_get_cache(self.hass, factory).async_runs_between(flags, start, end)
 
         events: list[CalendarEvent] = []
-        for flag, spans in per_flag.items():
-            for span_start, span_end in _merge_spans(spans):
-                if span_end <= start or span_start >= end:
-                    continue
+        for flag in flags:
+            for span_start, span_end in runs.get(flag, ()):
                 event = _timed(
                     span_start,
                     span_end,
