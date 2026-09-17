@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 from pyluach.hebrewcal import HebrewDate as PHebrewDate
 
 from .const import DOMAIN
@@ -77,7 +77,7 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
         return d.weekday() == 5
 
     def _is_yomtov(self, d: datetime.date) -> bool:
-        return HDateInfo(d, diaspora=self._diaspora).is_yom_tov
+        return _cached_is_yom_tov(d, self._diaspora)
 
     def _qualifies(self, d: datetime.date) -> bool:
         """Whether the HALACHIC day d qualifies (before Shabbos/YT exclusions)."""
