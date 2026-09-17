@@ -105,6 +105,7 @@ LABELS = {
     "lbl_enable_zmanim_lookup": {"yi": "צולייגען די זמנים Lookup & service call sensors", "he": "הוספת חיישן Zmanim Lookup ושירות yidcal.check_zmanim", "en": "Create the Zmanim Lookup sensor and yidcal.check_zmanim service"},
     "lbl_enable_luach_pdf": {"yi": "צולייגען די לוח PDF סערוויס", "he": "הוספת שירות יצירת לוח (PDF)", "en": "Create the Generate Luach (PDF) service"},
     "lbl_enable_yurtzeit_daily": {"yi": "צולייגען די טעגליכע יארצייטן סענסאר", "he": "הפעלת חיישן יארצייט יומי", "en": "Create daily Yahrtzeit sensor"},
+    "note_setup_wait": {"yi": "נאכן ענדיגן דעם סטעפ ווערן אלע סענסארס אויפגעשטעלט. אויף א ראזבערי פאי קען דאס נעמען א מינוט אדער מער — ביטע ווארט און מאכט נישט צו דעם ווינדאו.", "he": "לאחר סיום שלב זה יוגדרו כל החיישנים. במחשב רספברי פיי זה עלול לקחת דקה או יותר — אנא המתן ואל תסגור את החלון.", "en": "After you finish this step, YidCal sets up all of its sensors. On a Raspberry Pi this can take a minute or more. Please wait and don't close this window."},
     "lbl_enable_weekly_yurtzeit": {"yi": "צולייגען די וועכנטליכע יארצייטן סענסאר", "he": "הפעלת חיישן יארצייט שבועי", "en": "Create weekly Yahrtzeit sensor"},
     "lbl_yurtzeit_databases": {"yi": "וועלכע יארצייטן דאטאבעיס(ן) צו ניצן", "he": "באילו מאגרי יארצייטים להשתמש", "en": "Which Yahrtzeit database(s) to use"},
     "lbl_enable_early_shabbos": {"yi": "עקטיוועט פריער שבת", "he": "הפעלת שבת מוקדמת", "en": "Enable early Shabbos"},
@@ -333,7 +334,7 @@ STEPS: dict[str, dict] = {
     "config.calendars": {"kind": "form", "title": "calendars",
                          "fields": _CALENDAR_FIELDS, "descs": _CALENDAR_DESCS},
     "config.yurtzeit": {"kind": "form", "title": "yurtzeit",
-                        "fields": _YURTZEIT_FIELDS, "descs": []},
+                        "fields": _YURTZEIT_FIELDS, "descs": [], "note": "setup_wait"},
 
     # --- options flow ---
     "options.init":     {"kind": "menu", "menu": "init"},
@@ -453,7 +454,9 @@ def placeholders(step: str, lang: str) -> dict[str, str]:
         return out
 
     out["title"] = _pick(TITLES[spec["title"]], lang) if spec.get("title") else ""
-    out["desc"] = ""
+    # A step-level note: the config flow's last step warns that the setup
+    # after it can take a while. Empty on every other form step.
+    out["desc"] = t(f"note_{spec['note']}", lang) if spec.get("note") else ""
     for f in spec["fields"]:
         out[f"lbl_{f}"] = t(f"lbl_{f}", lang)
     for f in spec["descs"]:
