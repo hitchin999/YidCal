@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -73,7 +73,7 @@ class NoMeluchaShabbosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         """Saturday and NOT Yom Tov."""
         if shabbos_date.weekday() != 5:
             return False
-        return not HDateInfo(shabbos_date, diaspora=self._diaspora).is_yom_tov
+        return not _cached_is_yom_tov(shabbos_date, self._diaspora)
 
     def _get_effective_early_start(self, friday_date):
         """
