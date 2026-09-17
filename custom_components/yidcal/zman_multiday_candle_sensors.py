@@ -22,7 +22,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 import homeassistant.util.dt as dt_util
 
-from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 
 from .const import DOMAIN
 from .yidcal_lib.zman_compute import round_ceil, round_half_up
@@ -93,7 +93,7 @@ def _span_end_date(cluster_last_date: datetime.date, *, diaspora: bool) -> datet
     while True:
         next_d = d + timedelta(days=1)
         is_shabbos_next = (next_d.weekday() == 5)
-        is_yt_next = HDateInfo(next_d, diaspora=diaspora).is_yom_tov
+        is_yt_next = _cached_is_yom_tov(next_d, diaspora)
         if is_shabbos_next or is_yt_next:
             d = next_d
         else:
