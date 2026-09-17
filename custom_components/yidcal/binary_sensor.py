@@ -26,6 +26,7 @@ from .yidcal_lib.zman_compute import (
     sunset_for_date,
 )
 from hdate import HDateInfo
+from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov, yom_tov_day as _yom_tov_day
 from hdate.translator import set_language
 
 set_language("he")
@@ -543,14 +544,14 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         (same predicate as the next-window finder)."""
         for i in range(1, 33):
             d = today - timedelta(days=i)
-            hd_d = HDateInfo(d, diaspora=self._diaspora)
+            hd_d = _yom_tov_day(d, self._diaspora)
             if hd_d.is_yom_tov:
                 continue
             if d.weekday() == 5:
                 continue
             if d.weekday() == 4:
                 return d
-            if HDateInfo(d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+            if _cached_is_yom_tov(d + timedelta(days=1), self._diaspora):
                 return d
         return None
 
@@ -568,7 +569,7 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         candle_end_cut = round_half_up(sunset_d - timedelta(minutes=self._candle))
 
         is_fri = (d.weekday() == 4)
-        is_yt1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov
+        is_yt1 = _cached_is_yom_tov(d + timedelta(days=1), self._diaspora)
 
         eff_end = self._effective_erev_end(
             erev_date=d,
@@ -636,8 +637,8 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         next_start = next_end = None
         for i in range(32):
             d = today + timedelta(days=i)
-            hd_d  = HDateInfo(d, diaspora=self._diaspora)
-            hd_d1 = HDateInfo(d + timedelta(days=1), diaspora=self._diaspora)
+            hd_d  = _yom_tov_day(d, self._diaspora)
+            hd_d1 = _yom_tov_day(d + timedelta(days=1), self._diaspora)
 
             is_yt  = hd_d.is_yom_tov
             is_yt1 = hd_d1.is_yom_tov
@@ -678,9 +679,9 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         eruv_tavshilin = False
         if raw_erev_holiday:
             span_start = today + timedelta(days=1)
-            if HDateInfo(span_start, diaspora=self._diaspora).is_yom_tov:
+            if _cached_is_yom_tov(span_start, self._diaspora):
                 span_end = span_start
-                while HDateInfo(span_end + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+                while _cached_is_yom_tov(span_end + timedelta(days=1), self._diaspora):
                     span_end += timedelta(days=1)
 
                 includes_friday = any(
@@ -886,12 +887,12 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             hd = HDateInfo(d, diaspora=self._diaspora)
 
             # Only first day of each contiguous YT block
-            if not hd.is_yom_tov or HDateInfo(d - timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+            if not hd.is_yom_tov or _cached_is_yom_tov(d - timedelta(days=1), self._diaspora):
                 continue
 
             # Find last day of this YT block
             end_d = d
-            while HDateInfo(end_d + timedelta(days=1), diaspora=self._diaspora).is_yom_tov:
+            while _cached_is_yom_tov(end_d + timedelta(days=1), self._diaspora):
                 end_d += timedelta(days=1)
 
             # Candle-based start (Erev YT)
