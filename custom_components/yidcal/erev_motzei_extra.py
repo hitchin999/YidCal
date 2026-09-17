@@ -1,19 +1,20 @@
 # erev_motzei_extra.py
-from __future__ import annotations
-import datetime
-from datetime import timedelta, time
-from zoneinfo import ZoneInfo
-from typing import Dict
+"""The Erev / Motzei flags: ערב שבת, ערב יום טוב, מוצאי שבת, מוצאי יום טוב,
+the שחל ביום טוב / שחל בשבת variants, and שבת ערב פורים.
 
-from hdate import HDateInfo
+Their rules and windows now live in halacha_events.FLAG_SPECS with every other
+holiday flag. These functions keep this module's call signatures working on top
+of that single source.
+"""
+from __future__ import annotations
+
+import datetime
+from typing import Dict
+from zoneinfo import ZoneInfo
+
 from zmanim.util.geo_location import GeoLocation
 
-from .yidcal_lib.zman_compute import (
-    dawn_for_date,
-    round_ceil as _round_ceil,
-    round_half_up as _round_half_up,
-    sunset_for_date,
-)
+from .yidcal_lib import halacha_events as he
 
 EXTRA_ATTRS = [
     "ערב שבת",
@@ -37,142 +38,13 @@ def compute_erev_motzei_flags_and_windows(
     candle_offset: int,
     havdalah_offset: int,
 ) -> tuple[Dict[str, bool], Dict[str, tuple[datetime.datetime, datetime.datetime]]]:
-    """
-    Returns the 8 requested flags keyed by their Hebrew names.
-    Windows:
-      • ערב שבת / ערב יום טוב → Alos..Candle
-      • מוצאי שבת / מוצאי יום טוב → Havdalah..02:00
-      • ערב שבת שחל ביום טוב → Alos..Candle
-      • ערב יום טוב שחל בשבת → Alos..Havdalah (candle-lighting is at tzeis)
-      • מוצאי שבת שחל ביום טוב / מוצאי יום טוב שחל בשבת → Havdalah..02:00
-    """
-    today = now.date()
-    yesterday = today - timedelta(days=1)
-    tomorrow = today + timedelta(days=1)
-
-    sunset = sunset_for_date(geo=geo, tz=tz, base_date=today)
-
-    alos   = _round_half_up(dawn_for_date(geo=geo, tz=tz, base_date=today))
-    candle = _round_half_up(sunset  - timedelta(minutes=candle_offset))
-    havdalah = _round_ceil(sunset + timedelta(minutes=havdalah_offset))
-
-    hd_y = HDateInfo(yesterday, diaspora=diaspora)
-    hd_t = HDateInfo(today,    diaspora=diaspora)
-    hd_n = HDateInfo(tomorrow, diaspora=diaspora)
-
-    is_fri = today.weekday() == 4
-    is_sat = today.weekday() == 5
-    was_sat = yesterday.weekday() == 5
-    will_sat = tomorrow.weekday() == 5  # i.e. today == Friday
-
-    is_yomtov_today = hd_t.is_yom_tov
-    is_yomtov_yest  = hd_y.is_yom_tov
-    is_yomtov_tom   = hd_n.is_yom_tov
-
-    # ---- helpers for motzei-style windows ----
-    def _motzei_window(base_date: datetime.date) -> tuple[datetime.datetime, datetime.datetime]:
-        s = sunset_for_date(geo=geo, tz=tz, base_date=base_date)
-        start = _round_ceil(s + timedelta(minutes=havdalah_offset))
-        end   = datetime.datetime.combine(base_date + timedelta(days=1), time(2, 0), tz)
-        return start, end
-
-    windows: Dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
-
-    def _in(name: str, dt_start: datetime.datetime, dt_end: datetime.datetime) -> bool:
-        """Is `now` inside this flag's window - and what was that window?
-
-        The bounds are recorded rather than discarded. They are worked out here
-        to decide the flag, and this is the only place that knows them, so a
-        consumer asking "when does erev Shabbos start" reads them from here
-        instead of rebuilding the same alos/candle/havdalah arithmetic and
-        drifting from it.
-        """
-        windows[name] = (dt_start, dt_end)
-        return dt_start <= now < dt_end
-
-    flags: Dict[str, bool] = {k: False for k in EXTRA_ATTRS}
-
-    # ── ערב שבת (Friday, not YT today), window Alos..Candle
-    if is_fri and not is_yomtov_today:
-        flags["ערב שבת"] = _in("ערב שבת", alos, candle)
-
-    # ── ערב יום טוב (tomorrow YT, today not Shabbos/YT), window Alos..Candle
-    if (not is_sat) and (not is_yomtov_today) and is_yomtov_tom:
-        flags["ערב יום טוב"] = _in("ערב יום טוב", alos, candle)
-
-    # ── ערב שבת שחל ביום טוב (Friday that IS YT today), Alos..Candle
-    if is_fri and is_yomtov_today:
-        flags["ערב שבת שחל ביום טוב"] = _in("ערב שבת שחל ביום טוב", alos, candle)
-
-    # ── ערב יום טוב שחל בשבת (Shabbos that is Erev YT), Alos..Havdalah
-    # Hadlakas neiros for YT happens after Shabbos ends (tzeis), not pre-sunset.
-    if is_sat and is_yomtov_tom:
-        flags["ערב יום טוב שחל בשבת"] = _in("ערב יום טוב שחל בשבת", alos, havdalah)
-
-    # ── מוצאי שבת (Shabbos → chol only), Havdalah..02:00
-    # Block Shabbos→Yom Tov (yaknehaz); that’s handled by מוצאי שבת שחל ביום טוב.
-    motzei_shabbos_date = (
-        today if (is_sat and not is_yomtov_tom)
-        else yesterday if (was_sat and not is_yomtov_today)
-        else None
+    """The flags keyed by their Hebrew names, and the window of each flag that is on."""
+    on = he.evaluate_flag_specs(
+        now=now, tz=tz, geo=geo, diaspora=diaspora,
+        candle_offset=candle_offset, havdalah_offset=havdalah_offset,
+        names=EXTRA_ATTRS,
     )
-    if motzei_shabbos_date:
-        s, e = _motzei_window(motzei_shabbos_date)
-        flags["מוצאי שבת"] = _in("מוצאי שבת", s, e)
-
-    # ── מוצאי יום טוב (YT → chol only), Havdalah..02:00
-    # Do NOT fire when YT ends into Shabbos (that’s מוצאי יום טוב שחל בשבת).
-    motzei_yt_date = None
-    # YT ends today → tomorrow not YT and not Shabbos
-    if is_yomtov_today and not is_yomtov_tom and not will_sat:
-        motzei_yt_date = today
-    # YT ended yesterday → today not YT and not Shabbos
-    elif is_yomtov_yest and not is_yomtov_today and not is_sat:
-        motzei_yt_date = yesterday
-
-    if motzei_yt_date:
-        s, e = _motzei_window(motzei_yt_date)
-        flags["מוצאי יום טוב"] = _in("מוצאי יום טוב", s, e)
-
-    # ── מוצאי שבת שחל ביום טוב (Shabbos → YT), Havdalah..02:00
-    # Yaknehaz: Shabbos rolling straight into Yom Tov.
-    yak_base = None
-    # Case 1: Today is Shabbos and tomorrow is YT
-    if is_sat and is_yomtov_tom:
-        yak_base = today
-    # Case 2: After midnight: yesterday was Shabbos and today is YT
-    elif was_sat and is_yomtov_today:
-        yak_base = yesterday
-
-    if yak_base:
-        s, e = _motzei_window(yak_base)
-        flags["מוצאי שבת שחל ביום טוב"] = _in("מוצאי שבת שחל ביום טוב", s, e)
-
-    # ── מוצאי יום טוב שחל בשבת (YT → Shabbos), Havdalah..02:00
-    # Only when 2nd-day YT runs straight into a 3rd-day Shabbos:
-    #   • E.g. Fri = YT (day 2), Shabbos = day 3.
-    yt_shabbos_base = None
-    # Case 1: YT ends today and tomorrow is Shabbos (we're on Friday)
-    if is_yomtov_today and not is_yomtov_tom and will_sat:
-        yt_shabbos_base = today
-    # Case 2: After midnight: YT ended yesterday (Friday) and today is Shabbos
-    elif is_yomtov_yest and not is_yomtov_today and yesterday.weekday() == 4 and is_sat:
-        yt_shabbos_base = yesterday
-
-    if yt_shabbos_base:
-        s, e = _motzei_window(yt_shabbos_base)
-        flags["מוצאי יום טוב שחל בשבת"] = _in("מוצאי יום טוב שחל בשבת", s, e)
-
-    # שבת ערב פורים (Shabbos that is 13 Adar / Erev Purim), Alos..Havdalah
-    # Purim starts Motzei Shabbos (Megillah reading at Tzeis), so end at havdalah/tzeis.
-    if is_sat:
-        from pyluach.dates import HebrewDate as PHebrewDate
-        from .yidcal_lib import halacha_events as he
-        hd_sat = PHebrewDate.from_pydate(today)
-        if hd_sat.month == he.real_adar_month(hd_sat.year) and hd_sat.day == 13:
-            flags["שבת ערב פורים"] = _in("שבת ערב פורים", alos, havdalah)
-
-    return flags, windows
+    return {name: name in on for name in EXTRA_ATTRS}, on
 
 
 def compute_erev_motzei_flags(
@@ -184,13 +56,7 @@ def compute_erev_motzei_flags(
     candle_offset: int,
     havdalah_offset: int,
 ) -> Dict[str, bool]:
-    """The flags on their own - the signature this module has always had.
-
-    `compute_erev_motzei_flags_and_windows` returns the same flags plus the
-    windows they were decided from. This wrapper exists so that adding the
-    second return value does not change what an existing caller gets back:
-    anything outside this repo importing the old name keeps working untouched.
-    """
+    """The flags on their own - the signature this module has always had."""
     flags, _windows = compute_erev_motzei_flags_and_windows(
         now=now,
         tz=tz,
