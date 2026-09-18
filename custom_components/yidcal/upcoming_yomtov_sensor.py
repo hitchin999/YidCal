@@ -242,7 +242,7 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         return ("", None)
 
     def _latest_forward_gate(self, from_date: datetime.date, before_date: datetime.date) -> datetime.date | None:
-        """Find the latest Shabbos/YT end between from_date and before_date (exclusive).
+        """Find the latest Shabbos/YT end between from_date and before_date.
 
         Returns the civil day AFTER that Motzi (the 12 AM gate day), or None.
         Scans for: Saturdays (Shabbos ends) and last days of YT spans.
@@ -253,12 +253,14 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             # Saturday = Shabbos end
             if d.weekday() == 5:
                 gate = d + timedelta(days=1)  # Sunday
-                if gate < before_date:
+                # <= : the Motzi is often the night before the erev itself, and
+                # that gate must still hold the sensor off until 12:00 AM.
+                if gate <= before_date:
                     latest_gate = gate
             # Last day of a YT span (is YT today, not YT tomorrow)
             if self._is_yomtov(d) and not self._is_yomtov(d + timedelta(days=1)):
                 gate = d + timedelta(days=1)
-                if gate < before_date:
+                if gate <= before_date:
                     if latest_gate is None or gate > latest_gate:
                         latest_gate = gate
             d += timedelta(days=1)
