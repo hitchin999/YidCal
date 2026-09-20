@@ -176,9 +176,11 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
             hol_state = hol.state.strip()
             show_holiday = True
 
-            # Suppress ALL ערב… until alos of the *halachic* day, using
-            # rounded havdalah + rounded alos (aligned with other sensors).
-            if hol_state.startswith("ערב") and self._geo:
+            # Suppress ערב… until alos of the *halachic* day, using rounded
+            # havdalah + rounded alos (aligned with other sensors). ערב יום כיפור
+            # is the exception: its flag turns on at Tzeis the night before, and
+            # the display follows the flag.
+            if hol_state.startswith("ערב") and hol_state != "ערב יום כיפור" and self._geo:
                 today = now.date()
 
                 # sunset + havdalah_offset → rounded up (Motzei style)
