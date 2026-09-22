@@ -87,9 +87,9 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
         self._tz = ZoneInfo(cfg.get("tzname", hass.config.time_zone))
 
     def _is_during_regel(self, hd) -> bool:
-        """Return True if the Hebrew date falls during one of the three
-        regalim (Pesach, Shavuos, Sukkos) including Chol HaMoed and
-        Yom Tov Sheni — periods where the parsha name is suspended."""
+        """Return True on the days whose kriah is not the parsha: the three
+        regalim (Pesach, Shavuos, Sukkos) including Chol HaMoed and Yom Tov
+        Sheni, plus ראש השנה and יום כיפור — the parsha name is suspended."""
         m, d = hd.month, hd.day
         last_pesach = 22 if self._diaspora else 21
         last_sukkos = 23 if self._diaspora else 22
@@ -98,7 +98,7 @@ class FullDisplaySensor(YidCalDisplayDevice, SensorEntity):
             return True
         if m == 3 and 6 <= d <= last_shavuos:
             return True
-        if m == 7 and 15 <= d <= last_sukkos:
+        if m == 7 and (d in (1, 2, 10) or 15 <= d <= last_sukkos):
             return True
         return False
 
