@@ -95,10 +95,14 @@ def compute_parsha_state(today: date, *, diaspora: bool, metzora_display: str = 
     # Upcoming Shabbos has no parsha (Yom Tov).
     # Only show a parsha with א׳ if there's a regular Mon/Thu
     # this week with a parsha-based kriah (before Yom Tov starts).
-    # Sukkot/Tishrei → always empty.
     hd_shabbat = greg.to_heb()
     if hd_shabbat.month == 7 and hd_shabbat.day >= 15:
-        # Sukkot area — no parsha association
+        # Sukkos area: from האזינו until שמחת תורה the kriah at Shabbos mincha
+        # and on a regular Mon/Thu is וזאת הברכה. Fill it in like the other
+        # Mon/Thu weeks, but without the א׳ — there is no וזאת הברכה ב׳.
+        if _has_regular_mon_thu(shabbat, diaspora=diaspora):
+            return "פרשת וזאת הברכה"
+        # Chol HaMoed weeks have no weekday kriah — no parsha association
         return ""
     if _has_regular_mon_thu(shabbat, diaspora=diaspora):
         # There's a Mon/Thu with a regular kriah → find next parsha
