@@ -242,8 +242,8 @@ a timed block rather than an all-day one.
   | Attribute | Contents |
   | --- | --- |
   | `day_label` | The day label, in whichever language the option selects |
-  | `parsha` | Weekly parsha — empty during the regalim, where it is suppressed |
-  | `holiday` | The `sensor.yidcal_holiday` **state** — empty while an `ערב…` is still hidden before Alos, and empty for the many flags that are attribute-only (`ראש חודש`, `שבת ראש חודש`, …) |
+  | `parsha` | Weekly parsha — empty on the regalim (incl. Chol HaMoed), ראש השנה and יום כיפור, where the display suppresses it (`sensor.yidcal_parsha` still has it) |
+  | `holiday` | The `sensor.yidcal_holiday` **state** — empty while an `ערב…` is still hidden before Alos (except `ערב יום כיפור`, shown from Tzeis the night before, when its flag turns on), and empty for the many flags that are attribute-only (`ראש חודש`, `שבת ראש חודש`, …) |
   | `shabbos_erev_pesach` | `ערב פסח` on a Shabbos that is Erev Pesach — empty when the holiday state already says it |
   | `shabbos_erev_shavuos` | `ערב שבועות` on a Shabbos that is Erev Shavuos — empty when the holiday state already says it |
   | `special_shabbos` | Special Shabbos name, only inside its display window (Friday from midday or candle-lighting, through Motzei Shabbos) |
@@ -265,7 +265,7 @@ a timed block rather than an all-day one.
     {{ state_attr(fd,'hebrew_date') }} ~ {{ state_attr(fd,'civil_date') }}
   </font></b></center>
   ```
-* **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion. During weeks where Yom Tov falls on Shabbos (no regular parsha), the sensor shows the next upcoming parsha with an א׳ suffix (e.g. "פרשת שמיני א׳") if there's a regular Mon/Thu kriah that week before Yom Tov. The following week when the parsha is actually leined shows a ב׳ suffix. During the actual Yom Tov / Chol HaMoed days, the parsha is intentionally empty. Sukkos weeks are always empty. Works correctly for both Israel and Diaspora.
+* **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion for the coming Shabbos. When that Shabbos is Yom Tov (no regular parsha) and there's still a regular Mon/Thu kriah that week, it shows the next parsha with an א׳ suffix (e.g. "פרשת שמיני א׳"). Between האזינו and שמחת תורה it shows **פרשת וזאת הברכה** — read at Shabbos mincha and on a regular Mon/Thu — without an א׳, since there is no וזאת הברכה ב׳. The sensor keeps its value through Yom Tov; the **Full Display** is what hides it on the regalim, ראש השנה and יום כיפור. Empty only in weeks with no parsha-based kriah at all (e.g. Chol HaMoed Sukkos). Works for both Israel and Diaspora.
 * **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) i.e.: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Perek Avos**: current Perek rendered in אבות פרק ה׳
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
@@ -290,7 +290,7 @@ a timed block rather than an all-day one.
 * **Day Label Yiddish** (`sensor.yidcal_day_label_yiddish`) (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
 * **Day Label Hebrew** (`sensor.yidcal_day_label_hebrew`) (e.g. יום א' יום ב)
 * **Nine Days** (`binary_sensor.yidcal_nine_days`) turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
-* **Day Type** (`binary_sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day, Chol Hamoed, Shabbos & Chol Hamoed)
+* **Day Type** (`sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day, Chol Hamoed, Shabbos & Chol Hamoed)
 * **Longer Shachris** (`binary_sensor.yidcal_longer_shachris`) – ON **4 AM–2 PM local** on **Rosh Chodesh, Chanukah, Chol Hamoed (Pesach/Sukkos), Purim, and Tisha B’Av (incl. nidcheh)**. Always OFF on Shabbos/Yom Tov.
 
 ### Hebrew date helper sensors
@@ -396,10 +396,11 @@ a timed block rather than an all-day one.
 
 ## Day Type (timing notes)
 
-* **Day Type** (`binary_sensor.yidcal_day_type`)
+* **Day Type** (`sensor.yidcal_day_type`)
   **Notes:**
 
   * **Motzi (Day Type)** still turns off at **2:00 AM**.
+  * **Motzi before Chol HaMoed:** when Yom Tov or Shabbos ends into Chol HaMoed, Day Type shows **Motzi** until **2:00 AM**, then **Chol Hamoed**. If Yom Tov runs straight into Shabbos, Shabbos wins. The **Motzi** binary sensor (`binary_sensor.yidcal_motzi`) matches it until 2:00 AM and stays on until Alos.
   * **Minor fast days** show **Fast Day starting at 2:00 AM** (instead of waiting until Alos).
 
 ---
@@ -797,7 +798,7 @@ deadlines) are left alone rather than doubled up.
 * **Upcoming Yom Tov Sensor** (`binary_sensor.yidcal_upcoming_yomtov`)
 
   * **Attributes:** `Next_Holiday`, `Date`, `Next_On`
-  * **ON:** **12:00 AM** after the latest Motzi (Shabbos or Yom Tov), leading into the next target
+  * **ON:** **12:00 AM** after the latest Motzi (Shabbos or Yom Tov) before the target's erev — including a Motzei Shabbos the night before the erev — leading into the next target
   * **OFF:** at **candle-lighting** of the target’s erev (sunset − offset)
 * **Upcoming Holiday Sensor** (`sensor.yidcal_upcoming_holiday`)
 
