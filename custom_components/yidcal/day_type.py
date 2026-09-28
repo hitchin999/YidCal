@@ -283,15 +283,18 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
                 end_date + timedelta(days=1), time(2, 0), tz
             )
             if motzi_start <= now_local < motzi_end:
-                if _is_chol_hamoed(effective_pydate, diaspora):
-                    state = "Chol Hamoed"
-                    if shabbos_start <= now_local < shabbos_end:
-                        state = "Shabbos & Chol Hamoed"
+                if shabbos_start <= now_local < shabbos_end:
+                    # Motzei Yom Tov that runs straight into Shabbos (3-day
+                    # block): Shabbos owns the state, not Motzi.
+                    state = (
+                        "Shabbos & Chol Hamoed"
+                        if _is_chol_hamoed(effective_pydate, diaspora)
+                        else "Shabbos"
+                    )
                 else:
-                    if shabbos_start <= now_local < shabbos_end:
-                        state = "Shabbos"
-                    else:
-                        state = "Motzi"
+                    # Motzi holds until 2 AM even when the next day is Chol
+                    # HaMoed; the Chol Hamoed branch below takes over after it.
+                    state = "Motzi"
                 self._set_state(state)
                 return
 
@@ -303,15 +306,15 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
         motzi_end = datetime.datetime.combine(today, time(2, 0), tz)
 
         if raw_motzi and motzi_start <= now_local < motzi_end:
-            if _is_chol_hamoed(effective_pydate, diaspora):
-                state = "Chol Hamoed"
-                if shabbos_start <= now_local < shabbos_end:
-                    state = "Shabbos & Chol Hamoed"
+            if shabbos_start <= now_local < shabbos_end:
+                state = (
+                    "Shabbos & Chol Hamoed"
+                    if _is_chol_hamoed(effective_pydate, diaspora)
+                    else "Shabbos"
+                )
             else:
-                if shabbos_start <= now_local < shabbos_end:
-                    state = "Shabbos"
-                else:
-                    state = "Motzi"
+                # Motzi until 2 AM, Chol Hamoed after it (see branch below).
+                state = "Motzi"
             self._set_state(state)
             return
 
@@ -356,6 +359,14 @@ class DayTypeSensor(YidCalDevice, RestoreEntity, SensorEntity):
 
         # --- Chol Hamoed ---
         if _is_chol_hamoed(effective_pydate, diaspora):
+            # Motzei Shabbos Chol HaMoed: Motzi until 2 AM, then Chol Hamoed —
+            # the same as Motzei Yom Tov into Chol HaMoed above.
+            motzi_end_shabbos = datetime.datetime.combine(
+                shabbos_day + timedelta(days=1), time(2, 0), tz
+            )
+            if shabbos_end <= now_local < motzi_end_shabbos:
+                self._set_state("Motzi")
+                return
             self._set_state("Chol Hamoed")
             return
 
