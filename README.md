@@ -95,7 +95,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **ב׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ג׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ד׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
-  * **חול המועד סוכות** *(ON at Tzeis (end of day 2 YT), OFF at Tzeis (end of day 4 CH"M))*
+  * **חול המועד סוכות** *(ON at Tzeis (end of day 2 YT), OFF at Tzeis (end of day 4 CH"M). Does not include הושענא רבה, which has its own sensor)*
   * **שבת חול המועד סוכות** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
   * **הושענא רבה** *(ON at Tzeis (prior), OFF at candle-lighting (entering שמיני עצרת))*
   * **שמיני עצרת** *(ON at candle-lighting, OFF at Tzeis)*
