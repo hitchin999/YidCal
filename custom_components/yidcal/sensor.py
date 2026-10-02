@@ -645,7 +645,15 @@ class DayLabelYiddishSensor(YidCalDevice, SensorEntity):
         if is_shab:
             lbl = "שבת קודש"
         elif wd == 4 and current.hour >= 12:
-            lbl = 'ערש\"ק'
+            # Friday that is also Erev Yom Tov, on the two days whose holiday
+            # label doesn't already say ערב: הושענא רבה (21 Tishrei) and
+            # ערב שביעי של פסח (20 Nisan, a Chol HaMoed day). The other
+            # Erev Yom Tov Fridays show ערב… in the holiday part instead.
+            hd = PHebrewDate.from_pydate(today)
+            if (hd.month, hd.day) in ((7, 21), (1, 20)):
+                lbl = 'ערש\"ק ויו\"ט'
+            else:
+                lbl = 'ערש\"ק'
         elif wd == 5 and current >= havdalah:
             lbl = 'מוצש\"ק'
         else:
