@@ -287,7 +287,7 @@ a timed block rather than an all-day one.
 * **Tehilim Daily** (`sensor.yidcal_tehilim_daily`) Five-chapter rotation of Tehilim (e.g. א–ה, ו–ט)
 * **Tehilim Daily - Pupa** (`sensor.yidcal_tehilim_daily_pupa`)
 * **Date** (`sensor.yidcal_date`) Current Hebrew date in Yiddish (e.g., כ"ה חשון תשפ"ה)
-* **Day Label Yiddish** (`sensor.yidcal_day_label_yiddish`) (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק)
+* **Day Label Yiddish** (`sensor.yidcal_day_label_yiddish`) (e.g. זונטאג, מאנטאג, ערש"ק, מוצש"ק). On הושענא רבה or ערב שביעי של פסח that falls on Friday it reads **ערש"ק ויו"ט** from midday, since the holiday label there doesn't say ערב
 * **Day Label Hebrew** (`sensor.yidcal_day_label_hebrew`) (e.g. יום א' יום ב)
 * **Nine Days** (`binary_sensor.yidcal_nine_days`) turns on Rosh Chodesh Av & turns off 10 Av at Chatzos.
 * **Day Type** (`sensor.yidcal_day_type`) Indicates the type of the current day (Any Other Day, Shabbos, Yom Tov, Shabbos & Yom Tov, Erev, Motzi, Fast Day, Chol Hamoed, Shabbos & Chol Hamoed)
