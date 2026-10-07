@@ -14,6 +14,8 @@ Attributes (all boolean):
   DST_OFF_till_Pesach          – DST is OFF AND before Pesach (winter→spring)
   DST_ON_till_Pesach           – DST is ON AND before Pesach (spring, clocks forward)
   DST_OFF_till_Chanukah        – DST is OFF AND before 25 Kislev
+  Sukkos_till_DST_OFF          – from 12 AM the day after Simchas Torah
+                                 (Isru Chag) until DST turns off
 """
 
 from __future__ import annotations
@@ -74,6 +76,7 @@ class SeasonSensor(YidCalSpecialDevice, SensorEntity):
 
         cfg = hass.data[DOMAIN]["config"]
         self._tz = ZoneInfo(cfg["tzname"])
+        self._diaspora = cfg.get("diaspora", True)
 
     @property
     def native_value(self) -> str | None:
@@ -163,6 +166,15 @@ class SeasonSensor(YidCalSpecialDevice, SensorEntity):
         )
         dst_off_till_chanukah = (not dst_on) and before_chanukah
 
+        # Sukkos till DST OFF: from Isru Chag (the day after Simchas Torah —
+        # 24 Tishrei in chutz la'aretz, 23 in Eretz Yisroel) until DST ends.
+        # Limited to Tishrei–Kislev so spring DST (before Pesach) never counts.
+        simchas_torah_day = 23 if self._diaspora else 22
+        after_sukkos_autumn = (
+            (m == 7 and d > simchas_torah_day) or m in (8, 9)
+        )
+        sukkos_till_dst_off = dst_on and after_sukkos_autumn
+
         self._attr_extra_state_attributes = {
             "Pesach_to_Sukkos": pesach_to_sukkos,
             "Sukkos_to_Pesach": sukkos_to_pesach,
@@ -172,6 +184,7 @@ class SeasonSensor(YidCalSpecialDevice, SensorEntity):
             "DST_OFF_till_Pesach": dst_off_till_pesach,
             "DST_ON_till_Pesach": dst_on_till_pesach,
             "DST_OFF_till_Chanukah": dst_off_till_chanukah,
+            "Sukkos_till_DST_OFF": sukkos_till_dst_off,
             "DST_Active": dst_on,
         }
 
