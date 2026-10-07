@@ -330,7 +330,15 @@ a timed block rather than an all-day one.
 
 * **Season** (`sensor.yidcal_season`)
   State: **"בין פסח לסוכות"** or **"בין סוכות לפסח"** — easy to use in automation triggers/conditions.
-  *Boolean attributes:* `Pesach_to_Sukkos`, `Sukkos_to_Pesach`, `Pesach_till_Shvuos`, `Shvuos_till_Rosh_Hashanah`, `After_Shvuos_till_DST_OFF`, `DST_OFF_till_Pesach`, `DST_ON_till_Pesach`, `DST_OFF_till_Chanukah`
+  *Boolean attributes:* `Pesach_to_Sukkos`, `Sukkos_to_Pesach`, `Pesach_till_Shvuos`, `Shvuos_till_Rosh_Hashanah`, `After_Shvuos_till_DST_OFF`, `DST_OFF_till_Pesach`, `DST_ON_till_Pesach`, `DST_OFF_till_Chanukah`, `After_Sukkos_till_DST_OFF` (from 12 AM on Isru Chag — the day after Simchas Torah — until DST turns off)
+  *Using these in automations:* the attributes are real true/false values. The UI's attribute picker saves the value in quotes (`'true'`), which never matches, so switch the condition to YAML and write it without quotes:
+  ```yaml
+  condition: state
+  entity_id: sensor.yidcal_season
+  attribute: After_Sukkos_till_DST_OFF
+  state: true
+  ```
+  or use a template condition: `{{ state_attr('sensor.yidcal_season', 'After_Sukkos_till_DST_OFF') }}`
 
 * **Longer Shabbos Shachris** (`binary_sensor.yidcal_longer_shabbos_shachris`)
   **ON for the entire Shabbos** (candle-lighting → havdalah) when the davening is longer due to: שבת שקלים/זכור/פרה/החודש, שבת הגדול, שבת ראש חודש, פורים משולש, שבת מברכים, שבת חנוכה, שבת חנוכה ראש חודש, שבת חול המועד סוכות/פסח. Always **OFF** on weekdays (use the existing **Longer Shachris** sensor for weekday scenarios).
