@@ -20,8 +20,12 @@ from .yidcal_lib.calcache import is_yom_tov as _cached_is_yom_tov
 from .const import DOMAIN
 from .device import YidCalEarlyDevice
 from .zman_sensors import get_geo
-from zmanim.zmanim_calendar import ZmanimCalendar
-from .yidcal_lib.zman_compute import round_half_up as _round_half_up, sunset_for_date
+from .yidcal_lib.zman_compute import (
+    round_half_up as _round_half_up,
+    sunset_for_date,
+    compute_zmanim_for_date,
+)
+from pyluach.dates import HebrewDate as PHebrewDate
 from .config_flow import (
     # Early Shabbos
     CONF_ENABLE_EARLY_SHABBOS,
@@ -42,14 +46,42 @@ from .config_flow import (
     CONF_EARLY_YOMTOV_PLAG_METHOD,
     CONF_EARLY_YOMTOV_FIXED_TIME,
     CONF_EARLY_YOMTOV_INCLUDE,
+    CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
     DEFAULT_ENABLE_EARLY_YOMTOV,
     DEFAULT_EARLY_YOMTOV_MODE,
     DEFAULT_EARLY_YOMTOV_PLAG_METHOD,
     DEFAULT_EARLY_YOMTOV_FIXED_TIME,
     DEFAULT_EARLY_YOMTOV_INCLUDE,
+    DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Plag labels in zman_compute — the same entries the Plag GRA / Plag MGA
+# sensors publish, so the early time always matches those sensors.
+_PLAG_LABEL = {"gra": "פלג המנחה גר״א", "ma": "פלג המנחה מג״א"}
+
+# (Hebrew month, day) of the FIRST day of each Yom Tov → the
+# early_yomtov_include option key. A second day is its first day + 1.
+_YT_FIRST_DAY_KEY = {
+    (7, 1): "rosh_hashana",
+    (7, 10): "yom_kippur",
+    (7, 15): "sukkos",
+    (7, 22): "shemini_atzeres",
+    (1, 15): "pesach_first_day",
+    (1, 21): "pesach_last_days",
+    (3, 6): "shavuos",
+}
+
+
+def _yt_include_key(d: date) -> str | None:
+    """Include-list key for the Yom Tov day ``d`` (first or second day)."""
+    hd = PHebrewDate.from_pydate(d)
+    key = _YT_FIRST_DAY_KEY.get((hd.month, hd.day))
+    if key is None:
+        prev = PHebrewDate.from_pydate(d - timedelta(days=1))
+        key = _YT_FIRST_DAY_KEY.get((prev.month, prev.day))
+    return key
 
 
 
@@ -206,33 +238,27 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             return "fixed"
         return configured_mode
 
-    def _plag_from_calendar(self, cal: ZmanimCalendar, method: str):
-        # Try multiple method names to stay compatible with different zmanim libs
-        if method == "ma":
-            names = ["plag_hamincha_mga", "plagHaminchaMGA", "plag_hamincha_ma", "plagHaminchaMa"]
-        else:
-            names = ["plag_hamincha_gra", "plagHaminchaGRA", "plag_hamincha", "plagHamincha", "plagHaminchaGra"]
-
-        for name in names:
-            fn = getattr(cal, name, None)
-            if callable(fn):
-                try:
-                    return fn().astimezone(self._tz)
-                except Exception:
-                    continue
+    def _plag_for_date(self, d: date, method: str):
+        """Plag for ``d`` from the shared zmanim table — the exact rounded
+        value the Plag GRA / Plag MGA sensors show (GRA half-up, MGA ceil)."""
+        label = _PLAG_LABEL["ma" if method == "ma" else "gra"]
+        try:
+            entries = compute_zmanim_for_date(geo=self._geo, tz=self._tz, base_date=d)
+        except Exception:
+            return None
+        for e in entries:
+            if e.label == label:
+                return e.dt_local.astimezone(self._tz)
         return None
 
     def _compute_early_dt(self, d: date, mode: str, plag_method: str, fixed_time_str: str):
         if not self._geo:
             return None
 
-        # kept inline: plag hamincha (GRA/MGA) not covered by shared helpers
-        cal = ZmanimCalendar(geo_location=self._geo, date=d)
-
         # "disabled" in your UI really means "manual only":
         # still compute a PLAG candidate so force_early can use it.
         if mode in ("disabled", "plag"):
-            return self._plag_from_calendar(cal, plag_method)
+            return self._plag_for_date(d, plag_method)
 
         if mode == "fixed":
             t = self._parse_time(fixed_time_str)
@@ -321,6 +347,9 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
         ey_plag_method = cfg.get(CONF_EARLY_YOMTOV_PLAG_METHOD, DEFAULT_EARLY_YOMTOV_PLAG_METHOD)
         ey_fixed = cfg.get(CONF_EARLY_YOMTOV_FIXED_TIME, DEFAULT_EARLY_YOMTOV_FIXED_TIME)
         ey_include = cfg.get(CONF_EARLY_YOMTOV_INCLUDE, DEFAULT_EARLY_YOMTOV_INCLUDE) or []
+        ey_second_days = bool(
+            cfg.get(CONF_EARLY_YOMTOV_ALLOW_SECOND_DAYS, DEFAULT_EARLY_YOMTOV_ALLOW_SECOND_DAYS)
+        )
         ey_override = self._get_override("early_yomtov")
         ey_method = self._get_method("early_yomtov")
         ey_eff_mode = self._effective_mode(ey_method, ey_mode)
@@ -340,8 +369,20 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
                 next_yt_name = str(hd.holidays[0]) if hd.holidays else "Yom Tov"
                 break
 
+        # Candidate Yom Tov days: the first day, plus the second day when
+        # "allow second days" is on. Never when the erev is Shabbos — a Yom
+        # Tov (or its second day) that starts Motzei Shabbos can't start early.
+        yt_days: list[date] = []
         if enable_ey and first_yt_day:
-            erev = first_yt_day - timedelta(days=1)
+            yt_days.append(first_yt_day)
+            day2 = first_yt_day + timedelta(days=1)
+            if ey_second_days and _cached_is_yom_tov(day2, diaspora):
+                yt_days.append(day2)
+
+        for yt_day in yt_days:
+            erev = yt_day - timedelta(days=1)
+            if erev.weekday() == 5:
+                continue
 
             erev_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=erev)
 
@@ -353,6 +394,10 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             if early_yt_dt:
                 raw_yomtov_by_date[erev.isoformat()] = early_yt_dt.isoformat()
 
+            # The include list gates Auto, like the Shabbos apply rule;
+            # Force early still overrides it.
+            included = _yt_include_key(yt_day) in ey_include
+
             effective_yt_dt = None
             if early_yt_dt:
                 if ey_override == self.OVERRIDE_FORCE_REGULAR:
@@ -360,7 +405,11 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
                 elif ey_override == self.OVERRIDE_FORCE_EARLY:
                     effective_yt_dt = early_yt_dt
                 else:  # auto
-                    if ey_eff_mode != "disabled" and early_yt_dt < regular_yt_start:
+                    if (
+                        ey_eff_mode != "disabled"
+                        and included
+                        and early_yt_dt < regular_yt_start
+                    ):
                         effective_yt_dt = early_yt_dt
 
             if effective_yt_dt:
@@ -434,6 +483,7 @@ class EarlyShabbosYtStartTimeSensor(YidCalEarlyDevice, SensorEntity):
             "early_yomtov_method": ey_method,
             "early_yomtov_fixed_time": ey_eff_fixed,
             "early_yomtov_include": ey_include,
+            "early_yomtov_allow_second_days": ey_second_days,
             "next_yomtov_name": next_yt_name,
 
             # Plag-style summary:
