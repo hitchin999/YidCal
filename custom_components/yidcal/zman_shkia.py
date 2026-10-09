@@ -42,7 +42,8 @@ class ShkiaSensor(YidCalZmanDevice, SensorEntity):
       • Rollover at Alos HaShachar, NOT civil midnight: between civil
         midnight and that day's Alos the displayed value stays on the
         previous civil day's shkia.
-      • State = (rolled-over) today's shkia, ceil-rounded, as UTC.
+      • State = (rolled-over) today's shkia, rounded to the nearest
+        minute (half-up), as UTC.
       • Attributes, in this exact insertion order:
           Shkia_With_Seconds  — unrounded geometric sunset (today),
                                  local-tz ISO (from dt_raw_local)
