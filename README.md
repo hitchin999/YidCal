@@ -962,6 +962,12 @@ YidCal can calculate an **earlier “start time”** for entering Shabbos or cer
 > **Setup note:** Early Shabbos / Early Yom Tov cannot be configured during the initial integration setup.
 > After YidCal is installed, go to **Settings → Devices & Services → Integrations → YidCal**, then click the **Settings (gear) icon** to configure it under **Options**.
 
+### Options worth knowing
+
+* **Plag method** — **GRA** or **Magen Avraham**. The early time is the same value the **Plag HaMincha (GRA)** / **Plag HaMincha (MGA)** sensor shows.
+* **Which Yomim Tovim allow early acceptance** — only the Yomim Tovim you tick start early on **Auto**. **Force early** still overrides the list.
+* **Allow early acceptance on second days** — when on, the second day of a ticked Yom Tov can also start early (from the afternoon of the first day). Off by default. A Yom Tov (or its second day) that starts on Motzei Shabbos never starts early.
+
 ### What this feature provides
 
 When enabled, YidCal adds:
@@ -1008,6 +1014,7 @@ These live controls let you change early-entry behavior right from your dashboar
 * `early_shabbos_override`, `early_yomtov_override`
 * `early_shabbos_method`, `early_yomtov_method`
 * `early_shabbos_fixed_time`, `early_yomtov_fixed_time`
+* `early_yomtov_include`, `early_yomtov_allow_second_days`
 * `next_effective_start_kind`
 * `next_effective_start_description` and `summary`
 
