@@ -7,17 +7,16 @@ Given a civil date + location + offsets, returns an ordered list of
 (hebrew_label, local_aware_datetime) pairs for all daily zmanim, in
 clock-time (chronological) order. Matches the rounding used by the
 existing individual zman sensors:
-  • Alos, Talis & Tefilin, Netz, Chatzos Hayom, Mincha Gedola,
-    Mincha Ketana, Plag GRA, Plag MGA, Chatzos HaLaila → round half-up
+  • Alos, Talis & Tefilin, Netz, Chatzos Hayom, Plag GRA, Shkia,
+    Chatzos HaLaila → round half-up
   • Sof Zman Krias Shma (MGA/GRA), Sof Zman Tefilah (MGA/GRA) → floor
-  • Shkia, Tzies, Zman Maariv 60, Zman Maariv R"T → ceil (chumra)
+  • Mincha Gedola, Mincha Ketana, Plag MGA, Tzies, Zman Maariv 60,
+    Zman Maariv R"T → ceil (chumra)
 
 FAST-START EXCEPTION (single source of truth)
 ---------------------------------------------
 The general rounding above treats Alos and Shkia as *positive* zman
-boundaries (e.g. Shkia = end of the mincha-gedola window → ceil so the
-window stays open lechumra; Alos = start of the tefilin window →
-half-up). A fast START is the INVERTED chumra: the fast must begin
+boundaries (both → half-up to the nearest minute). A fast START is the INVERTED chumra: the fast must begin
 BEFORE the astronomical moment, never after, so it FLOORS (truncate
 seconds) regardless of the general rule for that zman.
 
@@ -79,7 +78,7 @@ def _floor(dt: datetime) -> datetime:
 
 
 def _ceil(dt: datetime) -> datetime:
-    """Ceil to the next minute — matches Shkia / Tzies / Maariv 60 style.
+    """Ceil to the next minute — matches Tzies / Maariv 60 style.
 
     True ceiling: a value already on an exact minute is returned
     unchanged (the printed luachs do the same — SF 5786 prints 6:16
@@ -556,7 +555,7 @@ def fast_start_for_date(
 
     The result is floored to the minute (seconds truncated) — a fast
     must begin BEFORE the astronomical moment, never after, so this
-    deliberately overrides the general half-up (alos) / ceil (shkia)
+    deliberately overrides the general half-up (alos / shkia)
     rounding used elsewhere in this module. Computed from raw
     sunrise/sunset so no upstream rounding is inherited.
 
