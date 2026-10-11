@@ -7,8 +7,12 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.core import callback   # <-- add this
 
 from .yidcal_lib import specials
+from .yidcal_lib import halacha_events as he
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
+
+BEHAB_MEVORCHIM = "מברכין בה״ב"
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities([SpecialShabbosSensor()], update_before_add=True)
@@ -74,6 +78,20 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
         except TypeError:
             raw = specials.get_special_shabbos_name(today_local)
 
+        # Optional מברכין בה״ב (off by default): appended when the upcoming
+        # Shabbos is the BeHaB announcement Shabbos — the same dates the
+        # BeHaB sensor and the luach use.
+        show_behab = bool(cfg.get("show_mevorchim_behab", False))
+        is_behab_mev = False
+        if show_behab:
+            shabbos = specials._upcoming_shabbos(today_local)
+            is_behab_mev = any(
+                c.mevorchim_shabbos == shabbos
+                for c in he.compute_behab_in_range(start=shabbos, end=shabbos)
+            )
+            if is_behab_mev:
+                raw = f"{raw}-{BEHAB_MEVORCHIM}" if raw else BEHAB_MEVORCHIM
+
         self._attr_native_value = raw or ""
 
         parts = [p.strip() for p in re.split(r"\s*[־-]\s*", raw) if p.strip()] if raw else []
@@ -93,6 +111,7 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
         attrs.update({
             "שבת מברכים": str(is_mev).lower(),
             "חודש_מברכים": mev_month,
+            BEHAB_MEVORCHIM: str(is_behab_mev).lower(),
         })
 
         self._attr_extra_state_attributes = attrs
