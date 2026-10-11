@@ -48,6 +48,7 @@ from .dst_sensor import DSTSensor
 from .erev_after_chatzos_sensor import ErevAfterChatzosSensor
 from .erev_tisha_bav_after_chatzos_sensor import ErevTishaBavAfterChatzosSensor
 from .tisha_bav_night_sensor import TishaBavNightSensor
+from .behab_sensor import BehabSensor
 from .longer_shabbos_shachris_sensor import LongerShabbosSensor
 from .three_day_yomtov_sensor import ThreeDayYomTovSensor
 from .yomtov_tomorrow_sensor import YomTovTomorrowSensor
@@ -1048,6 +1049,7 @@ async def async_setup_entry(
         ErevAfterChatzosSensor(hass, candle),
         ErevTishaBavAfterChatzosSensor(hass),
         TishaBavNightSensor(hass),
+        BehabSensor(hass),
         LongerShabbosSensor(hass, candle, havdalah),
         ThreeDayYomTovSensor(hass, candle, havdalah),
         BeinHazmonimSensor(hass, candle, havdalah),
