@@ -281,7 +281,7 @@ a timed block rather than an all-day one.
   * Adds **אין אומרים ויהי נועם / ואתה קדוש** on Motzaei Shabbos when the coming week has no ששת ימי המעשה — a Yom Tov (incl. Yom Kippur) falling Sun–Thu, or Chol HaMoed anywhere Sun–Fri (suppressed when Motzaei Shabbos is itself Erev Yom Tov)
 * **Special Shabbos Sensor** (`sensor.yidcal_special_shabbos`) Special Shabbat names (שבת זכור, שבת נחמו, etc.)
   *Attributes include:* individual boolean attributes for each special Shabbos, שבת מברכים / חודש_מברכים, and שבת הפסקה (true when the upcoming Shabbos falls between the ד׳ פרשיות without having one of its own).
-  *Optional:* **מברכין בה״ב** — turn on **Show מברכין בה״ב on the Special Shabbos sensor?** in **Options** (off by default) to add it to the state (and the Full Display) on the Shabbos before the בה״ב fasts, with a `מברכין בה״ב` attribute. Same dates as the **BeHaB** sensor.
+  *Optional:* **מברכים בה״ב** — turn on **Show מברכים בה״ב on the Special Shabbos sensor?** in **Options** (off by default) to add it to the state (and the Full Display) on the Shabbos before the בה״ב fasts, with a `מברכים בה״ב` attribute. Same dates as the **BeHaB** sensor.
 * **Sefirah Counter** (`sensor.yidcal_sefirah_counter`) Day-count of Sefiras HaOmer
 * **Sefirah Counter Short** (`sensor.yidcal_sefirah_counter_short`) Short-form Omer count using Hebrew gematria (e.g., `ח׳ בעומר`, `ט״ו בעומר`, `ל״ג בעומר`)
 * **Sefirah Middos** (`sensor.yidcal_sefirah_counter_middos`) Middos (qualities) of the day in the Omer count
@@ -330,7 +330,7 @@ a timed block rather than an all-day one.
   *Attributes:* `Now`, `Fast_Day`, `Is_Nidche`, `Night_Start`, `Alos`, `Activation_Logic`
 
 * **BeHaB** (`binary_sensor.yidcal_behab`)
-  **ON** from **alos HaShachar** until **tzeis** (sunset + your havdalah offset) on each of the three **בה״ב** fasts — **תענית שני קמא**, **תענית חמישי**, **תענית שני תנינא** — after Rosh Chodesh **Cheshvan** and **Iyar**. Shabbos **מברכין בה״ב** is the first Shabbos of the month that isn't Rosh Chodesh; the fasts are the Monday, Thursday and Monday after it. Same dates as the luach.
+  **ON** from **alos HaShachar** until **tzeis** (sunset + your havdalah offset) on each of the three **בה״ב** fasts — **תענית שני קמא**, **תענית חמישי**, **תענית שני תנינא** — after Rosh Chodesh **Cheshvan** and **Iyar**. Shabbos **מברכים בה״ב** is the first Shabbos of the month that isn't Rosh Chodesh; the fasts are the Monday, Thursday and Monday after it. Same dates as the luach.
   *Attributes:* `Fast_Today`, `Window_Start`, `Window_End`, `Next_Fast_Date`, `Next_Fast_Label`, `Mevorchim_Shabbos`, `Is_Mevorchim_Shabbos_Today`, `Fast_Mon_1`, `Fast_Thu`, `Fast_Mon_2`, `Season`, `Activation_Logic`
 
 * **Season** (`sensor.yidcal_season`)
