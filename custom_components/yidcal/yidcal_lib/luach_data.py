@@ -741,7 +741,7 @@ def _build_rows(
             if chanukah_lbl is not None:
                 special_he.insert(0, chanukah_lbl)
             if any(c.mevorchim_shabbos == saturday for c in behab_cycles):
-                special_he.append("מברכין בה״ב")
+                special_he.append("מברכים בה״ב")
 
         # א״א שהחיינו marker — halachic reminder that Shehecheyanu is
         # NOT said on the upcoming Yom Tov. The day check lives in
@@ -2288,7 +2288,6 @@ _HASHALAH_WD_FORM_SF = {**_HASHALAH_WD_FORM, 4: "יום עש״ק"}
 # printed sheet does.
 _SF_SPELLING = (
     ("מבה״ח חשון", "מבה״ח מרחשון"),
-    ("מברכין בה״ב", "מברכים בה״ב"),
     ("עלה״ש", "עלוה״ש"),
 )
 
@@ -3557,7 +3556,7 @@ def build_weekly_data(
             #   0. ראש חודש                       (appended above)
             #   1. special-parsha / שבת name — שקלים, זכור, פרה,
             #      החודש, חזון, נחמו, הגדול, שירה, שובה, משולש
-            #   2. מבה״ח, then מברכין בה״ב
+            #   2. מבה״ח, then מברכים בה״ב
             #   3. חנוכה
             #   4. חזק
             #   5. פרק                            (appended below)
@@ -3587,15 +3586,13 @@ def build_weekly_data(
                         and _sn not in sub_parts):
                     sub_parts.append(_sn)
 
-            # rank 2 — מבה״ח, then 'מברכין בה״ב', the BeHaB-fast
+            # rank 2 — מבה״ח, then 'מברכים בה״ב', the BeHaB-fast
             # announcement Shabbos (the first non-Rosh-Chodesh Shabbos
             # of Cheshvan / Iyar). Detected via the SAME canonical
             # helper the yearly luach uses (compute_behab_in_range →
             # mevorchim_shabbos), so weekly and yearly stay in sync.
-            # The weekly card spells it 'מברכין'; the yearly rows keep
-            # 'מברכין' too and the SF sheet maps it to 'מברכים' — that
-            # map never touches this string (it is applied to
-            # annotation rows only, and only for the SF sheet).
+            # Spelled 'מברכים' everywhere — weekly card, yearly rows,
+            # the SF sheet and the sensors.
             if is_mevorchim:
                 sub_parts.append("מבה״ח")
             try:
@@ -3606,8 +3603,8 @@ def build_weekly_data(
                 )
             except Exception:
                 _is_behab_shabbos = False
-            if _is_behab_shabbos and "מברכין בה״ב" not in sub_parts:
-                sub_parts.append("מברכין בה״ב")
+            if _is_behab_shabbos and "מברכים בה״ב" not in sub_parts:
+                sub_parts.append("מברכים בה״ב")
 
             # rank 3 — Chanukah
             if _shab_ch and _shab_ch not in sub_parts:
