@@ -11,7 +11,7 @@ from .yidcal_lib import halacha_events as he
 from .device import YidCalDisplayDevice
 from .const import DOMAIN
 
-BEHAB_MEVORCHIM = "מברכין בה״ב"
+BEHAB_MEVORCHIM = "מברכים בה״ב"
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -78,7 +78,7 @@ class SpecialShabbosSensor(YidCalDisplayDevice, SensorEntity):
         except TypeError:
             raw = specials.get_special_shabbos_name(today_local)
 
-        # Optional מברכין בה״ב (off by default): appended when the upcoming
+        # Optional מברכים בה״ב (off by default): appended when the upcoming
         # Shabbos is the BeHaB announcement Shabbos — the same dates the
         # BeHaB sensor and the luach use.
         show_behab = bool(cfg.get("show_mevorchim_behab", False))
