@@ -1686,7 +1686,7 @@ class BehabCycle:
     """One year's Behab cycle in a given season."""
     season: str                       # 'cheshvan' or 'iyar'
     hebrew_year: int                  # Hebrew year of the announcement
-    mevorchim_shabbos: date_cls       # Shabbos of 'מברכין בה"ב'
+    mevorchim_shabbos: date_cls       # Shabbos of 'מברכים בה"ב'
     fast_mon_1: date_cls              # תענית שני קמא
     fast_thu: date_cls                # תענית חמישי
     fast_mon_2: date_cls              # תענית שני תנינא
@@ -1706,7 +1706,7 @@ def compute_behab_cycle(hebrew_year: int, season: str) -> BehabCycle:
     """Compute the Behab cycle for a single Hebrew year × season.
 
     Rule (matches KJ luach 5786 and standard Ashkenazi luach convention):
-      1. ``מברכין בה"ב`` is announced on the FIRST Shabbos of the month
+      1. ``מברכים בה"ב`` is announced on the FIRST Shabbos of the month
          that is NOT itself a Rosh Chodesh date.
       2. The three fasts fall +2, +5, +9 days after that Shabbos.
     """
