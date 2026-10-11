@@ -85,6 +85,7 @@ LABELS = {
     "lbl_tallis_tefilin_offset": {"yi": "וויפיל מינוט נאכן עלות איז טלית ותפילין", "he": "כמה דקות אחרי עלות השחר לטלית ותפילין", "en": "Minutes after dawn for tallis & tefilin"},
     "lbl_korbanos_yud_gimmel_midos": {"yi": "?ליינט מען קרבנות אום שלוש עשרה מדות", "he": "האם יש קריאת קרבנות במנחה של שלוש עשרה מידות?", "en": "Is Korbanos read at Mincha on Shlosh Esrei Middos?"},
     "lbl_mishne_torah_hoshana_rabba": {"yi": "?ליינט מען משנה תורה הושענא רבה ביינאכט", "he": "האם יש קריאת משנה תורה בליל הושענא רבה?", "en": "Is Mishneh Torah read on the night of Hoshana Rabba?"},
+    "lbl_show_mevorchim_behab": {"yi": "?ווייזן מברכין בה״ב ביים ספעציעלן שבת סענסאר", "he": "האם להציג מברכין בה״ב בחיישן שבת מיוחדת?", "en": "Show מברכין בה״ב on the Special Shabbos sensor?"},
     "lbl_day_label_language": {"yi": "Full Display Sensor וויזוי דו ווילסט זעהן דעם טאג ביי די", "he": "כיצד להציג את שם היום בחיישן התצוגה המלאה (Full Display Sensor)", "en": "Day label language for the Full Display sensor"},
     "lbl_haftorah_minhag": {"yi": "הפטרה סענסאר מנהג", "he": "מנהג ההפטרה", "en": "Haftorah sensor minhag"},
     "dsc_haftorah_minhag": {"yi": "דאס טוישט נאר דעם סטעיט; ביידע מנהגים ווערן אלעמאל געוויזן ביי די אשכנזי / ספרדי אטריביוטן.", "he": "בוחר רק את המצב (state); שני המנהגים תמיד זמינים בתכונות אשכנזי / ספרדי.", "en": "Only picks the sensor's state — both minhagim are always published as the אשכנזי / ספרדי attributes."},
@@ -286,6 +287,7 @@ SELECTORS: dict[str, list[tuple[str, dict[str, str]]]] = {
 _GENERAL_FIELDS = [
     "is_in_israel", "strip_nikud", "candlelighting_offset", "havdalah_offset",
     "korbanos_yud_gimmel_midos", "mishne_torah_hoshana_rabba",
+    "show_mevorchim_behab",
     "day_label_language", "haftorah_minhag", "molad_language",
     "parsha_metzora_display", "time_format",
     "include_date", "include_attribute_sensors", "include_sefirah_short_in_full",
