@@ -94,6 +94,8 @@ from .config_flow import (
     DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS,
     CONF_MISHNE_TORAH_HOSHANA_RABBA,
     DEFAULT_MISHNE_TORAH_HOSHANA_RABBA,
+    CONF_SHOW_MEVORCHIM_BEHAB,
+    DEFAULT_SHOW_MEVORCHIM_BEHAB,
 
     CONF_ENABLE_DAF_HAYOMI,
     DEFAULT_ENABLE_DAF_HAYOMI,
@@ -645,6 +647,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_MISHNE_TORAH_HOSHANA_RABBA,
         initial.get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
     )
+    show_mevorchim_behab = opts.get(
+        CONF_SHOW_MEVORCHIM_BEHAB,
+        initial.get(CONF_SHOW_MEVORCHIM_BEHAB, DEFAULT_SHOW_MEVORCHIM_BEHAB),
+    )
 
     enable_daf_hayomi = opts.get(
         CONF_ENABLE_DAF_HAYOMI,
@@ -872,6 +878,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         CONF_KORBANOS_YUD_GIMMEL_MIDOS: korbanos_yud_gimmel_midos,
         CONF_MISHNE_TORAH_HOSHANA_RABBA: mishne_torah_hoshana_rabba,
+        CONF_SHOW_MEVORCHIM_BEHAB: show_mevorchim_behab,
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
         CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
@@ -925,6 +932,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         "korbanos_yud_gimmel_midos": korbanos_yud_gimmel_midos,
         "mishne_torah_hoshana_rabba": mishne_torah_hoshana_rabba,
+        "show_mevorchim_behab": show_mevorchim_behab,
         CONF_ENABLE_DAF_HAYOMI: enable_daf_hayomi,
         CONF_ENABLE_MULTIDAY_CANDLES: enable_multiday_candles,
         CONF_ENABLE_ZMANIM_LOOKUP: enable_zmanim_lookup,
