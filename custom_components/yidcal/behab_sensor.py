@@ -7,7 +7,7 @@ Rosh Chodesh Cheshvan and Rosh Chodesh Iyar — from alos HaShachar until
 tzeis, like the other minor fasts.
 
 Dates come from the single source of truth, ``halacha_events.
-compute_behab_cycle`` (the same rule the luach uses): מברכין בה"ב is the
+compute_behab_cycle`` (the same rule the luach uses): מברכים בה"ב is the
 first Shabbos of the month that is not Rosh Chodesh, and the fasts are
 +2, +5 and +9 days after it.
 
@@ -21,7 +21,7 @@ Attributes:
                                   תענית שני תנינא, or "" on other days
   Window_Start / Window_End     – today's fast window (or the next one)
   Next_Fast_Date / Next_Fast_Label
-  Mevorchim_Shabbos             – Shabbos מברכין בה"ב of the current /
+  Mevorchim_Shabbos             – Shabbos מברכים בה"ב of the current /
                                   upcoming cycle
   Is_Mevorchim_Shabbos_Today    – True on that Shabbos
   Fast_Mon_1 / Fast_Thu / Fast_Mon_2 – the cycle's three dates
@@ -158,7 +158,7 @@ class BehabSensor(YidCalSpecialDevice, BinarySensorEntity):
                 "ON from alos HaShachar until tzeis (sunset + havdalah offset) "
                 "on each BeHaB fast — Monday, Thursday, Monday after the first "
                 "Shabbos of Cheshvan / Iyar that is not Rosh Chodesh "
-                "(Shabbos מברכין בה\"ב). OFF all other times."
+                "(Shabbos מברכים בה\"ב). OFF all other times."
             ),
         }
 
