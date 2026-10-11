@@ -775,7 +775,7 @@ class _WeeklyPDF(FPDF):
                 # Match the hero's condensed look — same base track
                 # used by the hero (82). The SUB-label (the small
                 # event line under the Hebrew date, e.g.
-                # 'תענית שני בתרא', 'חמשה עשר בשבט') uses an even
+                # 'תענית שני תנינא', 'חמשה עשר בשבט') uses an even
                 # tighter track=78 + a wider horizontal inset
                 # (cw - 2.5) so long labels no longer kiss the
                 # English-date column line — uniform breathing room
