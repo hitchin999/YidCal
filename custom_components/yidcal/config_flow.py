@@ -194,6 +194,10 @@ DEFAULT_KORBANOS_YUD_GIMMEL_MIDOS = False
 CONF_MISHNE_TORAH_HOSHANA_RABBA = "mishne_torah_hoshana_rabba"
 DEFAULT_MISHNE_TORAH_HOSHANA_RABBA = False
 
+# ============ Special Shabbos extras ============
+CONF_SHOW_MEVORCHIM_BEHAB = "show_mevorchim_behab"
+DEFAULT_SHOW_MEVORCHIM_BEHAB = False
+
 # ============ Daf HaYomi ============
 CONF_ENABLE_DAF_HAYOMI = "enable_daf_hayomi"
 DEFAULT_ENABLE_DAF_HAYOMI = True
@@ -274,6 +278,10 @@ def _general_schema(lang, get, *, include_luach_pdf: bool):
         vol.Optional(
             CONF_MISHNE_TORAH_HOSHANA_RABBA,
             default=get(CONF_MISHNE_TORAH_HOSHANA_RABBA, DEFAULT_MISHNE_TORAH_HOSHANA_RABBA),
+        ): bool,
+        vol.Optional(
+            CONF_SHOW_MEVORCHIM_BEHAB,
+            default=get(CONF_SHOW_MEVORCHIM_BEHAB, DEFAULT_SHOW_MEVORCHIM_BEHAB),
         ): bool,
         vol.Optional(
             "day_label_language",
