@@ -3057,10 +3057,9 @@ def _weekly_dom_sublabel(
             return m.label_he
 
     # BeHaB minhag fasts — the Mon/Thu/Mon cycle after Rosh Chodesh
-    # Cheshvan & Iyar. The printed KY card prints them in the
-    # day-of-month cell as תענית שני קמא / תענית חמישי /
-    # תענית שני בתרא (Yoel's spelling for the 2nd Monday — kept
-    # weekly-only; the shared helper's tuple is left untouched).
+    # Cheshvan & Iyar, printed in the day-of-month cell as
+    # תענית שני קמא / תענית חמישי / תענית שני תנינא — as the KJ luach
+    # prints them, the same labels as the shared helper's tuple.
     for _cyc in he.compute_behab_in_range(
         start=d - timedelta(days=9), end=d,
     ):
@@ -3069,7 +3068,7 @@ def _weekly_dom_sublabel(
         if d == _cyc.fast_thu:
             return "תענית חמישי"
         if d == _cyc.fast_mon_2:
-            return "תענית שני בתרא"
+            return "תענית שני תנינא"
 
     # Fasts (actual, post-נדחה date) — צום גדליה / עשרה בטבת /
     # תענית אסתר / י״ז בתמוז / תשעה באב. Tzom Gedaliah IS printed
