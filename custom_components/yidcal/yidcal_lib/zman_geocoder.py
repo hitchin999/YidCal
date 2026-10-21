@@ -6,8 +6,10 @@ landmark, etc.) into the (lat, lon, tzname, display_name) tuple needed
 by the Zmanim Lookup service when the user passes a ``location``
 parameter.
 
-Reuses the same Nominatim/geopy + timezonefinder stack the integration
-already uses at config-flow time. Results are cached per-process under
+Reuses the same Nominatim/geopy stack the integration already uses at
+setup time. Time zones come from the place list (precomputed) and, only
+for a location outside it, from timezonefinder — installed on first use
+so a new install doesn't download its ~43 MB up front. Results are cached per-process under
 ``hass.data[DOMAIN][CACHE_KEY]`` so repeated lookups for the same
 location don't re-hit the geocoder.
 
@@ -28,6 +30,60 @@ from ..const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 CACHE_KEY = "_zmanim_lookup_geo_cache"
+
+# Not in manifest.json: installed the first time a location outside the
+# place list needs a time zone (see _timezonefinder_lookup).
+_TZF_REQUIREMENT = "timezonefinder==5.2.0"
+_TZF_INSTANCE = None
+
+
+async def _timezonefinder_lookup(
+    hass: HomeAssistant, latitude: float, longitude: float,
+) -> str:
+    """Time zone via timezonefinder, installing it on first use."""
+    import importlib
+    import importlib.util
+
+    spec = await hass.async_add_executor_job(
+        importlib.util.find_spec, "timezonefinder",
+    )
+    if spec is None:
+        from homeassistant.requirements import async_process_requirements
+
+        _LOGGER.info(
+            "YidCal: installing %s (one time) for a location outside the "
+            "place list", _TZF_REQUIREMENT,
+        )
+        await async_process_requirements(
+            hass, DOMAIN, [_TZF_REQUIREMENT], is_built_in=False,
+        )
+
+    def _lookup() -> str:
+        global _TZF_INSTANCE
+        if _TZF_INSTANCE is None:
+            importlib.invalidate_caches()
+            from timezonefinder import TimezoneFinder
+
+            _TZF_INSTANCE = TimezoneFinder()
+        return _TZF_INSTANCE.timezone_at(lng=longitude, lat=latitude) or ""
+
+    return await hass.async_add_executor_job(_lookup)
+
+
+async def timezone_at(
+    hass: HomeAssistant, latitude: float, longitude: float,
+) -> str:
+    """IANA time zone for coordinates ("" if unknown).
+
+    A listed place's stored zone first (no download, no lookup); otherwise
+    timezonefinder.
+    """
+    from .places import timezone_for
+
+    tz = timezone_for(latitude, longitude)
+    if tz:
+        return tz
+    return await _timezonefinder_lookup(hass, latitude, longitude)
 
 
 @dataclass(frozen=True)
@@ -112,15 +168,8 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
     if named is not None:
         name, state, named_lat, named_lon = named
 
-        def _tz_for_named() -> str:
-            from timezonefinder import TimezoneFinder
-
-            return TimezoneFinder().timezone_at(
-                lng=named_lon, lat=named_lat,
-            ) or ""
-
         try:
-            named_tz = await hass.async_add_executor_job(_tz_for_named)
+            named_tz = await timezone_at(hass, named_lat, named_lon)
         except Exception:  # pragma: no cover - defensive
             named_tz = ""
         if named_tz:
@@ -152,7 +201,6 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
         # import time and so any import failures surface as a clean error.
         from geopy.geocoders import Nominatim
         from geopy.exc import GeopyError
-        from timezonefinder import TimezoneFinder
 
         # Build a wide viewbox around the user's home — ~5° in each
         # direction (~550 km north-south). This is intentionally
@@ -199,24 +247,32 @@ async def resolve_location(hass: HomeAssistant, raw_query: str) -> ResolvedLocat
                 f"specific input (e.g. 'Lakewood, NJ' or a postal code)."
             )
 
-        try:
-            tzname = TimezoneFinder().timezone_at(lng=loc.longitude, lat=loc.latitude)
-        except Exception:
-            tzname = None
-        if not tzname:
-            raise ServiceValidationError(
-                f"Could not determine timezone for {query!r} "
-                f"(lat={loc.latitude}, lon={loc.longitude})."
-            )
-
         return ResolvedLocation(
             latitude=loc.latitude,
             longitude=loc.longitude,
-            tzname=tzname,
+            tzname="",  # filled in below, outside the executor
             display_name=str(loc.address) if getattr(loc, "address", None) else query,
         )
 
     resolved_raw = await hass.async_add_executor_job(_blocking_resolve)
+
+    try:
+        raw_tz = await timezone_at(
+            hass, resolved_raw.latitude, resolved_raw.longitude,
+        )
+    except Exception:
+        raw_tz = ""
+    if not raw_tz:
+        raise ServiceValidationError(
+            f"Could not determine timezone for {query!r} "
+            f"(lat={resolved_raw.latitude}, lon={resolved_raw.longitude})."
+        )
+    resolved_raw = ResolvedLocation(
+        latitude=resolved_raw.latitude,
+        longitude=resolved_raw.longitude,
+        tzname=raw_tz,
+        display_name=resolved_raw.display_name,
+    )
 
     # Snap the geocoded coords to the canonical city centroid, the
     # same way HA setup snaps the user's configured home coords. So a
@@ -304,8 +360,9 @@ async def resolve_location_from_coordinates(
         ZIP-centroid or address-specific coords to the city-level
         centroid that's appropriate for zmanim.
 
-    Timezone is looked up from the final (snapped) coords via
-    TimezoneFinder, with HA's configured ``time_zone`` as a fallback.
+    Timezone: a listed place's stored zone; for HA's own home coordinates
+    HA's configured ``time_zone``; otherwise timezonefinder (installed on
+    first use), with HA's ``time_zone`` as a fallback.
 
     On geocoding failure, returns the input coords unchanged with
     empty city/state — the caller decides whether that's acceptable.
@@ -328,15 +385,8 @@ async def resolve_location_from_coordinates(
         # luach for Jerusalem, Los Angeles or Chicago computed every zman
         # in America/New_York -- candle-lighting for Jerusalem printed at
         # around 11:30 AM.
-        def _tz_at_snap() -> str:
-            from timezonefinder import TimezoneFinder
-
-            return TimezoneFinder().timezone_at(
-                lng=snap_lon, lat=snap_lat,
-            ) or ""
-
         try:
-            snap_tz = await hass.async_add_executor_job(_tz_at_snap)
+            snap_tz = await timezone_at(hass, snap_lat, snap_lon)
         except Exception:  # pragma: no cover - defensive
             snap_tz = ""
         return name, state, snap_lat, snap_lon, snap_tz or hass.config.time_zone
@@ -423,13 +473,19 @@ async def resolve_location_from_coordinates(
         city, state = "", ""
         lat, lon = latitude, longitude
 
-    # 3) Timezone lookup from the (possibly snapped) coords.
-    def get_tzname(lat_v: float, lon_v: float) -> str:
-        from timezonefinder import TimezoneFinder
-        return TimezoneFinder().timezone_at(lng=lon_v, lat=lat_v) or "UTC"
-
+    # 3) Timezone. HA's own home coordinates (setup) use HA's configured
+    # time zone -- the user set it for exactly this place -- so a new
+    # install never needs timezonefinder. Anything else is looked up.
+    is_home = (
+        latitude == getattr(hass.config, "latitude", None)
+        and longitude == getattr(hass.config, "longitude", None)
+        and bool(getattr(hass.config, "time_zone", None))
+    )
     try:
-        tzname = await hass.async_add_executor_job(get_tzname, lat, lon)
+        if is_home:
+            tzname = hass.config.time_zone
+        else:
+            tzname = await timezone_at(hass, lat, lon) or "UTC"
     except Exception:
         _LOGGER.warning(
             "YidCal: timezone lookup failed, falling back to HA time_zone",
