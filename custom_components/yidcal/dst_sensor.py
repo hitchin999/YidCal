@@ -5,7 +5,6 @@ Binary sensor for Daylight Saving Time (DST).
 ON when the configured timezone is currently observing DST, OFF otherwise.
 
 Attributes:
-  Now:              ISO current local time
   UTC_Offset:       Current UTC offset (e.g. "-04:00")
   DST_Offset:       The DST component of the offset (e.g. "1:00:00" or "0:00:00")
   Timezone:         The configured timezone name
@@ -49,8 +48,8 @@ class DSTSensor(YidCalSpecialDevice, BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         self._added = True
         await self.async_update()
-        # Check every 60 seconds (DST transitions are rare but this keeps
-        # the "Now" attribute fresh and catches the switch promptly)
+        # Check every 60 seconds (DST transitions are rare, but this
+        # catches the switch promptly)
         self._register_interval(self.hass, self.async_update, timedelta(minutes=1))
 
     async def async_update(self, now=None) -> None:
@@ -68,7 +67,6 @@ class DSTSensor(YidCalSpecialDevice, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, str | bool]:
         attrs: dict[str, str | bool] = {}
         if self._now_local:
-            attrs["Now"] = self._now_local.isoformat()
             utc_off = self._now_local.strftime("%z")
             attrs["UTC_Offset"] = f"{utc_off[:3]}:{utc_off[3:]}"
             dst = self._now_local.dst()
