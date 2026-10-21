@@ -19,7 +19,6 @@ uses to flip ערב תשעה באב → תשעה באב and to fire the fast cou
 sensor drops to OFF at the exact minute Tisha B'Av turns on.
 
 Attributes:
-  Now                    – ISO current local time
   Is_Erev_Tisha_Bav_Day  – whether today is a live Erev Tisha B'Av (after-chatzos) day
   Chatzos                – ISO chatzos hayom for today
   Tisha_Bav_Onset        – ISO floored shkia for today (fast start / window close)
@@ -135,7 +134,6 @@ class ErevTishaBavAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._attr_is_on = qualifies and (chatzos <= now_local < onset)
 
         self._attr_extra_state_attributes = {
-            "Now": now_local.isoformat(),
             "Is_Erev_Tisha_Bav_Day": qualifies,
             "Chatzos": chatzos.isoformat(),
             "Tisha_Bav_Onset": onset.isoformat(),
