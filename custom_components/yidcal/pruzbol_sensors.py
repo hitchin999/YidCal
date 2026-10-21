@@ -225,7 +225,6 @@ class PruzbolSensor(_PruzbolBase, BinarySensorEntity):
     def _recompute(self, cyc: dict, now_local: datetime) -> None:
         self._attr_is_on = cyc["in_window"]
         self._attrs = {
-            "Now": now_local.isoformat(),
             "Pruzbol_Date": cyc["date"].isoformat(),
             # 'chumra'   → entering shmita (יש מחמירים … לכתחלה)
             # 'required' → leaving  shmita (צריכין)
