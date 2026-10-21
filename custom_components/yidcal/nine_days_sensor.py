@@ -7,7 +7,6 @@ Binary sensor for "תשעת הימים" (The Nine Days):
       deactivates at sunset + havdalah (tzeis) on 10 Av
 
 Attributes:
-  Now:                 ISO current local time
   Next_Window_Start:   ISO when the current/upcoming Nine Days window starts
   Next_Window_End:     ISO when the current/upcoming Nine Days window ends
   Nidche_Year:         True if this year's 9 Av is Shabbos
@@ -153,8 +152,6 @@ class NineDaysSensor(YidCalSpecialDevice, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str | bool]:
         attrs: dict[str, str | bool] = {}
-        if self._now_local:
-            attrs["Now"] = self._now_local.isoformat()
         # Current active window (when applicable)
         if self._window_start:
             attrs["Window_Start"] = self._window_start.isoformat()
