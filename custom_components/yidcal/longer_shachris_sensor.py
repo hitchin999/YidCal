@@ -34,7 +34,7 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
     Always OFF on Shabbos or Yom Tov even if those occur.
 
     Attributes (same as No Melucha – Yom Tov):
-      Now, Window_Start, Window_End, Activation_Logic
+      Window_Start, Window_End, Activation_Logic
 
     If currently OFF, attributes show the next upcoming qualifying window.
     """
@@ -152,7 +152,6 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
 
         if window_start and window_end:
             self._attr_extra_state_attributes = {
-                "Now": now.isoformat(),
                 "Window_Start": window_start.isoformat(),
                 "Window_End": window_end.isoformat(),
                 "Activation_Logic": (
@@ -164,7 +163,6 @@ class LongerShachrisSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
             }
         else:
             self._attr_extra_state_attributes = {
-                "Now": now.isoformat(),
                 "Window_Start": "",
                 "Window_End": "",
                 "Activation_Logic": (
