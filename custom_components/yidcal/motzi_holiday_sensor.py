@@ -327,7 +327,6 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         # ── Build attributes ──
         attrs: dict[str, bool | str] = {
-            "Now": now.isoformat(),
             "Blocked_Motzi_Shabbos": str(blocked_shabbos).lower(),
             "Blocked_Motzi_Yom_Tov": str(blocked_holiday).lower(),
             "Is_Shabbos_Today":      str(is_sat_today).lower(),
