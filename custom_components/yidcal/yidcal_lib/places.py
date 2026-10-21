@@ -83,6 +83,12 @@ def _normalize_key(text: str) -> str:
     return " ".join(str(text).split()).strip().casefold()
 
 
+# (lat, lon) of every listed place → its IANA time zone. Every coordinate
+# the snap functions return is a row's own (lat, lon) -- custom-bbox hits
+# return their place's row -- so this covers all of them.
+_TZ_BY_COORD: dict[tuple[float, float], str] = {}
+
+
 def _load_places() -> tuple[
     list[tuple[str, str, float, float]],
     list[tuple[str, str, float, float, str, str, bool]],
@@ -104,7 +110,11 @@ def _load_places() -> tuple[
     index: dict[str, list[int]] = {}
 
     for position, row in enumerate(payload["places"]):
-        name, state, lat, lon, heb, country, aliases, curated = row
+        name, state, lat, lon, heb, country, aliases, curated = row[:8]
+        # 9th field: IANA time zone, precomputed (build tool) so a lookup
+        # never needs timezonefinder for a listed place.
+        if len(row) > 8 and row[8]:
+            _TZ_BY_COORD.setdefault((lat, lon), row[8])
         places.append((name, state, lat, lon))
         records.append((name, state, lat, lon, heb, country, bool(curated)))
         # A name can repeat across countries (London UK / Ontario / Kiribati),
@@ -167,6 +177,14 @@ def _bbox_place(
         if lat_min <= latitude <= lat_max and lon_min <= longitude <= lon_max:
             return name, state, p_lat, p_lon
     return None
+
+
+def timezone_for(latitude: float, longitude: float) -> str | None:
+    """Time zone of the listed place at exactly these coordinates, or None.
+
+    Use with coordinates returned by ``find_place`` / ``find_place_by_name``.
+    """
+    return _TZ_BY_COORD.get((latitude, longitude))
 
 
 def find_place(latitude: float, longitude: float) -> tuple[str, str, float, float] | None:
