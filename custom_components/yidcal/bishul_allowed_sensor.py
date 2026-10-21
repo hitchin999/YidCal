@@ -32,7 +32,7 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
       • Shabbos (Saturday) — OFF the whole halachic day.
       • Yom Kippur — OFF the whole halachic day.
 
-    Attributes: Now, Next_Off_Window_Start, Next_Off_Window_End, Activation_Logic
+    Attributes: Next_Off_Window_Start, Next_Off_Window_End, Activation_Logic
     """
     _attr_name = "Bishul Allowed"
     _attr_icon = "mdi:pot-steam"
@@ -210,7 +210,6 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         # Attributes
         self._attr_extra_state_attributes = {
-            "Now": now.isoformat(),
             "Next_Off_Window_Start": next_off_start.isoformat() if next_off_start else "",
             "Next_Off_Window_End": next_off_end.isoformat() if next_off_end else "",
             "Activation_Logic": (
