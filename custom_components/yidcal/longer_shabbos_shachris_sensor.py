@@ -17,7 +17,7 @@ when the davening is longer due to:
 Always OFF on weekdays (use the existing "Longer Shachris" sensor for weekday scenarios).
 
 Attributes:
-  Now, Window_Start, Window_End, Reason, Activation_Logic
+  Window_Start, Window_End, Reason, Activation_Logic
 """
 
 from __future__ import annotations
@@ -257,7 +257,6 @@ class LongerShabbosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity
                 window_start, window_end = self._shabbos_window(next_fri, next_sat)
 
         self._attr_extra_state_attributes = {
-            "Now": now.isoformat(),
             "Window_Start": window_start.isoformat() if window_start else "",
             "Window_End": window_end.isoformat() if window_end else "",
             "Reason": " / ".join(reasons) if reasons else "",
