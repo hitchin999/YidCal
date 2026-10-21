@@ -43,7 +43,7 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
     Attributes always show the current active span's window, or the next
     upcoming span if none is active:
-      Now, Window_Start, Window_End, Early_Start_Used, Early_Start_Time, Activation_Logic
+      Window_Start, Window_End, Early_Start_Used, Early_Start_Time, Activation_Logic
     """
     _attr_name = "No Melucha – Yom Tov"
     _attr_icon = "mdi:briefcase-variant-off"
@@ -223,7 +223,6 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             self._attr_is_on = window_start <= now < window_end
 
             self._attr_extra_state_attributes = {
-                "Now": now.isoformat(),
                 "Window_Start": window_start.isoformat(),
                 "Window_End": window_end.isoformat(),
                 "Early_Start_Used": bool(early_raw and early_raw < (self._sunset(start_d - timedelta(days=1)) - timedelta(minutes=self._candle))),
@@ -241,7 +240,6 @@ class NoMeluchaYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         self._attr_is_on = False
         self._attr_extra_state_attributes = {
-            "Now": now.isoformat(),
             "Window_Start": "",
             "Window_End": "",
             "Early_Start_Used": False,
