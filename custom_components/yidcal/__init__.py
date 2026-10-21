@@ -29,7 +29,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
-from timezonefinder import TimezoneFinder
 
 from .const import DOMAIN
 from .config_flow import (
