@@ -9,7 +9,6 @@ Two spans per annual cycle, all civil‑midnight boundaries:
      (30 Tishrei / RC Cheshvan day 1 is the last full day included.)
 
 Attributes:
-  Now:                  ISO current local time
   Next_Window_Start:    ISO start of current/upcoming bein hazmanim window
   Next_Window_End:      ISO end of current/upcoming bein hazmanim window
   Nissan_Span_Start:    ISO start of the current/upcoming Nissan span
@@ -178,8 +177,6 @@ class BeinHazmonimSensor(YidCalSpecialDevice, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str | bool]:
         attrs: dict[str, str | bool] = {}
-        if self._now_local:
-            attrs["Now"] = self._now_local.isoformat()
         if self._next_window_start:
             attrs["Next_Window_Start"] = self._next_window_start.isoformat()
         if self._next_window_end:
