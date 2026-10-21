@@ -157,15 +157,34 @@ class ErevAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
         today = now_local.date()
 
         is_erev = self._is_erev_day(today)
-        chatzos = self._chatzos_for(today)
-        erev_end = self._effective_erev_end(today)
 
-        self._attr_is_on = is_erev and (chatzos <= now_local < erev_end)
+        # The window shown is the current or NEXT real erev window -- today's
+        # if today is an erev day and its window hasn't ended yet, otherwise
+        # the next erev day's. (Before, a regular weekday published its own
+        # chatzos/candle-lighting as if it were an erev window.)
+        chatzos = erev_end = None
+        for offset in range(0, 15):
+            d = today + timedelta(days=offset)
+            if not self._is_erev_day(d):
+                continue
+            c = self._chatzos_for(d)
+            e = self._effective_erev_end(d)
+            if e <= now_local:
+                continue  # today's window already over
+            chatzos, erev_end = c, e
+            break
+
+        self._attr_is_on = bool(
+            is_erev
+            and chatzos is not None
+            and chatzos.date() == today
+            and chatzos <= now_local < erev_end
+        )
 
         self._attr_extra_state_attributes = {
             "Is_Erev_Day": is_erev,
-            "Chatzos": chatzos.isoformat(),
-            "Erev_Window_End": erev_end.isoformat(),
+            "Chatzos": chatzos.isoformat() if chatzos else "",
+            "Erev_Window_End": erev_end.isoformat() if erev_end else "",
             "Activation_Logic": (
                 "ON from chatzos hayom until candle-lighting (or early start) "
                 "on Erev Shabbos or Erev Yom Tov. OFF otherwise."
