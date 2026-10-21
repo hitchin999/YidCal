@@ -266,7 +266,6 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
         # ====================================================================
         # Expose attributes
         attrs: dict[str, str | bool | int] = {
-            "Now": now.isoformat(),
             "Global_Start_Alef_Slichos_Motzi": alef_start.isoformat(),
             "Global_End_Erev_YK_Candle": erev_yk_candle.isoformat(),
             "Excluded_Rosh_Hashanah": excluded_rosh_hashanah,
