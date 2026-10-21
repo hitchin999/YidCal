@@ -128,15 +128,35 @@ class ErevTishaBavAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
         # whose erev is not a Shabbos.
         qualifies = is_av_8 and not erev_on_shabbos
 
-        chatzos = self._chatzos_for(today)
-        onset = self._shkia_floor_for(today)  # shkia — Tisha B'Av begins
+        # The window shown is the current or NEXT real one: this year's 8 Av
+        # if it qualifies and its window hasn't ended, otherwise next year's
+        # (skipping a year whose erev is Shabbos). Before, every day
+        # published its own chatzos/shkia as if it were Erev Tisha B'Av.
+        chatzos = onset = None
+        for hy in (hd.year, hd.year + 1, hd.year + 2):
+            if self._erev_on_shabbos(hy):
+                continue
+            av8 = PHebrewDate(hy, _AV, 8).to_pydate()
+            if av8 < today:
+                continue
+            c = self._chatzos_for(av8)
+            o = self._shkia_floor_for(av8)  # shkia — Tisha B'Av begins
+            if o <= now_local:
+                continue
+            chatzos, onset = c, o
+            break
 
-        self._attr_is_on = qualifies and (chatzos <= now_local < onset)
+        self._attr_is_on = bool(
+            qualifies
+            and chatzos is not None
+            and chatzos.date() == today
+            and chatzos <= now_local < onset
+        )
 
         self._attr_extra_state_attributes = {
             "Is_Erev_Tisha_Bav_Day": qualifies,
-            "Chatzos": chatzos.isoformat(),
-            "Tisha_Bav_Onset": onset.isoformat(),
+            "Chatzos": chatzos.isoformat() if chatzos else "",
+            "Tisha_Bav_Onset": onset.isoformat() if onset else "",
             "Erev_Falls_On_Shabbos": erev_on_shabbos,
             "Activation_Logic": (
                 "ON from chatzos hayom until shkia on Erev Tisha B'Av (8 Av), "
