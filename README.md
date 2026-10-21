@@ -355,7 +355,7 @@ a timed block rather than an all-day one.
 
 * **Bein Hazmanim** (`binary_sensor.yidcal_bein_hazmanim`)
   **ON** during yeshiva vacation periods. Two spans: **Nissan** — from 12 AM on Rosh Chodesh Nissan until 12 AM on the 2nd day of Rosh Chodesh Iyar; **Elul/Tishrei** — from 12 AM on Friday before Alef Slichos until 12 AM on the 2nd day of Rosh Chodesh Cheshvan.
-  *Attributes:* `Next_Window_Start`, `Next_Window_End`, `Nissan_Span_Start`, `Nissan_Span_End`, `Tishrei_Span_Start`, `Tishrei_Span_End`, `בין_הזמנים_פסח`, `בין_הזמנים_סוכות`, `Activation_Logic`
+  *Attributes:* `Window_Start`, `Window_End`, `Next_Window_Start`, `Next_Window_End`, `Nissan_Span_Start`, `Nissan_Span_End`, `Tishrei_Span_Start`, `Tishrei_Span_End`, `בין_הזמנים_פסח`, `בין_הזמנים_סוכות`, `Activation_Logic`
 
 * **Leap Year** (`binary_sensor.yidcal_leap_year`)
   **ON** for the entire Hebrew year when the current year is a leap year (שנה מעוברת — 13 months), **OFF** in a regular year. Flips at nightfall of Erev Rosh Hashanah, in lock-step with the **Date** sensor.
