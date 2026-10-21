@@ -56,13 +56,13 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
 * **No Melucha** (`binary_sensor.yidcal_no_melucha`) (e.g., on Shabbos and Yom Tov)
 * **No Melucha – Regular Shabbos** (`binary_sensor.yidcal_no_melucha_regular_shabbos`)
   ON every **regular Shabbos** from **Friday candle lighting** to **Saturday havdalah** — **not** when Shabbos is **Yom Tov** (but **on** for **Shabbos Chol HaMoed**).
-  *Attributes:* `Now`, `Window_Start`, `Window_End`
+  *Attributes:* `Window_Start`, `Window_End`
 * **No Melucha – Yom Tov** (`binary_sensor.yidcal_no_melucha_yomtov`)
   ON for any contiguous **Yom Tov** span from **candle before first day** (sunset of day−1 − candle offset) through **havdalah after last day** (sunset + havdalah offset) — **regardless of weekday**.
-  *Attributes:* `Now`, `Window_Start`, `Window_End`
+  *Attributes:* `Window_Start`, `Window_End`
 * **Bishul Allowed** (`binary_sensor.yidcal_bishul_allowed`)
   Usually **ON**; **OFF on Shabbos and Yom Kippur**. Perfect for percolators with **auto-fill valves**.
-  *Attributes:* `Now`, `Next_Off_Window_Start`, `Next_Off_Window_End`
+  *Attributes:* `Next_Off_Window_Start`, `Next_Off_Window_End`
 * **3 Days Yom Tov** (`binary_sensor.yidcal_three_day_yomtov`)
   ON from **candle-lighting** through **Alos** the morning after a continuous Shabbos + Yom Tov block (3+ days of no melacha). Only fires when the block contains both a pure Shabbos (not also YT) and at least one Yom Tov day.
   *Attributes:* `שבת ואח"כ יום טוב` (Shabbos first), `יום טוב ואח"כ שבת` (YT first)
@@ -315,19 +315,19 @@ a timed block rather than an all-day one.
 
 * **DST** (`binary_sensor.yidcal_dst`)
   **ON** when the configured timezone is currently observing Daylight Saving Time, **OFF** otherwise. Updates every 60 seconds.
-  *Attributes:* `Now`, `UTC_Offset`, `DST_Offset`, `Timezone`
+  *Attributes:* `UTC_Offset`, `DST_Offset`, `Timezone`
 
 * **Erev After Chatzos** (`binary_sensor.yidcal_erev_after_chatzos`)
   **ON** when all of the following are true: today is Erev Shabbos or Erev Yom Tov (and not itself Shabbos/YT), current time is **after Chatzos HaYom** (midday), and current time is **before** the erev window end (candle-lighting / early start).
-  *Attributes:* `Now`, `Is_Erev_Day`, `Chatzos`, `Erev_Window_End`, `Activation_Logic`
+  *Attributes:* `Is_Erev_Day`, `Chatzos`, `Erev_Window_End`, `Activation_Logic`
 
 * **Erev Tisha B’Av After Chatzos** (`binary_sensor.yidcal_erev_tisha_bav_after_chatzos`)
   **ON** when all of the following are true: today is **Erev Tisha B’Av** (the daytime of 8 Av), current time is **after Chatzos HaYom** (midday), and current time is **before shkia** (the moment the fast / תשעה באב begins). Always **OFF** when the erev-of-fast falls on **Shabbos** — a **nidcheh** year (9 Av on Shabbos, the fast deferred to Sunday) or when 8 Av itself is Shabbos — since there is no after-chatzos window on Shabbos.
-  *Attributes:* `Now`, `Is_Erev_Tisha_Bav_Day`, `Chatzos`, `Tisha_Bav_Onset`, `Erev_Falls_On_Shabbos`, `Activation_Logic`
+  *Attributes:* `Is_Erev_Tisha_Bav_Day`, `Chatzos`, `Tisha_Bav_Onset`, `Erev_Falls_On_Shabbos`, `Activation_Logic`
 
 * **Tisha B’Av Night** (`binary_sensor.yidcal_tisha_bav_night`)
   **ON** from the floored **shkia** that begins the fast (on the erev-of-fast) until **alos HaShachar** the next morning — the **night** portion of Tisha B’Av only. Because the fast spans two sunsets, this stays **OFF** through the fast's daytime and its second (closing) shkia, so an automation can trigger on this sensor turning **on** for the first shkia without ambiguity. Follows the observed fast: in a **nidcheh** year (9 Av on Shabbos) it shifts to 10 Av — shkia on Motzei Shabbos → alos Sunday; when 9 Av is Sunday it begins at Motzei-Shabbos shkia.
-  *Attributes:* `Now`, `Fast_Day`, `Is_Nidche`, `Night_Start`, `Alos`, `Activation_Logic`
+  *Attributes:* `Fast_Day`, `Is_Nidche`, `Night_Start`, `Alos`, `Activation_Logic`
 
 * **BeHaB** (`binary_sensor.yidcal_behab`)
   **ON** from **alos HaShachar** until **tzeis** (sunset + your havdalah offset) on each of the three **בה״ב** fasts — **תענית שני קמא**, **תענית חמישי**, **תענית שני תנינא** — after Rosh Chodesh **Cheshvan** and **Iyar**. Shabbos **מברכים בה״ב** is the first Shabbos of the month that isn't Rosh Chodesh; the fasts are the Monday, Thursday and Monday after it. Same dates as the luach.
@@ -347,7 +347,7 @@ a timed block rather than an all-day one.
 
 * **Longer Shabbos Shachris** (`binary_sensor.yidcal_longer_shabbos_shachris`)
   **ON for the entire Shabbos** (candle-lighting → havdalah) when the davening is longer due to: שבת שקלים/זכור/פרה/החודש, שבת הגדול, שבת ראש חודש, פורים משולש, שבת מברכים, שבת חנוכה, שבת חנוכה ראש חודש, שבת חול המועד סוכות/פסח. Always **OFF** on weekdays (use the existing **Longer Shachris** sensor for weekday scenarios).
-  *Attributes:* `Now`, `Window_Start`, `Window_End`, `Reason`, `Activation_Logic`
+  *Attributes:* `Window_Start`, `Window_End`, `Reason`, `Activation_Logic`
 
 * **Yom Tov Tomorrow** (`binary_sensor.yidcal_yomtov_tomorrow`)
   **ON** when tomorrow (the next civil calendar date) is a Yom Tov day, **OFF** otherwise. Flips at **12:00 AM**, so it's a simple all-day flag — perfect for morning prep automations (“is tomorrow Yom Tov?”) without any window logic. The halachic windows themselves are covered by **Erev**, **No Melucha**, and **Upcoming Yom Tov**. On day 1 of a two-day Yom Tov it stays **ON** (tomorrow is day 2); use the `Today_Is_Yom_Tov` attribute to tell a prep day apart from a day already inside Yom Tov.
@@ -355,7 +355,7 @@ a timed block rather than an all-day one.
 
 * **Bein Hazmanim** (`binary_sensor.yidcal_bein_hazmanim`)
   **ON** during yeshiva vacation periods. Two spans: **Nissan** — from 12 AM on Rosh Chodesh Nissan until 12 AM on the 2nd day of Rosh Chodesh Iyar; **Elul/Tishrei** — from 12 AM on Friday before Alef Slichos until 12 AM on the 2nd day of Rosh Chodesh Cheshvan.
-  *Attributes:* `Now`, `Next_Window_Start`, `Next_Window_End`, `Nissan_Span_Start`, `Nissan_Span_End`, `Tishrei_Span_Start`, `Tishrei_Span_End`, `בין_הזמנים_פסח`, `בין_הזמנים_סוכות`, `Activation_Logic`
+  *Attributes:* `Next_Window_Start`, `Next_Window_End`, `Nissan_Span_Start`, `Nissan_Span_End`, `Tishrei_Span_Start`, `Tishrei_Span_End`, `בין_הזמנים_פסח`, `בין_הזמנים_סוכות`, `Activation_Logic`
 
 * **Leap Year** (`binary_sensor.yidcal_leap_year`)
   **ON** for the entire Hebrew year when the current year is a leap year (שנה מעוברת — 13 months), **OFF** in a regular year. Flips at nightfall of Erev Rosh Hashanah, in lock-step with the **Date** sensor.
@@ -380,7 +380,7 @@ a timed block rather than an all-day one.
   * **Entering** the Shmita year (29 Elul of cycle year 6) — `Pruzbol_Kind: chumra` — `בער״ה תשפ״ט יש מחמירים לעשות פרוזבול (לכתחלה)`
   * **Leaving** the Shmita year (29 Elul of the Shmita year itself, cycle year 7) — `Pruzbol_Kind: required` — `בער״ה תש״צ צריכין לעשות פרוזבול`
 
-  *Attributes:* `Now`, `Pruzbol_Date`, `Pruzbol_Kind` (`chumra`/`required`), `Entering_Shmita` (`"true"`/`"false"`), `Shmita_Year` (the year bracketed — **the same for both days**), `Hebrew_Year` (the incoming year — the one named in the line), `Hebrew_Year_Letters`, `Line`, `Days_Until`, `Next_Window_Start`, `Next_Window_End`, `Activation_Logic`
+  *Attributes:* `Pruzbol_Date`, `Pruzbol_Kind` (`chumra`/`required`), `Entering_Shmita` (`"true"`/`"false"`), `Shmita_Year` (the year bracketed — **the same for both days**), `Hebrew_Year` (the incoming year — the one named in the line), `Hebrew_Year_Letters`, `Line`, `Days_Until`, `Next_Window_Start`, `Next_Window_End`, `Activation_Logic`
 
 * **Pruzbol Display** (`sensor.yidcal_pruzbol_display`)
   Always populated with the **next** pruzbol day as its printed-luach Hebrew line — both the year *and* the wording come from the calendar, never hard-coded. At candle-lighting it rolls forward to the next occurrence, in lock-step with the binary sensor going OFF: a `chumra` day rolls to the `required` day **one year later**, and a `required` day rolls to the next `chumra` day **six years on**. *(Next up: **Wednesday, September 20, 2028** — ערב ראש השנה תשפ״ט, the `chumra` note; then **Sunday, September 9, 2029** — ערב ראש השנה תש״צ, the `required` one. Both bracket Shmita 5789.)*
@@ -639,6 +639,8 @@ They describe the same night the state does, so they follow the same Alos rollov
 ### Zmanim Lookup *(optional)*
 
 > Requires enabling **"Create the Zmanim Lookup sensor and yidcal.check_zmanim service"** in the integration's General options.
+>
+> **First lookup of an unlisted location:** a `location` that isn't in YidCal's community list (all the usual communities are) needs a one-time download of a time-zone package (~43 MB). That first call may take up to a minute; after that it's instant.
 
 * **Zmanim Lookup** (`sensor.yidcal_zmanim_lookup`) — on-demand zmanim for up to **10 dates** in a single service call.
 
