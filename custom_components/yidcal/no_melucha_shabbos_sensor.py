@@ -160,7 +160,6 @@ class NoMeluchaShabbosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         if s_raw is None or e_raw is None:
             self._attr_is_on = False
             self._attr_extra_state_attributes = {
-                "Now": now.isoformat(),
                 "Window_Start": "",
                 "Window_End": "",
                 "Early_Start_Used": False,
@@ -181,7 +180,6 @@ class NoMeluchaShabbosSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         early_used = bool(early_raw and early_raw < (self._sunset((window_start.date())) - timedelta(minutes=self._candle)))
         self._attr_extra_state_attributes = {
-            "Now": now.isoformat(),
             "Window_Start": window_start.isoformat(),
             "Window_End": window_end.isoformat(),
             "Early_Start_Used": bool(early_raw and early_raw < s_raw + timedelta(seconds=1)),
