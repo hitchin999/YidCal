@@ -9,6 +9,8 @@ Two spans per annual cycle, all civil‑midnight boundaries:
      (30 Tishrei / RC Cheshvan day 1 is the last full day included.)
 
 Attributes:
+  Window_Start:         ISO start of the window we're in now ("" when OFF)
+  Window_End:           ISO end of the window we're in now ("" when OFF)
   Next_Window_Start:    ISO start of current/upcoming bein hazmanim window
   Next_Window_End:      ISO end of current/upcoming bein hazmanim window
   Nissan_Span_Start:    ISO start of the current/upcoming Nissan span
@@ -59,6 +61,7 @@ class BeinHazmonimSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._nissan_span: Optional[Tuple[datetime, datetime]] = None
         self._tishrei_span: Optional[Tuple[datetime, datetime]] = None
         self._active_label: Optional[str] = None  # "nissan" | "tishrei" | None
+        self._current_span: Optional[Tuple[datetime, datetime]] = None
 
     async def async_added_to_hass(self) -> None:
         self._added = True
@@ -141,6 +144,9 @@ class BeinHazmonimSensor(YidCalSpecialDevice, BinarySensorEntity):
         # State
         self._attr_is_on = current_span is not None
         self._active_label = current_span[2] if current_span else None
+        self._current_span = (
+            (current_span[0], current_span[1]) if current_span else None
+        )
 
         if current_span:
             self._next_window_start = current_span[0]
@@ -177,6 +183,13 @@ class BeinHazmonimSensor(YidCalSpecialDevice, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str | bool]:
         attrs: dict[str, str | bool] = {}
+        # Current window — like Nine Days: filled while ON, "" while OFF.
+        if self._current_span:
+            attrs["Window_Start"] = self._current_span[0].isoformat()
+            attrs["Window_End"] = self._current_span[1].isoformat()
+        else:
+            attrs["Window_Start"] = ""
+            attrs["Window_End"] = ""
         if self._next_window_start:
             attrs["Next_Window_Start"] = self._next_window_start.isoformat()
         if self._next_window_end:
