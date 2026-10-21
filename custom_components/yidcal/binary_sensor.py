@@ -730,7 +730,6 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                 win_candle = prev_win["candle"]
 
         attrs: dict[str, str | bool] = {
-            "Now": now.isoformat(),
             "Is_Erev_Shabbos":  is_erev_shabbos,
             "Is_Erev_Holiday":  is_erev_holiday,
             "Blocked_Erev_Shabbos": blocked_shabbos,
@@ -948,7 +947,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         if not candidates:
             self._attr_is_on = False
             self._attr_extra_state_attributes = {
-                "Now": now.isoformat(),
                 "In_Window": "false",
             }
             return
@@ -997,7 +995,6 @@ class NoMeluchaSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         upcoming_festival = None if in_window else festival_name
 
         self._attr_extra_state_attributes = {
-            "Now": now.isoformat(),
             "Active_Festival_Name": active_festival,
             "Upcoming_Festival_Name": upcoming_festival,
             "Window_Start": window_start.isoformat(),
