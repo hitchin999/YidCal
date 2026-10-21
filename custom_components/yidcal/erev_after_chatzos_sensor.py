@@ -8,7 +8,6 @@ ON when ALL of these are true:
   3. Current time is BEFORE the erev window end (candle-lighting / early start)
 
 Attributes:
-  Now                 – ISO current local time
   Is_Erev_Day         – whether today qualifies as an erev day at all
   Chatzos             – ISO chatzos hayom for today
   Erev_Window_End     – ISO effective candle-lighting cutoff
@@ -164,7 +163,6 @@ class ErevAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._attr_is_on = is_erev and (chatzos <= now_local < erev_end)
 
         self._attr_extra_state_attributes = {
-            "Now": now_local.isoformat(),
             "Is_Erev_Day": is_erev,
             "Chatzos": chatzos.isoformat(),
             "Erev_Window_End": erev_end.isoformat(),
