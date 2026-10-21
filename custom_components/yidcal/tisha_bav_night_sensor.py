@@ -27,7 +27,6 @@ Anchors:
     integration's standard alos.
 
 Attributes:
-  Now              – ISO current local time
   Fast_Day         – civil date the fast is observed (10 Av if nidche, else 9 Av)
   Is_Nidche        – whether this year's Tisha B'Av is deferred to Sunday
   Night_Start      – ISO floored shkia that begins the fast (sensor turns ON)
@@ -135,7 +134,6 @@ class TishaBavNightSensor(YidCalSpecialDevice, BinarySensorEntity):
         self._attr_is_on = night_start <= now_local < night_end
 
         self._attr_extra_state_attributes = {
-            "Now": now_local.isoformat(),
             "Fast_Day": fast_day.isoformat(),
             "Is_Nidche": is_nidche,
             "Night_Start": night_start.isoformat(),
