@@ -130,6 +130,20 @@ _HERO_SMALL_H, _HERO_BIG_H, _HERO_SUB_H = 24.0, 40.0, 22.0
 _HERO_PITCH = 42.0
 _HERO_PARSHA_PITCH = 54.0
 _HERO_ASC_EM, _HERO_DESC_EM = 0.57, 0.18
+# Chametz band in the HERO (regular cards only -- an Erev-Pesach card
+# with no small candle box, e.g. Israel when Erev Pesach is Sunday,
+# Monday or Shabbos). The yt1/yt2 cards carry the band in their side
+# panel; the regular card has no side panel, and splitting the
+# full-width ribbon looked wrong, so the band goes under the hero
+# title and the ribbon keeps its normal look. Same band chrome as the
+# side panel. The title + band group is centred in the hero box and
+# shrinks together only if it would not fit (Erev Pesach on Shabbos:
+# 3-line 'פרשת צו הגדול' title + 3 chametz lines).
+_HERO_BAND_SIZE = 16.0
+_HERO_BAND_PITCH = 16.0
+_HERO_BAND_GAP = 14.0     # title ink bottom -> band top
+_HERO_BAND_PAD = 5.0      # band top/bottom padding
+_HERO_FIT_H = 182.0       # usable height of the hero box (77.1..271.9)
 
 # Mid band.
 # regular: one full-width ribbon panel 39.1,285.1 → 572.9,383.0
@@ -850,20 +864,49 @@ class _Weekly2PDF(FPDF):
         title, subs = self._hero_lines(w)
         _hlines = [(t2, s2) for t2, s2, _h in title]
         _hlines += [(ln, _HERO_SUB_SIZE) for ln in subs]
-        bases = [0.0]
-        for k in range(1, len(_hlines)):
-            pitch = (_HERO_PARSHA_PITCH
-                     if k == 1 and _hlines[0][0] == "פרשת"
-                     else _HERO_PITCH)
-            bases.append(bases[-1] + pitch)
-        top = bases[0] - _HERO_ASC_EM * _hlines[0][1]
-        bot = bases[-1] + _HERO_DESC_EM * _hlines[-1][1]
-        off = _HERO_MID - (top + bot) / 2.0
+        hero_ch: list[str] = []
+        if tpl == "regular":
+            for raw in w.chametz_lines_he:
+                hero_ch.extend(
+                    p.strip() for p in raw.split(" - ") if p.strip())
+        band_h = 0.0
+        if hero_ch:
+            band_h = (_P2_ASC_EM * _HERO_BAND_SIZE
+                      + _HERO_BAND_PITCH * (len(hero_ch) - 1)
+                      + _P2_DESC_EM * _HERO_BAND_SIZE
+                      + 2 * _HERO_BAND_PAD)
+        sc = 1.0   # title scale -- stays 1.0 unless the band forces it
+        for _ in range(60):
+            bases = [0.0]
+            for k in range(1, len(_hlines)):
+                pitch = (_HERO_PARSHA_PITCH
+                         if k == 1 and _hlines[0][0] == "פרשת"
+                         else _HERO_PITCH) * sc
+                bases.append(bases[-1] + pitch)
+            top = bases[0] - _HERO_ASC_EM * _hlines[0][1] * sc
+            bot = bases[-1] + _HERO_DESC_EM * _hlines[-1][1] * sc
+            total = bot - top
+            if hero_ch:
+                total += _HERO_BAND_GAP * sc + band_h
+            if not hero_ch or total <= _HERO_FIT_H or sc <= 0.6:
+                break
+            sc *= 0.97
+        off = _HERO_MID - (top + (top + total)) / 2.0
         bases = [b + off for b in bases]
         for (text, size), b_y in zip(_hlines, bases):
+            size = size * sc
             tk = self._adaptive_track(text, size=size, max_w=_HERO_MW)
             self._t(_HERO_CX, 0, text, size=size,
                     max_w=_HERO_MW, track=tk, baseline=b_y)
+        if hero_ch:
+            band_top = bot + off + _HERO_BAND_GAP * sc
+            self._round_rect(_CH_BAND_X, band_top, _CH_BAND_W, band_h,
+                             _CH_BAND_R, fill=_CH_BAND_FILL)
+            y = band_top + _HERO_BAND_PAD + _P2_ASC_EM * _HERO_BAND_SIZE
+            for ln in hero_ch:
+                self._t(_HERO_CX, 0, ln, size=_HERO_BAND_SIZE,
+                        max_w=_P2_MW, baseline=y)
+                y += _HERO_BAND_PITCH
 
         # mid band
         info: list[str] = []
@@ -878,9 +921,10 @@ class _Weekly2PDF(FPDF):
         # chametz lines (Erev Pesach) — pending the dedicated template,
         # they print as the leading right-panel lines (open item).
         panel_extra: list[str] = []
-        for raw in w.chametz_lines_he:
-            panel_extra.extend(
-                p.strip() for p in raw.split(" - ") if p.strip())
+        if tpl != "regular":   # regular: drawn in the hero instead
+            for raw in w.chametz_lines_he:
+                panel_extra.extend(
+                    p.strip() for p in raw.split(" - ") if p.strip())
 
         if tpl == "regular" and not panel_extra:
             # Full-width ribbon: ONE message per line — never joined
@@ -954,7 +998,11 @@ class _Weekly2PDF(FPDF):
             # panel text line (only possible on the yt1 fallback)
             overflow = [f"{b.label_he}: {b.time_str}"
                         for b in small[n_slots:]]
-            if tpl == "yt2":
+            # The designed panel is used on yt2, and on yt1 whenever there
+            # ARE chametz lines (Israel / Erev Pesach on a Monday: one
+            # small candle box), so the chametz band appears there too.
+            # The yt1 side panel has the same frame as yt2's.
+            if tpl == "yt2" or panel_extra:
                 # designed panel: chametz pair on the dark inset band,
                 # kiddush-levana pair below (the mock splits the KL
                 # line after its head), then any remaining lines at
