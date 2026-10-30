@@ -67,6 +67,32 @@ def _apply_parsha_display_overrides(combined: str, *, metzora_display: str) -> s
     return combined
 
 
+# Hebrew parsha name (as the state shows it, after the display overrides)
+# → English (pyluach's Ashkenazi spelling). "אחרי" is the state's short
+# form of "אחרי מות"; "טהרה" is the optional name for "מצורע".
+_HEB_TO_ENG_PARSHA: dict[str, str] = dict(
+    zip(parshios.PARSHIOS_HEBREW, parshios.PARSHIOS)
+)
+_HEB_TO_ENG_PARSHA.update({"אחרי": "Acharei Mos", "טהרה": "Tahara"})
+
+
+def parsha_english(state: str) -> str:
+    """English for a parsha STATE string — e.g. "פרשת נח" → "Parshas Noach",
+    "פרשת תזריע-מצורע" → "Parshas Tazria-Metzora", "פרשת שמיני א׳" →
+    "Parshas Shemini I". Derived from the state itself, so the two can
+    never disagree. Returns "" for an empty state."""
+    if not state or not state.startswith("פרשת "):
+        return ""
+    name = state[len("פרשת "):].strip()
+    suffix = ""
+    if name.endswith(" א׳"):
+        name, suffix = name[: -len(" א׳")].strip(), " I"
+    parts = [_HEB_TO_ENG_PARSHA.get(p.strip()) for p in name.split("-")]
+    if not all(parts):
+        return ""
+    return f"Parshas {'-'.join(parts)}{suffix}"
+
+
 def compute_parsha_state(today: date, *, diaspora: bool, metzora_display: str = "metzora") -> str:
     """Parsha state for the week containing *today* (Shabbos on/after it).
 
@@ -228,8 +254,16 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             metzora_display=self._metzora_display,
         )
 
-        # A couple of helpful attributes
+        # Next week's parsha: the same rule, one week on.
+        next_week = compute_parsha_state(
+            shabbat + timedelta(days=7),
+            diaspora=self._diaspora,
+            metzora_display=self._metzora_display,
+        )
+
         self._attr_extra_state_attributes = {
+            "Parsha_English": parsha_english(self._state),
+            "Next_Week_Parsha": next_week,
             "Next_Shabbos_Date": shabbat.isoformat(),
             "Diaspora": self._diaspora,
         }
