@@ -266,7 +266,7 @@ a timed block rather than an all-day one.
   </font></b></center>
   ```
 * **Parsha** (`sensor.yidcal_parsha`) weekly Torah portion for the coming Shabbos. When that Shabbos is Yom Tov (no regular parsha) and there's still a regular Mon/Thu kriah that week, it shows the next parsha with an א׳ suffix (e.g. "פרשת שמיני א׳"). Between האזינו and שמחת תורה it shows **פרשת וזאת הברכה** — read at Shabbos mincha and on a regular Mon/Thu — without an א׳, since there is no וזאת הברכה ב׳. The sensor keeps its value through Yom Tov; the **Full Display** is what hides it on the regalim, ראש השנה and יום כיפור. Empty only in weeks with no parsha-based kriah at all (e.g. Chol HaMoed Sukkos). Works for both Israel and Diaspora.
-  *Attributes:* `Parsha_English` (e.g. `Parshas Noach`, `Parshas Tazria-Metzora`, `Parshas Shemini I` for the א׳ weeks), `Next_Week_Parsha` (the following week's parsha, by the same rules — e.g. `פרשת אחרי א׳` when next Shabbos is Pesach), `Next_Shabbos_Date`, `Diaspora`
+  *Attributes:* `Parsha_English` (e.g. `Parshas Noach`, `Parshas Tazria-Metzora`, `Parshas Shemini I` for the א׳ weeks), `Last_Week_Parsha` / `Next_Week_Parsha` (the previous / following week's parsha, by the same rules — e.g. `פרשת אחרי א׳` when next Shabbos is Pesach), `Next_Shabbos_Date`, `Diaspora`
 * **Rosh Chodesh Today** (`sensor.yidcal_rosh_chodesh_today`) i.e.: `א' ד'ראש חודש שבט` if today (after nightfall) is Rosh Chodesh
 * **Perek Avos**: current Perek rendered in אבות פרק ה׳
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
