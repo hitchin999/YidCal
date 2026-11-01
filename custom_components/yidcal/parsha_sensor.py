@@ -254,7 +254,12 @@ class ParshaSensor(YidCalDevice, SensorEntity):
             metzora_display=self._metzora_display,
         )
 
-        # Next week's parsha: the same rule, one week on.
+        # Last / next week's parsha: the same rule, one week back / on.
+        last_week = compute_parsha_state(
+            shabbat - timedelta(days=7),
+            diaspora=self._diaspora,
+            metzora_display=self._metzora_display,
+        )
         next_week = compute_parsha_state(
             shabbat + timedelta(days=7),
             diaspora=self._diaspora,
@@ -263,6 +268,7 @@ class ParshaSensor(YidCalDevice, SensorEntity):
 
         self._attr_extra_state_attributes = {
             "Parsha_English": parsha_english(self._state),
+            "Last_Week_Parsha": last_week,
             "Next_Week_Parsha": next_week,
             "Next_Shabbos_Date": shabbat.isoformat(),
             "Diaspora": self._diaspora,
