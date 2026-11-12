@@ -237,6 +237,9 @@ class PruzbolSensor(_PruzbolBase, BinarySensorEntity):
             "Hebrew_Year_Letters": cyc["letters"],
             "Line": cyc["line"],
             "Days_Until": cyc["days_until"],
+            # Current window — filled only while ON (like Nine Days).
+            "Window_Start": cyc["start"].isoformat() if cyc["in_window"] else "",
+            "Window_End": cyc["end"].isoformat() if cyc["in_window"] else "",
             "Next_Window_Start": cyc["start"].isoformat(),
             "Next_Window_End": cyc["end"].isoformat(),
             "Activation_Logic": (
