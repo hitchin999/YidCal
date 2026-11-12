@@ -8,6 +8,8 @@ a continuous Shabbos + Yom Tov block (3+ days of no melacha).
 Attributes:
   • שבת ואח"כ יום טוב  – True when Shabbos starts the block
   • יום טוב ואח"כ שבת  – True when YT starts the block
+  • Window_Start / Window_End           – the block we're in ("" when OFF)
+  • Next_Window_Start / Next_Window_End – the current or next block
 """
 from __future__ import annotations
 
@@ -185,12 +187,20 @@ class ThreeDayYomTovSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntit
             self._attr_extra_state_attributes = {
                 'שבת ואח"כ יום טוב': str(bool(self._shabbos_first and is_on)).lower(),
                 'יום טוב ואח"כ שבת': str(bool((not self._shabbos_first) and is_on)).lower(),
+                "Window_Start": self._win_start.isoformat() if is_on else "",
+                "Window_End": self._win_end.isoformat() if is_on else "",
+                "Next_Window_Start": self._win_start.isoformat(),
+                "Next_Window_End": self._win_end.isoformat(),
             }
         else:
             self._attr_is_on = False
             self._attr_extra_state_attributes = {
                 'שבת ואח"כ יום טוב': "false",
                 'יום טוב ואח"כ שבת': "false",
+                "Window_Start": "",
+                "Window_End": "",
+                "Next_Window_Start": "",
+                "Next_Window_End": "",
             }
 
     async def _full_scan(self, now: datetime) -> None:
