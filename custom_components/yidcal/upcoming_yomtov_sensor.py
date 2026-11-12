@@ -373,11 +373,54 @@ class UpcomingYomTovSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
                     0, 0, tzinfo=tz
                 )
 
+        # ── Standard window attributes (as in Nine Days) ──
+        # Window_*      — the ON window we're in (ON → candle-lighting); "" when OFF
+        # Next_Window_* — the current window, or the next one once it's over
+        def _following_window(after_target: datetime.date):
+            """ON window of the first target after `after_target` that has
+            one, gated by the previous target's Motzi (12 AM the day after)
+            and any Shabbos/YT in between — the same rules as the ON branch
+            of Next_On above. A target whose gate falls after its own
+            candle-lighting (e.g. Yom Tov day 2 right after day 1) never
+            turns the sensor ON, so it is skipped."""
+            prev = after_target
+            for _ in range(12):
+                _n, t2 = self._find_next_event(prev)
+                if not t2:
+                    return None, None
+                gate = prev + timedelta(days=1)
+                on2 = max(
+                    datetime.datetime(*(t2 - timedelta(days=7)).timetuple()[:3], 0, 0, tzinfo=tz),
+                    datetime.datetime(gate.year, gate.month, gate.day, 0, 0, tzinfo=tz),
+                )
+                fg2 = self._latest_forward_gate(gate, t2 - timedelta(days=1))
+                if fg2 is not None:
+                    on2 = max(on2, datetime.datetime(fg2.year, fg2.month, fg2.day, 0, 0, tzinfo=tz))
+                off2 = self._candle_lighting_prev_day(t2)
+                if on2 < off2:
+                    return on2, off2
+                prev = t2
+            return None, None
+
+        win_s = win_e = nxt_s = nxt_e = None
+        if next_date and next_on_time:
+            off_cur = self._candle_lighting_prev_day(next_date)
+            if is_on:
+                win_s, win_e = next_on_time, off_cur
+            if now < off_cur:
+                nxt_s, nxt_e = next_on_time, off_cur
+            else:
+                nxt_s, nxt_e = _following_window(next_date)
+
         # Attributes for dashboards (e.g., "זמנים ל(...)")
         attrs: dict[str, object] = {
             "Next_Holiday": next_name,
             "Date": next_date.isoformat() if next_date else "",
             "Next_On": next_on_for.isoformat() if next_on_for else "",
+            "Window_Start": win_s.isoformat() if win_s else "",
+            "Window_End": win_e.isoformat() if win_e else "",
+            "Next_Window_Start": nxt_s.isoformat() if nxt_s else "",
+            "Next_Window_End": nxt_e.isoformat() if nxt_e else "",
             "Activation_Logic": (
                 "ON at 12:00 AM after the latest Motzi (Shabbos or Yom Tov), "
                 "leading into the next target. OFF at candle-lighting of the "
