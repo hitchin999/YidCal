@@ -9,8 +9,10 @@ ON when ALL of these are true:
 
 Attributes:
   Is_Erev_Day         – whether today qualifies as an erev day at all
-  Chatzos             – ISO chatzos hayom for today
-  Erev_Window_End     – ISO effective candle-lighting cutoff
+  Window_Start        – ISO chatzos of the window we're in now ("" when OFF)
+  Window_End          – ISO effective candle-lighting cutoff of it ("" when OFF)
+  Next_Window_Start   – ISO chatzos of the current or next erev window
+  Next_Window_End     – ISO effective candle-lighting cutoff of that window
   Activation_Logic    – human-readable description
 """
 
@@ -183,8 +185,12 @@ class ErevAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
 
         self._attr_extra_state_attributes = {
             "Is_Erev_Day": is_erev,
-            "Chatzos": chatzos.isoformat() if chatzos else "",
-            "Erev_Window_End": erev_end.isoformat() if erev_end else "",
+            # Current window -- filled only while ON (like Nine Days).
+            "Window_Start": chatzos.isoformat() if self._attr_is_on else "",
+            "Window_End": erev_end.isoformat() if self._attr_is_on else "",
+            # Current-or-next real erev window.
+            "Next_Window_Start": chatzos.isoformat() if chatzos else "",
+            "Next_Window_End": erev_end.isoformat() if erev_end else "",
             "Activation_Logic": (
                 "ON from chatzos hayom until candle-lighting (or early start) "
                 "on Erev Shabbos or Erev Yom Tov. OFF otherwise."
