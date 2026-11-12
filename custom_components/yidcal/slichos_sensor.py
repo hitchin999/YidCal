@@ -272,6 +272,14 @@ class SlichosSensor(YidCalSpecialDevice, RestoreEntity, BinarySensorEntity):
             "Excluded_Shabbos": excluded_shabbos,
             "In_Global_Window": in_global_window,
             "Selichos_Label": label or "",
+            "Activation_Logic": (
+                "ON from havdalah on Motzaei Shabbos of Alef Slichos (the "
+                "Shabbos before Rosh Hashana; a week earlier when Rosh Hashana "
+                "falls on Monday or Tuesday) until candle-lighting on Erev Yom "
+                "Kippur — except OFF on Shabbos (candle-lighting to havdalah) "
+                "and on both days of Rosh Hashana (candle-lighting Erev Rosh "
+                "Hashana to havdalah after the second day)."
+            ),
         }
 
         self._attr_extra_state_attributes = attrs
