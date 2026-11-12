@@ -29,8 +29,10 @@ Anchors:
 Attributes:
   Fast_Day         – civil date the fast is observed (10 Av if nidche, else 9 Av)
   Is_Nidche        – whether this year's Tisha B'Av is deferred to Sunday
-  Night_Start      – ISO floored shkia that begins the fast (sensor turns ON)
-  Alos             – ISO alos the sensor turns OFF at
+  Window_Start     – ISO floored shkia that begins the fast, while ON ("" when OFF)
+  Window_End       – ISO alos the sensor turns OFF at, while ON ("" when OFF)
+  Next_Window_Start – ISO shkia of the current or next Tisha B'Av night
+  Next_Window_End   – ISO alos ending that night
   Activation_Logic – human-readable description
 """
 
@@ -133,11 +135,22 @@ class TishaBavNightSensor(YidCalSpecialDevice, BinarySensorEntity):
 
         self._attr_is_on = night_start <= now_local < night_end
 
+        # Current-or-next night: this Hebrew year's, or next year's once it
+        # has ended.
+        next_start, next_end = night_start, night_end
+        if now_local >= night_end:
+            nfast = self._fast_day(hyear + 1)
+            next_start = self._shkia_floor_for(nfast - timedelta(days=1))
+            next_end = self._alos_for(nfast)
+
         self._attr_extra_state_attributes = {
             "Fast_Day": fast_day.isoformat(),
             "Is_Nidche": is_nidche,
-            "Night_Start": night_start.isoformat(),
-            "Alos": night_end.isoformat(),
+            # Current window — filled only while ON (like Nine Days).
+            "Window_Start": night_start.isoformat() if self._attr_is_on else "",
+            "Window_End": night_end.isoformat() if self._attr_is_on else "",
+            "Next_Window_Start": next_start.isoformat(),
+            "Next_Window_End": next_end.isoformat(),
             "Activation_Logic": (
                 "ON from the floored shkia that begins Tisha B'Av (on the "
                 "erev-of-fast) until alos HaShachar the next morning — the "
