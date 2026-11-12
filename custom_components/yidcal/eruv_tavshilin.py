@@ -7,6 +7,8 @@ Binary sensor for "Eruv Tavshilin":
           (tzeis = sunset + havdalah_offset). OFF otherwise.
 
 Attributes:
+  Window_Start:        ISO alos of the window we're in now ("" when OFF)
+  Window_End:          ISO tzeis of that window ("" when OFF)
   Next_Window_Start:   ISO alos on the Eruv day (local tz)
   Next_Window_End:     ISO tzeis that evening (local tz)
   Activation_Logic:    "ON from alos (dawn) on the Eruv day until tzeis that evening. OFF otherwise."
@@ -179,6 +181,10 @@ class EruvTavshilinSensor(YidCalSpecialDevice, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str | bool]:
         attrs: dict[str, str | bool] = {}
+        # Current window — filled only while ON (like Nine Days).
+        on = bool(self._attr_is_on and self._next_window_start and self._next_window_end)
+        attrs["Window_Start"] = self._next_window_start.isoformat() if on else ""
+        attrs["Window_End"] = self._next_window_end.isoformat() if on else ""
         if self._next_window_start:
             attrs["Next_Window_Start"] = self._next_window_start.isoformat()
         if self._next_window_end:
