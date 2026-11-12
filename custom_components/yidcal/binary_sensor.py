@@ -741,10 +741,17 @@ class ErevHolidaySensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             "Erev_Window_End":      win_end.isoformat(),
             "Candle_End_Cut":        win_candle.isoformat(),
         }
+        # Standard window attributes (as in Nine Days):
+        #   Window_*      — the window we're in now; "" while OFF
+        #   Next_Window_* — the current or next window (was Next_Erev_Window_*)
+        # Erev_Window_* above keep their own meaning: today's window, or the
+        # most recent one on a non-erev day.
+        attrs["Window_Start"] = alos.isoformat() if self._attr_is_on else ""
+        attrs["Window_End"] = erev_end_cut.isoformat() if self._attr_is_on else ""
         if next_start and next_end:
             attrs.update({
-                "Next_Erev_Window_Start": next_start.isoformat(),
-                "Next_Erev_Window_End":   next_end.isoformat(),
+                "Next_Window_Start": next_start.isoformat(),
+                "Next_Window_End":   next_end.isoformat(),
             })
         self._attr_extra_state_attributes = attrs
 
