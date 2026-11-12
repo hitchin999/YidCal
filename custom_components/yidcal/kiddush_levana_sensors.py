@@ -266,6 +266,22 @@ class KiddushLevanaSensor(_KiddushLevanaBase, BinarySensorEntity):
         )
         sof = cyc["sof"]
         self._attr_is_on = start <= now_local < sof
+
+        # Current-or-next window: this cycle's, or — between sof zman and
+        # the Alos rollover, when the tracked cycle is still the old one —
+        # the next month's.
+        nxt_start, nxt_end = start, sof
+        if now_local >= sof:
+            hy2, hm2 = _next_hebrew_month(cyc["hy"], cyc["hm"])
+            nxt_start = (
+                gimmel_shleimim_local(hy2, hm2, self._tz)
+                if self._start_opinion == "gimmel"
+                else zayin_shleimim_local(hy2, hm2, self._tz)
+            ).replace(tzinfo=self._tz)
+            nxt_end = sof_zman_kiddush_levana_rama_local(
+                hy2, hm2, self._tz
+            ).replace(tzinfo=self._tz)
+
         # House convention: boolean ATTRIBUTES as strings for HA
         # state-condition matching. Each opinion is true from its own
         # start until the shared sof zman.
@@ -276,6 +292,12 @@ class KiddushLevanaSensor(_KiddushLevanaBase, BinarySensorEntity):
             "Zayin_Shleimim": (
                 "true" if cyc["zayin"] <= now_local < sof else "false"
             ),
+            # Standard window attributes (as in Nine Days); the start
+            # follows the ג׳ / ז׳ שלימים setting, like the ON state.
+            "Window_Start": start.isoformat() if self._attr_is_on else "",
+            "Window_End": sof.isoformat() if self._attr_is_on else "",
+            "Next_Window_Start": nxt_start.isoformat(),
+            "Next_Window_End": nxt_end.isoformat(),
         }
 
 
