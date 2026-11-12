@@ -246,8 +246,11 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         # Restore frozen "Next window" if we had one
         if last:
             try:
-                ns = last.attributes.get("Next_Motzi_Window_Start")
-                ne = last.attributes.get("Next_Motzi_Window_End")
+                # Next_Window_* (v0.9.0+); Next_Motzi_Window_* before that.
+                ns = (last.attributes.get("Next_Window_Start")
+                      or last.attributes.get("Next_Motzi_Window_Start"))
+                ne = (last.attributes.get("Next_Window_End")
+                      or last.attributes.get("Next_Motzi_Window_End"))
                 if ns and ne:
                     self._next_start_cached = datetime.datetime.fromisoformat(ns)
                     self._next_end_cached   = datetime.datetime.fromisoformat(ne)
@@ -463,12 +466,20 @@ class MotziSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
             else:
                 self._next_start_cached = self._next_end_cached = None
 
-        # Publish attributes from the frozen cache
-        if self._next_start_cached and self._next_end_cached:
-            attrs["Next_Motzi_Window_Start"] = self._next_start_cached.isoformat()
-            attrs["Next_Motzi_Window_End"]   = self._next_end_cached.isoformat()
+        # Current window — filled only while ON (like Nine Days).
+        if self._state and holiday_date:
+            attrs["Window_Start"] = start.isoformat()
+            attrs["Window_End"] = motzi_end.isoformat()
         else:
-            attrs.pop("Next_Motzi_Window_Start", None)
-            attrs.pop("Next_Motzi_Window_End",   None)
+            attrs["Window_Start"] = ""
+            attrs["Window_End"] = ""
+
+        # Current-or-next window, from the frozen cache (was Next_Motzi_Window_*)
+        if self._next_start_cached and self._next_end_cached:
+            attrs["Next_Window_Start"] = self._next_start_cached.isoformat()
+            attrs["Next_Window_End"]   = self._next_end_cached.isoformat()
+        else:
+            attrs.pop("Next_Window_Start", None)
+            attrs.pop("Next_Window_End",   None)
 
         self._attr_extra_state_attributes = attrs
