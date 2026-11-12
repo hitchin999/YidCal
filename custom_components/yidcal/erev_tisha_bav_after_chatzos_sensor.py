@@ -20,8 +20,10 @@ sensor drops to OFF at the exact minute Tisha B'Av turns on.
 
 Attributes:
   Is_Erev_Tisha_Bav_Day  – whether today is a live Erev Tisha B'Av (after-chatzos) day
-  Chatzos                – ISO chatzos hayom for today
-  Tisha_Bav_Onset        – ISO floored shkia for today (fast start / window close)
+  Window_Start           – ISO chatzos of the window we're in now ("" when OFF)
+  Window_End             – ISO floored shkia of that window (fast start) ("" when OFF)
+  Next_Window_Start      – ISO chatzos of the current or next real window
+  Next_Window_End        – ISO floored shkia (Tisha B'Av onset) of that window
   Erev_Falls_On_Shabbos  – whether this year's erev-of-fast is Shabbos (sensor suppressed)
   Activation_Logic       – human-readable description
 """
@@ -155,8 +157,12 @@ class ErevTishaBavAfterChatzosSensor(YidCalSpecialDevice, BinarySensorEntity):
 
         self._attr_extra_state_attributes = {
             "Is_Erev_Tisha_Bav_Day": qualifies,
-            "Chatzos": chatzos.isoformat() if chatzos else "",
-            "Tisha_Bav_Onset": onset.isoformat() if onset else "",
+            # Current window -- filled only while ON (like Nine Days).
+            "Window_Start": chatzos.isoformat() if self._attr_is_on else "",
+            "Window_End": onset.isoformat() if self._attr_is_on else "",
+            # Current-or-next real window (8 Av, skipping Shabbos-erev years).
+            "Next_Window_Start": chatzos.isoformat() if chatzos else "",
+            "Next_Window_End": onset.isoformat() if onset else "",
             "Erev_Falls_On_Shabbos": erev_on_shabbos,
             "Activation_Logic": (
                 "ON from chatzos hayom until shkia on Erev Tisha B'Av (8 Av), "
