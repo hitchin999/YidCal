@@ -2,7 +2,7 @@
 
 [![Peak Release Downloads](https://img.shields.io/badge/dynamic/json?style=for-the-badge\&label=Peak%20Release%20Downloads\&url=https%3A%2F%2Fraw.githubusercontent.com%2Fhitchin999%2Fyidcal-data%2Fmain%2Fbadge%2Fpeak_release_downloads.json\&query=%24.value\&color=blue)](https://github.com/hitchin999/YidCal/releases)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hitchin999&repository=YidCal&category=Integration)
+[![Open YidCal in your Home Assistant Marketplace (or HACS on older versions).](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hitchin999&repository=YidCal&category=Integration)
 
 > [!WARNING]
 > <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f1ee-1f1f1.svg" alt="Israel flag" width="18"> **Israel option is available, but is experimental / not fully tested.**
@@ -62,10 +62,10 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   *Attributes:* `Window_Start`, `Window_End`
 * **Bishul Allowed** (`binary_sensor.yidcal_bishul_allowed`)
   Usually **ON**; **OFF on Shabbos and Yom Kippur**. Perfect for percolators with **auto-fill valves**.
-  *Attributes:* `Next_Off_Window_Start`, `Next_Off_Window_End`
+  *Attributes:* `Window_Start` / `Window_End` (the **ON** window we're in — from the last havdalah to the next candle-lighting; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next ON window), `Next_Off_Window_Start`, `Next_Off_Window_End`
 * **3 Days Yom Tov** (`binary_sensor.yidcal_three_day_yomtov`)
   ON from **candle-lighting** through **Alos** the morning after a continuous Shabbos + Yom Tov block (3+ days of no melacha). Only fires when the block contains both a pure Shabbos (not also YT) and at least one Yom Tov day.
-  *Attributes:* `שבת ואח"כ יום טוב` (Shabbos first), `יום טוב ואח"כ שבת` (YT first)
+  *Attributes:* `שבת ואח"כ יום טוב` (Shabbos first), `יום טוב ואח"כ שבת` (YT first), `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window)
 
 ---
 
@@ -209,6 +209,7 @@ a timed block rather than an all-day one.
 
 * **Erev** (`binary_sensor.yidcal_erev`)
   Turns **on** at **Alos** on qualifying Erev days (Erev-Shabbos or weekday Erev-Yom-Tov) and turns **off** at **candle-lighting**.
+  *Attributes:* `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window), `Erev_Window_Start` / `Erev_Window_End` (today's window, or the most recent one on a non-erev day), `Candle_End_Cut`, `Is_Erev_Shabbos`, `Is_Erev_Holiday`, `Blocked_Erev_Shabbos`, `Blocked_Erev_Holiday`, `Is_Yom_Tov_Today`, `Is_Shabbos_Today`, `Eruv_Tavshilin`
 
   **Holiday Erev binary sensors (attribute-derived)**: these specific Erev holiday binaries now start at **Tzeis the night before** (instead of Alos):
 
@@ -224,6 +225,7 @@ a timed block rather than an all-day one.
 * **Motzi** (`binary_sensor.yidcal_motzi`)
   Turns on after **Havdalah**, and stays **ON until Alos**.
   *Attribute:* `יקנה"ז` *(added on this Motzi binary sensor — not on the Zman Motzi sensor).*
+  *Window attributes:* `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window)
 
   **Motzi holiday sensors (attribute-derived) — Shabbos overlap rule:**
   If a holiday’s “motzi moment” is swallowed by Shabbos (example: the holiday ends **Friday night after sunset**), then its **Motzi-holiday sensor is skipped entirely** (you just continue with regular Shabbos → Motzi Shabbos).
@@ -272,8 +274,10 @@ a timed block rather than an all-day one.
 * **Morid Geshem/Tal Sensor** (`sensor.yidcal_morid_geshem_or_tal`) Indicates when to change the prayer between “Morid HaGeshem”/“Morid HaTal”
 * **Tal U'Matar** (`sensor.yidcal_tal_umatar`) Indicates when to change the prayer between `ותן טל ומטר` and `ותן ברכה`. In Diaspora, switches at Ma'ariv of Dec 4 (or Dec 5 in the year *before* a Gregorian leap year, e.g. 2019, 2023, 2027, 2031) and stays on `ותן ברכה` from first night of Pesach through the summer.
 * **No Music** (`binary_sensor.yidcal_no_music`) Indicates when music is prohibited (e.g., in Sefirah, Three Weeks)
-* **Upcoming Shabbos Mevorchim** (`binary_sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim
-* **Shabbos Mevorchim** (`binary_sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim
+* **Upcoming Shabbos Mevorchim** (`binary_sensor.yidcal_upcoming_shabbos_mevorchim`) `on` if the upcoming Shabbos is Mevorchim — from havdalah of the Shabbos before until candle-lighting on the Friday
+  *Attributes:* `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window)
+* **Shabbos Mevorchim** (`binary_sensor.yidcal_shabbos_mevorchim`) `on` if today is Shabbos Mevorchim — candle-lighting to havdalah
+  *Attributes:* `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window)
 * **Special Prayer Sensor** (`sensor.yidcal_special_prayer`)
 
   * Aggregates liturgical insertions (מוריד הגשם/הטל, ותן טל ומטר/ותן ברכה, יעלה ויבוא, על הניסים, עננו, נחם, etc.)
@@ -310,9 +314,11 @@ a timed block rather than an all-day one.
 
   * Continuous Selichos window: turns **on** at **Alef Slichos** Motzaei-Shabbos (havdalah) and stays on until **Erev Yom Kippur** candle-lighting; auto-**off** on any intervening **Shabbos** or **Rosh Hashanah (1–2 Tishrei)**.
   * **Attribute `Selichos_Label`** – Hebrew label for the current Selichos day (e.g., סליחות ליום א׳, סליחות לערב ר״ה, סליחות ליום חמישי מעשי״ת)
+  * **Attribute `Activation_Logic`** – plain-English description of when the sensor is on and off
 
 * **Eruv Tavshilin** (`binary_sensor.eruv_tavshilin`)
   **On only from Alos to Tzeis** on Erev-Yom-Tov for a Yom Tov thats going into a Shabbos.
+  *Attributes:* `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window), `Activation_Logic`
 
 * **DST** (`binary_sensor.yidcal_dst`)
   **ON** when the configured timezone is currently observing Daylight Saving Time, **OFF** otherwise. Updates every 60 seconds.
@@ -320,15 +326,15 @@ a timed block rather than an all-day one.
 
 * **Erev After Chatzos** (`binary_sensor.yidcal_erev_after_chatzos`)
   **ON** when all of the following are true: today is Erev Shabbos or Erev Yom Tov (and not itself Shabbos/YT), current time is **after Chatzos HaYom** (midday), and current time is **before** the erev window end (candle-lighting / early start).
-  *Attributes:* `Is_Erev_Day`, `Chatzos`, `Erev_Window_End`, `Activation_Logic`
+  *Attributes:* `Window_Start` / `Window_End` (chatzos → candle-lighting of the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next real erev window), `Is_Erev_Day`, `Activation_Logic`
 
 * **Erev Tisha B’Av After Chatzos** (`binary_sensor.yidcal_erev_tisha_bav_after_chatzos`)
   **ON** when all of the following are true: today is **Erev Tisha B’Av** (the daytime of 8 Av), current time is **after Chatzos HaYom** (midday), and current time is **before shkia** (the moment the fast / תשעה באב begins). Always **OFF** when the erev-of-fast falls on **Shabbos** — a **nidcheh** year (9 Av on Shabbos, the fast deferred to Sunday) or when 8 Av itself is Shabbos — since there is no after-chatzos window on Shabbos.
-  *Attributes:* `Is_Erev_Tisha_Bav_Day`, `Chatzos`, `Tisha_Bav_Onset`, `Erev_Falls_On_Shabbos`, `Activation_Logic`
+  *Attributes:* `Window_Start` / `Window_End` (chatzos → shkia of the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next real window, skipping years whose erev is Shabbos), `Is_Erev_Tisha_Bav_Day`, `Erev_Falls_On_Shabbos`, `Activation_Logic`
 
 * **Tisha B’Av Night** (`binary_sensor.yidcal_tisha_bav_night`)
   **ON** from the floored **shkia** that begins the fast (on the erev-of-fast) until **alos HaShachar** the next morning — the **night** portion of Tisha B’Av only. Because the fast spans two sunsets, this stays **OFF** through the fast's daytime and its second (closing) shkia, so an automation can trigger on this sensor turning **on** for the first shkia without ambiguity. Follows the observed fast: in a **nidcheh** year (9 Av on Shabbos) it shifts to 10 Av — shkia on Motzei Shabbos → alos Sunday; when 9 Av is Sunday it begins at Motzei-Shabbos shkia.
-  *Attributes:* `Fast_Day`, `Is_Nidche`, `Night_Start`, `Alos`, `Activation_Logic`
+  *Attributes:* `Window_Start` / `Window_End` (shkia → alos of the night we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next Tisha B’Av night), `Fast_Day`, `Is_Nidche`, `Activation_Logic`
 
 * **BeHaB** (`binary_sensor.yidcal_behab`)
   **ON** from **alos HaShachar** until **tzeis** (sunset + your havdalah offset) on each of the three **בה״ב** fasts — **תענית שני קמא**, **תענית חמישי**, **תענית שני תנינא** — after Rosh Chodesh **Cheshvan** and **Iyar**. Shabbos **מברכים בה״ב** is the first Shabbos of the month that isn't Rosh Chodesh; the fasts are the Monday, Thursday and Monday after it. Same dates as the luach.
@@ -381,7 +387,7 @@ a timed block rather than an all-day one.
   * **Entering** the Shmita year (29 Elul of cycle year 6) — `Pruzbol_Kind: chumra` — `בער״ה תשפ״ט יש מחמירים לעשות פרוזבול (לכתחלה)`
   * **Leaving** the Shmita year (29 Elul of the Shmita year itself, cycle year 7) — `Pruzbol_Kind: required` — `בער״ה תש״צ צריכין לעשות פרוזבול`
 
-  *Attributes:* `Pruzbol_Date`, `Pruzbol_Kind` (`chumra`/`required`), `Entering_Shmita` (`"true"`/`"false"`), `Shmita_Year` (the year bracketed — **the same for both days**), `Hebrew_Year` (the incoming year — the one named in the line), `Hebrew_Year_Letters`, `Line`, `Days_Until`, `Next_Window_Start`, `Next_Window_End`, `Activation_Logic`
+  *Attributes:* `Pruzbol_Date`, `Pruzbol_Kind` (`chumra`/`required`), `Entering_Shmita` (`"true"`/`"false"`), `Shmita_Year` (the year bracketed — **the same for both days**), `Hebrew_Year` (the incoming year — the one named in the line), `Hebrew_Year_Letters`, `Line`, `Days_Until`, `Window_Start` / `Window_End` (blank when OFF), `Next_Window_Start`, `Next_Window_End`, `Activation_Logic`
 
 * **Pruzbol Display** (`sensor.yidcal_pruzbol_display`)
   Always populated with the **next** pruzbol day as its printed-luach Hebrew line — both the year *and* the wording come from the calendar, never hard-coded. At candle-lighting it rolls forward to the next occurrence, in lock-step with the binary sensor going OFF: a `chumra` day rolls to the `required` day **one year later**, and a `required` day rolls to the next `chumra` day **six years on**. *(Next up: **Wednesday, September 20, 2028** — ערב ראש השנה תשפ״ט, the `chumra` note; then **Sunday, September 9, 2029** — ערב ראש השנה תש״צ, the `required` one. Both bracket Shmita 5789.)*
@@ -390,6 +396,7 @@ a timed block rather than an all-day one.
 * **Kiddush Levunah** (`binary_sensor.yidcal_kiddush_levana`)
   **ON** continuously from the configured start — **ג' שלימים** (3 complete days after the molad) or **ז' שלימים** (7 complete days, the default) — until **סוף זמן קידוש לבנה** (half the molad interval after the molad, שיטת הרמ״א). Pick the start in **Options**; both opinions are always exposed as attributes regardless of which one drives the state.
   *Boolean attributes:* `Gimmel_Shleimim`, `Zayin_Shleimim` (`"true"`/`"false"` — each turns true at its own start and false at the same sof zman)
+  *Window attributes:* `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window) — the start follows the ג׳/ז׳ שלימים setting
 
 * **Sof Zman Kiddush Levunah** (`sensor.yidcal_sof_zman_kiddush_levana`)
   Timestamp of **סוף זמן קידוש לבנה** for the current lunar month, at full precision (seconds incl. chalakim). Once the deadline passes, it rolls to the next month's cycle at the following **Alos** — so it always shows the next relevant deadline.
@@ -813,7 +820,7 @@ deadlines) are left alone rather than doubled up.
 
 * **Upcoming Yom Tov Sensor** (`binary_sensor.yidcal_upcoming_yomtov`)
 
-  * **Attributes:** `Next_Holiday`, `Date`, `Next_On`
+  * **Attributes:** `Next_Holiday`, `Date`, `Next_On`, `Window_Start` / `Window_End` (the window we're in; blank when OFF), `Next_Window_Start` / `Next_Window_End` (the current or next window)
   * **ON:** **12:00 AM** after the latest Motzi (Shabbos or Yom Tov) before the target's erev — including a Motzei Shabbos the night before the erev — leading into the next target
   * **OFF:** at **candle-lighting** of the target’s erev (sunset − offset)
 * **Upcoming Holiday Sensor** (`sensor.yidcal_upcoming_holiday`)
@@ -1174,20 +1181,29 @@ under **`וויפיל יארן פאראויס צו האלטן`** (1–10, defaul
 
 * HA 2023.7+
 * Python 3.10+
-* **HACS** recommended
-* Dependencies installed via manifest:
+* Install from the **Marketplace** (Home Assistant 2026.11+) or **HACS** (older versions)
+* Dependencies installed automatically via the manifest:
 
-  * `hdate[astral]==1.1.2`
+  * `hdate[astral]>=1.2.1`
   * `pyluach==2.2.0`
   * `zmanim==0.3.1`
-  * `timezonefinder==5.2.0`
-  * `geopy==2.4.1`
+  * `geopy>=2.3.0`
+  * `fpdf2==2.7.9` and `python-bidi==0.4.2` (luach PDFs)
+  * `timezonefinder` is downloaded only the first time you look up a location outside YidCal's community list
 
 ---
 
 ## Installation
 
-### HACS (Recommended)
+### Marketplace (Home Assistant 2026.11 and newer — recommended)
+
+1. Go to **Settings → Marketplace** (or use the button at the top of this page).
+2. Search for **YidCal** and select **Install**.
+3. The setup opens right away — no restart needed. Pick your language on the first card — **אידיש**, **עברית**, or **English** — then work through the setup screens.
+
+> Already had YidCal through HACS? Nothing to do — Home Assistant moves it into the Marketplace automatically when you update to 2026.11.
+
+### HACS (Home Assistant 2026.10 and older)
 
 1. Open HACS in Home Assistant.
 2. Search for "YidCal" in the Integrations section.
