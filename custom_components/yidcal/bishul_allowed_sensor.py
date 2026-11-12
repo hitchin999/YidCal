@@ -32,7 +32,9 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
       • Shabbos (Saturday) — OFF the whole halachic day.
       • Yom Kippur — OFF the whole halachic day.
 
-    Attributes: Next_Off_Window_Start, Next_Off_Window_End, Activation_Logic
+    Attributes: Window_Start, Window_End (the ON window we're in; "" when
+    OFF), Next_Window_Start, Next_Window_End (the current or next ON
+    window), Next_Off_Window_Start, Next_Off_Window_End, Activation_Logic
     """
     _attr_name = "Bishul Allowed"
     _attr_icon = "mdi:pot-steam"
@@ -185,6 +187,19 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
 
         return None, None
 
+    def _prev_off_end_at_or_before(self, ref_local: datetime):
+        """End (rounded havdalah) of the most recent OFF window that has
+        ended at or before ref_local — the start of the ON window after it."""
+        for i in range(-1, 120):
+            d = ref_local.date() - timedelta(days=i)
+            if not ((d.weekday() == 5) or self._is_yom_kippur(d)):
+                continue
+            s_raw, e_raw = self._window_for_halachic_day(d)
+            e = _round_ceil(e_raw)
+            if e <= ref_local:
+                return e
+        return None
+
     # ----- main -----
 
     async def async_update(self, _=None) -> None:
@@ -208,8 +223,25 @@ class BishulAllowedSensor(YidCalDevice, RestoreEntity, BinarySensorEntity):
         next_off_start = _round_half_up(no_start) if no_start else None
         next_off_end   = _round_ceil(no_end) if no_end else None
 
+        # ON windows run from the end of one OFF window to the start of the
+        # next. Current window while ON; current-or-next for Next_Window_*.
+        if self._attr_is_on:
+            on_start = self._prev_off_end_at_or_before(now)
+            on_end = next_off_start
+        else:
+            # Inside an OFF window: the next ON window starts when it ends.
+            on_start = next_off_end
+            nxt_s, _nxt_e = (
+                self._next_off_window_after(next_off_end) if next_off_end else (None, None)
+            )
+            on_end = _round_half_up(nxt_s) if nxt_s else None
+
         # Attributes
         self._attr_extra_state_attributes = {
+            "Window_Start": on_start.isoformat() if (self._attr_is_on and on_start) else "",
+            "Window_End": on_end.isoformat() if (self._attr_is_on and on_end) else "",
+            "Next_Window_Start": on_start.isoformat() if on_start else "",
+            "Next_Window_End": on_end.isoformat() if on_end else "",
             "Next_Off_Window_Start": next_off_start.isoformat() if next_off_start else "",
             "Next_Off_Window_End": next_off_end.isoformat() if next_off_end else "",
             "Activation_Logic": (
