@@ -752,32 +752,35 @@ class ShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
             today = now_local.date()
             wd = today.weekday()  # 0=Mon … 4=Fri, 5=Sat
 
-            if wd == 4:
-                shabbos = today + timedelta(days=1)
-                friday = today
-                saturday = shabbos
-            elif wd == 5:
-                shabbos = today
-                friday = today - timedelta(days=1)
-                saturday = today
-            else:
-                self._attr_is_on = False
-                return
+            def _window(sat):
+                fri_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=sat - timedelta(days=1))
+                sat_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=sat)
+                return (
+                    _round_half_up(fri_sunset - timedelta(minutes=self._candle_offset)),
+                    _round_ceil(sat_sunset + timedelta(minutes=self._havdalah_offset)),
+                )
 
-            if not self.helper.is_shabbos_mevorchim(shabbos):
-                self._attr_is_on = False
-                return
+            # Current-or-next Shabbos Mevorchim window (scan forward from
+            # this week's Shabbos; at most ~5 weeks to the next one).
+            first_sat = today + timedelta(days=(5 - wd) % 7)
+            nxt_s = nxt_e = None
+            for k in range(0, 9):
+                sat = first_sat + timedelta(days=7 * k)
+                if not self.helper.is_shabbos_mevorchim(sat):
+                    continue
+                s, e = _window(sat)
+                if now_local < e:
+                    nxt_s, nxt_e = s, e
+                    break
 
-            fri_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=friday)
-            sat_sunset = sunset_for_date(geo=self._geo, tz=self._tz, base_date=saturday)
-
-            raw_on  = fri_sunset - timedelta(minutes=self._candle_offset)
-            raw_off = sat_sunset + timedelta(minutes=self._havdalah_offset)
-
-            on_time  = _round_half_up(raw_on)
-            off_time = _round_ceil(raw_off)
-
-            self._attr_is_on = (on_time <= now_local < off_time)
+            is_on = bool(nxt_s and nxt_s <= now_local < nxt_e)
+            self._attr_is_on = is_on
+            self._attr_extra_state_attributes = {
+                "Window_Start": nxt_s.isoformat() if is_on else "",
+                "Window_End": nxt_e.isoformat() if is_on else "",
+                "Next_Window_Start": nxt_s.isoformat() if nxt_s else "",
+                "Next_Window_End": nxt_e.isoformat() if nxt_e else "",
+            }
 
         except Exception as e:
             _LOGGER.error("ShabbosMevorchim failed: %s", e)
@@ -849,6 +852,7 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
 
             if shabbos_on <= now_local < shabbos_off:
                 self._attr_is_on = False
+                self._set_window_attrs(now_local)
                 return
 
         flag = self.helper.get_molad(today).is_upcoming_shabbos_mevorchim
@@ -861,6 +865,38 @@ class UpcomingShabbosMevorchimSensor(YidCalDevice, BinarySensorEntity):
                 flag = False
 
         self._attr_is_on = bool(flag)
+        self._set_window_attrs(now_local)
+
+    def _set_window_attrs(self, now_local) -> None:
+        """Window_* / Next_Window_*: the week before a Shabbos Mevorchim —
+        from havdalah of the previous Shabbos until candle-lighting on the
+        Friday before Shabbos Mevorchim (the same edges the state uses)."""
+        today = now_local.date()
+        first_sat = today + timedelta(days=(5 - today.weekday()) % 7)
+        nxt_s = nxt_e = None
+        for k in range(0, 10):
+            sat = first_sat + timedelta(days=7 * k)
+            if not self.helper.is_shabbos_mevorchim(sat):
+                continue
+            prev_sat = sat - timedelta(days=7)
+            s = _round_ceil(
+                sunset_for_date(geo=self._geo, tz=self._tz, base_date=prev_sat)
+                + timedelta(minutes=self._havdalah_offset)
+            )
+            e = _round_half_up(
+                sunset_for_date(geo=self._geo, tz=self._tz, base_date=sat - timedelta(days=1))
+                - timedelta(minutes=self._candle_offset)
+            )
+            if now_local < e:
+                nxt_s, nxt_e = s, e
+                break
+        on = bool(self._attr_is_on and nxt_s)
+        self._attr_extra_state_attributes = {
+            "Window_Start": nxt_s.isoformat() if on else "",
+            "Window_End": nxt_e.isoformat() if on else "",
+            "Next_Window_Start": nxt_s.isoformat() if nxt_s else "",
+            "Next_Window_End": nxt_e.isoformat() if nxt_e else "",
+        }
 
     @property
     def icon(self) -> str:
