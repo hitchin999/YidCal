@@ -1953,7 +1953,7 @@ def _is_asru_chag_sukkos(d: date_cls, diaspora: bool) -> bool:
     return d == (day24 + timedelta(days=1) if day24.weekday() == 5 else day24)
 
 
-def _is_erev_shviei_shel_pesach(d: date_cls, diaspora: bool) -> bool:
+def _is_erev_yomim_achronim_shel_pesach(d: date_cls, diaspora: bool) -> bool:
     """The day before שביעי של פסח (21 Nisan), like the other Erev flags; when
     שביעי של פסח is on a Sunday (so its Erev would be Shabbos) it is the Friday
     before instead. (With לא בד״ו פסח, 21 Nisan cannot actually fall on a Sunday,
@@ -2033,7 +2033,7 @@ FLAG_SPECS: dict[str, tuple] = {
     "ד׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 4, "havdalah_havdalah"),
     "ה׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 5, "havdalah_havdalah"),
     "חול המועד פסח":   (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) > 0, _chm_pesach_shape),
-    "ערב שביעי של פסח": (_is_erev_shviei_shel_pesach, "havdalah_candle"),
+    "ערב ימים אחרונים של פסח": (_is_erev_yomim_achronim_shel_pesach, "havdalah_candle"),
     "שביעי של פסח":    (lambda d, diaspora: _month_day(d) == (1, 21), "candle_havdalah"),
     "אחרון של פסח":    (lambda d, diaspora: diaspora and _month_day(d) == (1, 22), "havdalah_havdalah"),
     "אסרו חג פסח":     (lambda d, diaspora: _month_day(d) == ((1, 23) if diaspora else (1, 22)), "havdalah_havdalah"),

@@ -147,7 +147,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **חול המועד פסח** *(ON at Tzeis (end of day 2 YT), OFF at candle-lighting (entering שביעי של פסח))*
   * **ערב שבת חול המועד פסח** *(ON at Alos, OFF at candle-lighting — the Friday before שבת חול המועד פסח, only when that Friday is not Yom Tov; otherwise it is ערב שבת שחל ביום טוב)*
   * **שבת חול המועד פסח** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
-  * **ערב שביעי של פסח** *(ON at Tzeis (night before), OFF at candle-lighting — the day before שביעי של פסח; if שביעי של פסח is on a Sunday it is the Friday before)*
+  * **ערב ימים אחרונים של פסח** *(ON at Tzeis (night before), OFF at candle-lighting — the day before שביעי של פסח; if שביעי של פסח is on a Sunday it is the Friday before)*
   * **שביעי של פסח** *(ON at candle-lighting, OFF at Tzeis)*
   * **אחרון של פסח** *(ON at Tzeis (end of שביעי), OFF at Tzeis)*
   * **שביעי/אחרון של פסח** *(ON at candle-lighting (entering שביעי), OFF at Tzeis (end of אחרון))*
