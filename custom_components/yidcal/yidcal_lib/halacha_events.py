@@ -1953,6 +1953,30 @@ def _is_asru_chag_sukkos(d: date_cls, diaspora: bool) -> bool:
     return d == (day24 + timedelta(days=1) if day24.weekday() == 5 else day24)
 
 
+def _is_erev_shviei_shel_pesach(d: date_cls, diaspora: bool) -> bool:
+    """The day before שביעי של פסח (21 Nisan), like the other Erev flags; when
+    שביעי של פסח is on a Sunday (so its Erev would be Shabbos) it is the Friday
+    before instead. (With לא בד״ו פסח, 21 Nisan cannot actually fall on a Sunday,
+    but the rule is kept explicit to match ערב פסח / ערב שבועות.)"""
+    h = _hebrew_date(d)
+    if h.month != 1:
+        return False
+    shviei = PHebrewDate(h.year, 1, 21).to_pydate()
+    back = 2 if shviei.weekday() == 6 else 1
+    return d == shviei - timedelta(days=back)
+
+
+def _is_erev_shabbos_chol_hamoed(d: date_cls, diaspora: bool, month: int) -> bool:
+    """A Friday whose Shabbos is שבת חול המועד (``month`` 7 = Sukkos, 1 = Pesach),
+    only while the Friday itself is a melacha day. When that Friday is Yom Tov it
+    is ערב שבת שחל ביום טוב instead, and this flag stays off."""
+    return (
+        d.weekday() == 4
+        and not _is_yom_tov(d, diaspora)
+        and _chol_hamoed_day(d + timedelta(days=1), diaspora, month) > 0
+    )
+
+
 FLAG_SPECS: dict[str, tuple] = {
     "א׳ סליחות":       (lambda d, diaspora: _month_day(d)[0] == 6 and 21 <= _month_day(d)[1] <= 26
                                             and d.weekday() == 6, "havdalah_candle"),
@@ -2009,6 +2033,7 @@ FLAG_SPECS: dict[str, tuple] = {
     "ד׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 4, "havdalah_havdalah"),
     "ה׳ דחול המועד פסח": (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) == 5, "havdalah_havdalah"),
     "חול המועד פסח":   (lambda d, diaspora: _chol_hamoed_day(d, diaspora, 1) > 0, _chm_pesach_shape),
+    "ערב שביעי של פסח": (_is_erev_shviei_shel_pesach, "havdalah_candle"),
     "שביעי של פסח":    (lambda d, diaspora: _month_day(d) == (1, 21), "candle_havdalah"),
     "אחרון של פסח":    (lambda d, diaspora: diaspora and _month_day(d) == (1, 22), "havdalah_havdalah"),
     "אסרו חג פסח":     (lambda d, diaspora: _month_day(d) == ((1, 23) if diaspora else (1, 22)), "havdalah_havdalah"),
@@ -2041,6 +2066,10 @@ FLAG_SPECS: dict[str, tuple] = {
                            "candle_havdalah"),
     "שבת חול המועד פסח":  (lambda d, diaspora: d.weekday() == 5 and _chol_hamoed_day(d, diaspora, 1) > 0,
                            "candle_havdalah"),
+    # Friday before שבת חול המועד, only when that Friday is not Yom Tov
+    # (otherwise it is ערב שבת שחל ביום טוב)
+    "ערב שבת חול המועד סוכות": (lambda d, diaspora: _is_erev_shabbos_chol_hamoed(d, diaspora, 7), "alos_candle"),
+    "ערב שבת חול המועד פסח":   (lambda d, diaspora: _is_erev_shabbos_chol_hamoed(d, diaspora, 1), "alos_candle"),
     "שובבים":           (lambda d, diaspora: _week_parsha(d) in _SHOVAVIM
                          or (is_leap_hebrew_year(PHebrewDate.from_pydate(d).year) and _week_parsha(d) in _SHOVAVIM_TAT),
                          "havdalah_havdalah"),
@@ -2124,6 +2153,7 @@ FLAG_AGGREGATES: dict[str, tuple[str, ...]] = {
     "פסח (כל חג)": ("פסח א׳", "פסח ב׳", "א׳ דחול המועד פסח", "ב׳ דחול המועד פסח", "ג׳ דחול המועד פסח",
                     "ד׳ דחול המועד פסח", "ה׳ דחול המועד פסח", "שביעי של פסח", "אחרון של פסח"),
     "שביעי/אחרון של פסח": ("שביעי של פסח", "אחרון של פסח"),
+    "ערב שבת חול המועד": ("ערב שבת חול המועד סוכות", "ערב שבת חול המועד פסח"),
     "א׳ דיום טוב": ("ראש השנה א׳", "סוכות א׳", "שמיני עצרת", "פסח א׳", "שביעי של פסח", "שבועות א׳"),
     "ב׳ דיום טוב": ("ראש השנה ב׳", "סוכות ב׳", "שמחת תורה", "פסח ב׳", "אחרון של פסח", "שבועות ב׳"),
 }
