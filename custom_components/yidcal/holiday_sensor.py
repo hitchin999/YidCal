@@ -104,6 +104,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ד׳ דחול המועד סוכות",
         "ה׳ דחול המועד סוכות",
         "חול המועד סוכות",
+        "ערב שבת חול המועד סוכות",
         "שבת חול המועד סוכות",
         "הושענא רבה",
         "שמיני עצרת",
@@ -153,7 +154,9 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ד׳ דחול המועד פסח",
         "ה׳ דחול המועד פסח",
         "חול המועד פסח",
+        "ערב שבת חול המועד פסח",
         "שבת חול המועד פסח",
+        "ערב שביעי של פסח",
         "שביעי של פסח",
         "אחרון של פסח",
         "שביעי/אחרון של פסח",
@@ -181,6 +184,7 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         "ראש חודש",
         "שבת ראש חודש",
         "ערב שבת",
+        "ערב שבת חול המועד",
         "ערב יום טוב",
         "מוצאי שבת",
         "מוצאי יום טוב",
@@ -797,7 +801,8 @@ class HolidaySensor(YidCalDevice, RestoreEntity, SensorEntity):
         # ─── Aggregate flags & Shabbos Chol HaMoed (attributes only) ────────
         # Aggregate flags (he.FLAG_AGGREGATES): on while any member is on.
         # שביעי/אחרון של פסח is diaspora only.
-        for _agg in ("סוכות (כל חג)", "שמיני עצרת/שמחת תורה", "פסח (כל חג)", "שביעי/אחרון של פסח"):
+        for _agg in ("סוכות (כל חג)", "שמיני עצרת/שמחת תורה", "פסח (כל חג)", "שביעי/אחרון של פסח",
+                     "ערב שבת חול המועד"):
             if _agg == "שביעי/אחרון של פסח" and not self._diaspora:
                 continue
             attrs[_agg] = any(attrs.get(n, False) for n in he.FLAG_AGGREGATES[_agg])

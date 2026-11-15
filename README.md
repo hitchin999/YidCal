@@ -96,6 +96,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **ג׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ד׳ דחול המועד סוכות** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **חול המועד סוכות** *(ON at Tzeis (end of day 2 YT), OFF at Tzeis (end of day 4 CH"M). Does not include הושענא רבה, which has its own sensor)*
+  * **ערב שבת חול המועד סוכות** *(ON at Alos, OFF at candle-lighting — the Friday before שבת חול המועד סוכות, only when that Friday is not Yom Tov; otherwise it is ערב שבת שחל ביום טוב)*
   * **שבת חול המועד סוכות** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
   * **הושענא רבה** *(ON at Tzeis (prior), OFF at candle-lighting (entering שמיני עצרת))*
   * **שמיני עצרת** *(ON at candle-lighting, OFF at Tzeis)*
@@ -144,7 +145,9 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **ג׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **ד׳ דחול המועד פסח** *(ON at Tzeis (prior), OFF at Tzeis)*
   * **חול המועד פסח** *(ON at Tzeis (end of day 2 YT), OFF at candle-lighting (entering שביעי של פסח))*
+  * **ערב שבת חול המועד פסח** *(ON at Alos, OFF at candle-lighting — the Friday before שבת חול המועד פסח, only when that Friday is not Yom Tov; otherwise it is ערב שבת שחל ביום טוב)*
   * **שבת חול המועד פסח** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
+  * **ערב שביעי של פסח** *(ON at Tzeis (night before), OFF at candle-lighting — the day before שביעי של פסח; if שביעי של פסח is on a Sunday it is the Friday before)*
   * **שביעי של פסח** *(ON at candle-lighting, OFF at Tzeis)*
   * **אחרון של פסח** *(ON at Tzeis (end of שביעי), OFF at Tzeis)*
   * **שביעי/אחרון של פסח** *(ON at candle-lighting (entering שביעי), OFF at Tzeis (end of אחרון))*
@@ -172,6 +175,7 @@ Entities are grouped into these Devices/Services for clarity in Home Assistant�
   * **ראש חודש** *(ON at Tzeis (entering day 30 or day 1), OFF at Tzeis)*
   * **שבת ראש חודש** *(ON at candle-lighting (Friday), OFF at Tzeis (Motzei Shabbos))*
   * **ערב שבת** *(ON at Alos, OFF at candle-lighting)*
+  * **ערב שבת חול המועד** *(ON whenever ערב שבת חול המועד סוכות or ערב שבת חול המועד פסח is on)*
   * **ערב יום טוב** *(ON at Alos, OFF at candle-lighting)*
   * **מוצאי שבת** *(ON at Tzeis, OFF at 02:00)*
   * **מוצאי יום טוב** *(ON at Tzeis, OFF at 02:00)*
